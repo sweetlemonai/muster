@@ -332,8 +332,19 @@ const RTL: [&str; 1] = ["fa"];
 /// `value` isolated in a right-to-left `locale` (Drover's task 0020): first-strong isolate … pop
 /// directional isolate, what `<bdi>` does, in plain text (as `FSI`/`PDI` in
 /// src/i18n/runtime.ts). A path, a command or a name then keeps its own direction in the
-/// sentence around it.
+/// sentence around it. The value's own bidi controls (`index::is_bidi_control`) go first, in
+/// every language (mu-152): a title's lone U+2069 would close the isolate early, an unclosed
+/// U+2066 would swallow its end, and an override would reorder the line around it.
 pub fn isolate_in(locale: &str, value: &str) -> String {
+    let clean: String = value
+        .chars()
+        .filter(|&c| !crate::index::is_bidi_control(c))
+        .collect();
+    wrap(locale, &clean)
+}
+
+/// `value` as its own run in a right-to-left `locale`, as it is.
+fn wrap(locale: &str, value: &str) -> String {
     if RTL.contains(&locale) && !value.is_empty() {
         format!("\u{2068}{value}\u{2069}")
     } else {
@@ -345,12 +356,30 @@ pub fn isolate_in(locale: &str, value: &str) -> String {
 /// Right to left, each value is its own run (`isolate_in`); `{{count}}` is a
 /// number and stays as it is.
 pub fn text_in(locale: &str, key: &str, count: Option<u64>, args: &[(&str, &str)]) -> String {
+    text_with(locale, key, count, args, &[])
+}
+
+/// `text_in`, with `made` filled in too: text this layer made (a notification's line, filled into
+/// the line naming its project), whose values were cleaned and isolated when it was made. Each is
+/// its own run as a value is, keeping the isolates inside it.
+pub fn text_with(
+    locale: &str,
+    key: &str,
+    count: Option<u64>,
+    args: &[(&str, &str)],
+    made: &[(&str, &str)],
+) -> String {
     let template = pick(locale, key, count)
         .or_else(|| pick("en", key, count))
         .unwrap_or(key);
-    let values: Vec<String> = args.iter().map(|(_, v)| isolate_in(locale, v)).collect();
+    let values: Vec<String> = args
+        .iter()
+        .map(|(_, v)| isolate_in(locale, v))
+        .chain(made.iter().map(|(_, v)| wrap(locale, v)))
+        .collect();
     let args: Vec<(&str, &str)> = args
         .iter()
+        .chain(made)
         .zip(&values)
         .map(|((k, _), v)| (*k, v.as_str()))
         .collect();
@@ -380,10 +409,79 @@ pub fn t_args(key: &str, args: &[(&str, &str)]) -> String {
     text_in(current(), key, None, args)
 }
 
+/// `t_args`, with text this layer made filled in as well (`text_with`).
+pub fn t_args_with(key: &str, args: &[(&str, &str)], made: &[(&str, &str)]) -> String {
+    text_with(current(), key, None, args, made)
+}
+
 /// The plural form of `key` for `n` in the current language, `{{count}}`
 /// written in its digits and the other `{{name}}`s filled.
 pub fn t_count(key: &str, n: u64, args: &[(&str, &str)]) -> String {
     text_in(current(), key, Some(n), args)
+}
+
+/// The command line's text (mu-152), `src/i18n/locales/<language>/cli.json`, compiled in.
+const CLI_FILES: [(&str, &str); 2] = [
+    ("en", include_str!("../../src/i18n/locales/en/cli.json")),
+    ("fa", include_str!("../../src/i18n/locales/fa/cli.json")),
+];
+
+/// One language's `cli.json`, parsed the first time that language is asked for, so a run in
+/// English never parses Persian. None for a language without the file (or one that doesn't
+/// parse, which the tests catch).
+fn cli_file(locale: &str) -> Option<&'static Value> {
+    static PARSED: [OnceLock<Option<Value>>; CLI_FILES.len()] =
+        [const { OnceLock::new() }; CLI_FILES.len()];
+    let i = CLI_FILES.iter().position(|(l, _)| *l == locale)?;
+    PARSED[i]
+        .get_or_init(|| serde_json::from_str(CLI_FILES[i].1).ok())
+        .as_ref()
+}
+
+/// The command line's text for `key` in `locale`, falling back to English, then to the key.
+/// Unlike `text_in`, `{{count}}` and `args` go in as they are: Latin digits (a count or a key is
+/// copied into the next command) and no isolates (a terminal shows them as boxes). What reaches
+/// the terminal has its bidi controls escaped at the output (`escape_bidi`).
+pub fn cli_text(locale: &str, key: &str, count: Option<u64>, args: &[(&str, &str)]) -> String {
+    let in_file = |l: &str| cli_file(l).and_then(|f| pick_in(f, l, key, count));
+    let template = in_file(locale).or_else(|| in_file("en")).unwrap_or(key);
+    cli_fill(template, count, args)
+}
+
+/// A command-line template with `{{count}}` (in Latin digits) and `args` filled in.
+fn cli_fill(template: &str, count: Option<u64>, args: &[(&str, &str)]) -> String {
+    match count {
+        Some(n) => {
+            let n = n.to_string();
+            let mut all: Vec<(&str, &str)> = vec![("count", n.as_str())];
+            all.extend_from_slice(args);
+            fill(template, &all)
+        }
+        None => fill(template, args),
+    }
+}
+
+/// `key`'s text in `locale`'s own `cli.json`, without falling back: whether that language has it.
+pub fn cli_has(locale: &str, key: &str) -> Option<&'static str> {
+    dig(cli_file(locale)?, key)
+}
+
+/// `s` with every bidi control (`index::is_bidi_control`) written as `<U+XXXX>` (mu-152): what a
+/// command prints for a person shows a title's override instead of obeying it, so a crafted title
+/// can't reorder the line (Trojan Source).
+pub fn escape_bidi(s: &str) -> String {
+    if !s.chars().any(crate::index::is_bidi_control) {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len() + 16);
+    for c in s.chars() {
+        if crate::index::is_bidi_control(c) {
+            out.push_str(&format!("<U+{:04X}>", u32::from(c)));
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Tests: the core's own text in one language, on the calling thread only (tests run side by
@@ -418,7 +516,7 @@ pub mod stub {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -639,5 +737,227 @@ mod tests {
         stub::app("fa", || {
             assert_eq!(t_args("tray.show", &[("unused", "x")]), "نمایش Muster");
         });
+    }
+
+    /// mu-152: the command line's text, from `cli.json`: the language's, else English's, else
+    /// the key; values and counts filled in as they are, in Latin digits, never isolated.
+    #[test]
+    fn the_command_lines_text_falls_back_and_fills_in_plainly() {
+        let en = cli_text("en", "terminal.vscode", None, &[]);
+        assert_eq!(
+            en,
+            "VS Code's terminal can't show right-to-left text; Terminal or iTerm2 can"
+        );
+        let fa = cli_text("fa", "terminal.vscode", None, &[]);
+        assert!(fa.starts_with("ترمینال VS Code"), "{fa}");
+        assert_eq!(cli_has("fa", "terminal.vscode"), Some(fa.as_str()));
+        assert_eq!(cli_has("en", "terminal.vscode"), Some(en.as_str()));
+        assert_eq!(cli_has("fa", "no.such"), None);
+        assert_eq!(cli_has("de", "terminal.vscode"), None);
+        // A language or a key nobody has: English, then the key.
+        assert_eq!(cli_text("de", "terminal.vscode", None, &[]), en);
+        assert_eq!(cli_text("fa", "no.such", Some(3), &[("a", "b")]), "no.such");
+        // Counts and values as they are: Latin digits, no isolates, a value's controls kept for
+        // the output's own escaping (`escape_bidi`).
+        let file: Value = serde_json::from_str(
+            r#"{"n_one": "{{count}} تسک {{id}}", "n_other": "{{count}} تسک: {{id}}"}"#,
+        )
+        .unwrap();
+        let fill_n = |n: u64, id: &str| {
+            let t = pick_in(&file, "fa", "n", Some(n)).unwrap();
+            cli_fill(t, Some(n), &[("id", id)])
+        };
+        assert_eq!(fill_n(1, "mu-1"), "1 تسک mu-1");
+        assert_eq!(fill_n(1209, "~/.ssh"), "1209 تسک: ~/.ssh");
+        assert_eq!(fill_n(2, "a\u{202e}b"), "2 تسک: a\u{202e}b");
+        assert_eq!(cli_fill("{{id}}", None, &[]), "{{id}}");
+    }
+
+    /// Every cli.json parses, and holds no bidi control, written or escaped: a terminal shows
+    /// one as a box.
+    #[test]
+    fn every_cli_file_parses_and_holds_no_bidi_control() {
+        fn strings(v: &Value, out: &mut Vec<String>) {
+            match v {
+                Value::String(s) => out.push(s.clone()),
+                Value::Object(m) => m.values().for_each(|v| strings(v, out)),
+                _ => {}
+            }
+        }
+        for (l, _) in CLI_FILES {
+            let file = cli_file(l).unwrap_or_else(|| panic!("{l}/cli.json doesn't parse"));
+            let mut all = Vec::new();
+            strings(file, &mut all);
+            assert!(!all.is_empty(), "{l}/cli.json is empty");
+            for s in all {
+                assert!(!s.chars().any(crate::index::is_bidi_control), "{l}: {s:?}");
+            }
+        }
+        assert_eq!(
+            CLI_FILES.map(|(l, _)| l),
+            LOCALES,
+            "a cli.json per language"
+        );
+    }
+
+    /// mu-152 D3: each bidi control as `<U+XXXX>`, the rest as it is.
+    #[test]
+    fn escape_bidi_names_every_control() {
+        for c in bidi_cases().controls {
+            let name = format!("<U+{:04X}>", u32::from(c));
+            assert_eq!(escape_bidi(&format!("a{c}b")), format!("a{name}b"));
+        }
+        assert_eq!(escape_bidi("Pay \u{202e}ecivni"), "Pay <U+202E>ecivni");
+        assert_eq!(escape_bidi("\u{61c}"), "<U+061C>");
+        assert_eq!(escape_bidi("تسک mu-1 ~/.ssh\n"), "تسک mu-1 ~/.ssh\n");
+        assert_eq!(escape_bidi(""), "");
+    }
+
+    /// The bidi cases both sides share (src/i18n/fixtures/bidi-controls.json): every control by
+    /// code point, and values with the text each must come out as in the core (`clean`): (about,
+    /// value, clean). `window_keeps` are the values the window fills in otherwise (an isolate
+    /// pair the value closes itself), with the window's text: (value, window).
+    pub(crate) struct BidiCases {
+        pub controls: Vec<char>,
+        pub cases: Vec<(String, String, String)>,
+        pub window_keeps: Vec<(String, String)>,
+    }
+
+    pub(crate) fn bidi_cases() -> BidiCases {
+        let v: Value =
+            serde_json::from_str(include_str!("../../src/i18n/fixtures/bidi-controls.json"))
+                .expect("the fixture is JSON");
+        let controls = v["controls"]
+            .as_array()
+            .expect("a list of controls")
+            .iter()
+            .map(|c| {
+                let hex = c
+                    .as_str()
+                    .and_then(|s| s.strip_prefix("U+"))
+                    .expect("U+XXXX");
+                char::from_u32(u32::from_str_radix(hex, 16).expect("hex")).expect("a character")
+            })
+            .collect();
+        let field = |c: &Value, k: &str| c[k].as_str().expect(k).to_string();
+        let all = v["cases"].as_array().expect("a list of cases");
+        let cases = all
+            .iter()
+            .map(|c| (field(c, "about"), field(c, "value"), field(c, "clean")))
+            .collect();
+        let window_keeps = all
+            .iter()
+            .filter(|c| field(c, "window") != field(c, "clean"))
+            .map(|c| (field(c, "value"), field(c, "window")))
+            .collect();
+        BidiCases {
+            controls,
+            cases,
+            window_keeps,
+        }
+    }
+
+    /// The shared list is the core's set, no more and no less, so both sides drop the same ones.
+    #[test]
+    fn the_shared_bidi_controls_are_the_cores_set() {
+        let listed = bidi_cases().controls;
+        assert_eq!(listed.len(), 12);
+        let set: Vec<char> = (0..=0x10FFFF)
+            .filter_map(char::from_u32)
+            .filter(|&c| crate::index::is_bidi_control(c))
+            .collect();
+        let mut sorted = listed.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, set);
+    }
+
+    /// mu-152 AC9: a filled-in value loses every bidi control before it's isolated, in every
+    /// language, so a title's lone U+2069 can't close the template's isolate early.
+    #[test]
+    fn isolate_in_drops_every_bidi_control_from_a_value() {
+        let b = bidi_cases();
+        // The split with the window, pinned (R6): the core drops a pair the window keeps.
+        assert!(!b.window_keeps.is_empty());
+        for (value, window) in &b.window_keeps {
+            assert!(window.contains(['\u{2066}', '\u{2069}']), "{window:?}");
+            assert!(!isolate_in("en", value).contains(['\u{2066}', '\u{2069}']));
+        }
+        for c in &b.controls {
+            let name = format!("U+{:04X}", u32::from(*c));
+            assert_eq!(isolate_in("fa", &c.to_string()), "", "{name} alone, fa");
+            assert_eq!(isolate_in("en", &c.to_string()), "", "{name} alone, en");
+            let inside = format!("mu{c}-1");
+            assert_eq!(
+                isolate_in("fa", &inside),
+                "\u{2068}mu-1\u{2069}",
+                "{name}, fa"
+            );
+            assert_eq!(isolate_in("en", &inside), "mu-1", "{name}, en");
+        }
+        for (about, value, clean) in &b.cases {
+            assert_eq!(isolate_in("en", value), *clean, "{about}, en");
+            let fa = if clean.is_empty() {
+                String::new()
+            } else {
+                format!("\u{2068}{clean}\u{2069}")
+            };
+            assert_eq!(isolate_in("fa", value), fa, "{about}, fa");
+            // Through the text a value is filled into, in both languages.
+            let en_text = text_in(
+                "en",
+                "notify.line.own",
+                None,
+                &[("id", "mu-1"), ("title", value)],
+            );
+            assert_eq!(en_text, format!("mu-1 {clean}: your task"), "{about}");
+            let fa_text = text_in(
+                "fa",
+                "notify.line.own",
+                None,
+                &[("id", "mu-1"), ("title", value)],
+            );
+            assert_eq!(
+                fa_text,
+                format!("\u{2068}mu-1\u{2069} {fa}: تسک خودتان"),
+                "{about}"
+            );
+        }
+    }
+
+    /// Text this layer made, filled into another (a notification's line in its project): its own
+    /// run like a value, keeping the isolates its values got; a value beside it is still cleaned.
+    #[test]
+    fn made_text_keeps_its_own_isolates_inside_another() {
+        let line = text_in(
+            "fa",
+            "notify.line.own",
+            None,
+            &[("id", "mu-1"), ("title", "\u{2069}x")],
+        );
+        assert_eq!(line, "\u{2068}mu-1\u{2069} \u{2068}x\u{2069}: تسک خودتان");
+        let at = text_with(
+            "fa",
+            "notify.inProject",
+            None,
+            &[("project", "\u{202e}A")],
+            &[("line", &line)],
+        );
+        assert_eq!(at, format!("در \u{2068}A\u{2069}: \u{2068}{line}\u{2069}"));
+        let en = text_with(
+            "en",
+            "notify.inProject",
+            None,
+            &[("project", "A")],
+            &[("line", "l")],
+        );
+        assert_eq!(
+            en,
+            text_in(
+                "en",
+                "notify.inProject",
+                None,
+                &[("project", "A"), ("line", "l")]
+            )
+        );
     }
 }

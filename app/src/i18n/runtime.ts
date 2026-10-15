@@ -211,13 +211,46 @@ export function isolates(locale: AnyLocale, _ns: Ns): boolean {
   return dirOf(locale) === "rtl";
 }
 
+/** The bidi controls a value never keeps (of the core's
+ *  `index::is_bidi_control`): the embeddings and overrides, LRM, RLM and ALM. */
+const EMBEDDINGS_AND_MARKS = /[\u061c\u200e\u200f\u202a-\u202e]/g;
+/** LRI, RLI and FSI: what PDI closes. */
+const INITIATORS = new Set(["\u2066", "\u2067", FSI]);
+
+/**
+ * `value` as it's filled in (mu-152): every embedding, override and mark
+ * out, and every isolate control that doesn't close what it opens (a lone
+ * PDI would close the isolate around the value early, an unclosed LRI would
+ * swallow its end). The isolate pairs it opens and closes itself stay, and
+ * that's where the window differs from the core's `isolate_in`, which drops
+ * all twelve: here text this layer made nests into other text as a plain
+ * param all over (a `list` of isolated names, a figure isolated left to right
+ * by lib.ts's `ltr`, `sentences`, Work's totals), and dropping its pairs would
+ * merge its runs into one. A closed pair can't reach past itself, so a
+ * title's own pair can't reorder the text around it. The core nests its own
+ * text in one place only, through `text_with`, which keeps it apart.
+ */
+export function cleanValue(value: string): string {
+  const chars = [...value.replace(EMBEDDINGS_AND_MARKS, "")];
+  const open: number[] = [];
+  const unmatched = new Set<number>();
+  chars.forEach((c, i) => {
+    if (INITIATORS.has(c)) open.push(i);
+    else if (c === PDI && open.pop() === undefined) unmatched.add(i);
+  });
+  for (const i of open) unmatched.add(i);
+  return unmatched.size ? chars.filter((_, i) => !unmatched.has(i)).join("") : chars.join("");
+}
+
+/** `params`' strings go in clean (`cleanValue`), isolated or not. */
 export function interpolate(locale: AnyLocale, text: string, params?: Params, isolate = false): string {
   if (!params) return text;
   return text.replace(PLACEHOLDER, (whole, name: string) => {
     const v = params[name];
     if (v === undefined) return whole;
     if (typeof v === "number") return formatNumber(locale, v);
-    return isolate && v !== "" ? `${FSI}${v}${PDI}` : v;
+    const s = cleanValue(v);
+    return isolate && s !== "" ? `${FSI}${s}${PDI}` : s;
   });
 }
 

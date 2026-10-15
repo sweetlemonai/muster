@@ -129,6 +129,7 @@ fn list(root: &Path, home: &Path, extra: &[String]) -> Value {
         .env("HOME", home)
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_LANG")
         .env_remove("MUSTER_BASE")
         .output()
         .expect("muster runs");

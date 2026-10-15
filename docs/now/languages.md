@@ -16,3 +16,4 @@ covers: app/src/i18n/format*, app/src/i18n/numbering*, app/src/jalali*, app/src/
 - So «میشود» finds «می‌شود», «کتاب» finds «كتاب», and ۱۲ finds mu-12. (mu-151)
 - A key typed in Persian digits (sq-۱۹, ۳۰) reads as its Latin form in search and New task's Parent; commands keep Latin keys. (mu-217)
 - The menu bar's counts follow the Digits setting too. (mu-151)
+- The command line in فارسی (`--lang fa`) shows Jalali dates but keeps Latin digits everywhere, because what it prints gets copied into commands (cli-language.md). (mu-152)

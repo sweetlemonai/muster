@@ -4,7 +4,7 @@
 import { cloneElement, Fragment, isValidElement, useMemo, useSyncExternalStore, type ReactElement, type ReactNode } from "react";
 import type { AnyLocale } from "./locales";
 import { calendarIn, digitsIn, type Calendar, type Digits } from "./numbering";
-import { getLocale, getTextVersion, interpolate, isLoaded, isolates, load, subscribe, template, translate, type Params } from "./runtime";
+import { cleanValue, getLocale, getTextVersion, interpolate, isLoaded, isolates, load, subscribe, template, translate, type Params } from "./runtime";
 import type { Ns, TKey } from "./types";
 
 export type TFn<N extends Ns> = (key: TKey<N>, params?: Params) => string;
@@ -71,12 +71,14 @@ export function Trans<N extends Ns>({ ns, k, params, components }: { ns: N; k: T
 /** A `{{name}}` placeholder, kept by `split`. */
 const SLOT = /(\{\{\s*[\w.]+\s*\}\})/;
 
-/** `text` filled in, each string value in its own `<bdi>`. */
+/** `text` filled in, each string value in its own `<bdi>`, clean as
+ *  `interpolate` fills one (`cleanValue`, mu-152). */
 function isolated(locale: AnyLocale, text: string, params?: Params): ReactNode[] {
   return text.split(SLOT).map((part, i) => {
     if (i % 2 === 0) return part;
     const v = params?.[part.slice(2, -2).trim()];
-    return typeof v === "string" && v !== "" ? <bdi key={i}>{v}</bdi> : interpolate(locale, part, params);
+    const clean = typeof v === "string" ? cleanValue(v) : "";
+    return clean !== "" ? <bdi key={i}>{clean}</bdi> : interpolate(locale, part, params);
   });
 }
 

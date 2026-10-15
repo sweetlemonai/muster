@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PSEUDO } from "./locales";
 import { renderTags, Trans, useLocale, useT } from "./react";
+import bidiCases from "./fixtures/bidi-controls.json";
 import { setLocale } from "./runtime";
 
 afterEach(async () => {
@@ -107,4 +108,23 @@ describe("Trans", () => {
     const out = html(<Trans ns="shell" k="language.failed" params={{ error: "disk" }} components={{}} />);
     expect(out).toBe("Couldn&#x27;t change the language: disk");
   });
+
+  // mu-152 AC9: a value in its <bdi> loses its bidi controls as a filled-in
+  // placeholder does (runtime.cleanValue), from the cases i18n.rs reads too.
+  it.each(bidiCases.cases)("cleans a value in its <bdi>, from $about", async ({ value, window }) => {
+    const line = () => html(<Trans ns="native" k="notify.line.own" params={{ id: "mu-1", title: value }} components={{}} />);
+    expect(line()).toBe(`mu-1 ${window}: your task`);
+    await setLocale("fa");
+    expect(line()).toBe(`<bdi>mu-1</bdi> ${window ? `<bdi>${window}</bdi>` : ""}: تسک خودتان`);
+  });
+
+  it("cleans each bidi control from a value in its <bdi>", async () => {
+    await setLocale("fa");
+    for (const c of bidiCases.controls.map((x) => String.fromCodePoint(Number.parseInt(x.slice(2), 16)))) {
+      const out = html(<Trans ns="native" k="notify.line.own" params={{ id: `mu${c}-1`, title: c }} components={{}} />);
+      expect(out, x(c)).toBe("<bdi>mu-1</bdi> : تسک خودتان");
+    }
+  });
 });
+
+const x = (c: string) => `U+${c.codePointAt(0)?.toString(16).toUpperCase()}`;

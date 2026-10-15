@@ -149,7 +149,8 @@ here):
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
 | `check_limit.rs` | The limit on Your check per project |
 | `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer, the Claude accounts Muster reads (`claude_accounts`), the language |
-| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window (the Digits setting, mu-151) |
+| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window (the Digits setting, mu-151); the command line's text from `cli.json` (mu-152), and `escape_bidi` for what it prints |
+| `jalali.rs` | Jalali (Solar Hijri) dates for the command line in Persian (mu-152): a port of mu-151's `jalali.ts` (from @dastafzar/calendar, MIT), conversions only, and a stamp as `22 مهر 1405 23:40` |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count, in the language in effect |
 | `app_menu.rs` | The app's menus in the Mac's menu bar (Tauri's default: the app menu, File, Edit, View, Window, Help), titled in the language in effect and set again when it changes (mu-147) |
@@ -2570,6 +2571,39 @@ acceptance, an accepted one reads as expired. `muster start` prints the live bui
 whose areas overlap the task's `touches:` (`parallel::touches_overlap`; all of them without
 touches). `QueueInfo::lessons_waiting` feeds the window's needs-you count, the sidebar, Waiting
 for you's Lessons block and the Dock badge (`badge::dock_count`); `muster check` lists it.
+
+### The command line's language (mu-152)
+
+- **Choosing:** `--lang en|fa` on any command (refused otherwise, exit 2), else `MUSTER_LANG`, else
+  English. `LANG`/`LC_*` are never read. With `CLAUDE_CODE_SESSION_ID` set, `MUSTER_LANG` is ignored,
+  so an agent never gets Persian unless it passes `--lang`. Only whether the variable is set is
+  read, never its value. `MUSTER_LANG` is in `helper::STRIP_ENV`, so agents Muster starts never
+  see it. `run_with` resolves the language once into a thread-local (`cli::lang()`) and puts it
+  back after the run.
+- **Text:** `cli.json` (`i18n::cli_text`, `tr`/`tr_n` in `cli.rs`) is compiled in and parsed lazily
+  per language. Values are filled in plainly (no isolates) with Latin digits. Persian covers
+  `help` (`cli.json` `help.*`; `en` mirrors `help.rs`, tested; usage lines and examples as they
+  are), `list`, `show`'s footer, `ready`, `inbox`, `check`'s own lines and `cli.rs`'s write
+  confirmations. Refusals and text other modules build stay English (mu-153), as do `--json` (the
+  same bytes in both languages, tested for every read command) and everything a script parses.
+  The block bracket in Persian is built by `block_text` from `common.json`'s `block.*`; in English
+  it equals `block::sentence_of` (tested).
+- **Dates and digits (a call, mu-152):** Persian shows dates Jalali (`jalali.rs`, `stamp_in`:
+  `23 مهر 1405 10:01`). Digits stay Latin everywhere in the CLI, unlike the window (mu-151): counts,
+  keys, estimates and stamps get copied into commands. Types and priorities stay Latin for the
+  same reason.
+- **Bidi:** lines in logical order, Persian lines starting with a Persian word, no bidi control
+  characters printed (`cli.json` holds none: tested). `out_str` and `err_str` (`out!`, `errln!`)
+  show every `index::is_bidi_control` character as `<U+202E>` in both languages. `print_json`
+  writes raw. Under `--lang fa`, `TERM_PROGRAM=vscode` gets one stderr note (xterm.js has no RTL;
+  `docs/research/2026-10-15-terminal-bidi.md`).
+- **Isolation (AC9):** `i18n::isolate_in` drops all 12 bidi controls from a value before
+  wrapping it, in every language. The core's one nesting (a notification line inside
+  `notify.inProject`) goes through `text_with`, which keeps made text's own isolates. The window
+  (`runtime.ts` `cleanValue`, `lib.ts`, `react.tsx`'s `<Trans>`) drops overrides and marks and only
+  *unbalanced* isolates, because it nests text the layer already made as plain values (lists,
+  `ltr()` figures, sentences). A closed pair can't reach past itself (tested). Both sides run
+  `fixtures/bidi-controls.json`.
 
 ### Keys, ids, locks, time and git
 

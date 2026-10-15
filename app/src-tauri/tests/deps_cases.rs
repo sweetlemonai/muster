@@ -102,6 +102,7 @@ fn muster(root: &Path, args: &[&str]) -> Output {
         .env("HOME", home.path())
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_LANG")
         .env_remove("MUSTER_BASE")
         .env_remove("MUSTER_AS")
         .output()

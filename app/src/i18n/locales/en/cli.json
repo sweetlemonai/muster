@@ -1,1 +1,629 @@
-{}
+{
+  "terminal": {
+    "vscode": "VS Code's terminal can't show right-to-left text; Terminal or iTerm2 can"
+  },
+  "stage": {
+    "backlog": "Backlog",
+    "shaping": "Shaping",
+    "ready": "Ready",
+    "building": "Building",
+    "testing": "Testing",
+    "your-check": "Your check",
+    "done": "Done"
+  },
+  "time": {
+    "days": "{{count}} d",
+    "hours": "{{count}} h",
+    "minutes": "{{count}} min",
+    "join": " "
+  },
+  "block": {
+    "lead": {
+      "answer": "Your answer",
+      "action": "Your action",
+      "permission": "Permission",
+      "question": "Question",
+      "tasks": "After",
+      "outside": "Outside",
+      "other": "Blocked"
+    },
+    "afterOther": "After other tasks",
+    "afterOtherDetail": "After other tasks: {{detail}}",
+    "waitingOnCapture": "waiting on capture",
+    "detailWaitingOnCapture": "{{detail}}, waiting on capture",
+    "taskStage": "{{key}} ({{stage}})",
+    "taskStageHolder": "{{key}} ({{stage}}, {{holder}})",
+    "separator": ", "
+  },
+  "list": {
+    "notes": "Backlog notes ({{count}})",
+    "emptyNote": "(empty note)",
+    "shaping": "shaping: {{who}}",
+    "shapingFor": "shaping: {{who}}, {{quiet}}",
+    "you": "[you]",
+    "pausedSince": "[paused since {{since}}]",
+    "needsYou": "[needs you]",
+    "estAgent": "agent {{time}}",
+    "estTest": "test {{time}}",
+    "openQ": "[{{count}} open Q]",
+    "onIt": "[on it: {{who}}]",
+    "checkin": "[check-in {{text}}]"
+  },
+  "show": {
+    "key": "key: {{key}}",
+    "onIt": "on it: {{who}} ({{stage}})",
+    "onItSince": "on it: {{who}} ({{stage}}, since {{since}})",
+    "checkin": "latest check-in, by {{who}}: {{text}}"
+  },
+  "ready": {
+    "nothing": "nothing ready to start in {{project}} ({{root}})",
+    "together": "Can start together ({{count}} of up to {{max}}):",
+    "heading": "Ready to start ({{count}}):",
+    "notWith": "Not with them:",
+    "noTouches": "no touches",
+    "touches": "touches: {{list}}"
+  },
+  "inbox": {
+    "empty": "no answers waiting"
+  },
+  "said": {
+    "stage": "{{key}}: {{stage}} ({{path}})",
+    "stageBlocked": "{{key}}: {{stage}}, {{why}} ({{path}})",
+    "changed": "{{key}}: changed ({{path}})",
+    "claimed": "claimed {{key}} in {{project}} ({{root}})",
+    "created": "{{key}} {{path}}",
+    "filed": "filed {{key}} in {{project}} ({{stage}})",
+    "nextReview": "next: the review of record, by a session that didn't build it: muster review {{key}} prints its brief",
+    "finding": "{{key}}: owner finding {{finding}} for the builder to fix or dispute; first in line",
+    "notTold": "{{key}}: the builder's session wasn't told ({{why}}); muster next shows it",
+    "told": "{{key}}: told session {{session}}",
+    "paused": "{{key}}: paused ({{path}})",
+    "resumed": "{{key}}: resumed ({{path}})",
+    "askedToStop": "Asked session {{session}} to stop: it arrives after that session's next tool call.",
+    "askedToCarryOn": "Asked session {{session}} to carry on: it arrives after that session's next tool call.",
+    "cantTell": "Its session can't be told: {{why}}.",
+    "set": "{{key}}: {{field}} set",
+    "noted": "{{key}}: noted",
+    "ticked": "{{key}}: ticked {{which}}",
+    "unticked": "{{key}}: unticked {{which}}",
+    "edited": "{{key}}: edited ({{path}})",
+    "unchanged": "{{key}}: no change",
+    "linked": "{{key}}: linked {{url}}",
+    "unlinked": "{{key}}: unlinked {{url}}",
+    "commented": "{{key}}: commented",
+    "didAndCommented": "{{key}}: {{did}}; commented",
+    "attached": "{{key}}: attached {{file}}",
+    "answered": "{{key}}: answered {{q}}; delivered to session {{session}}",
+    "answeredPick": "{{key}}: answered {{q}} with {{pick}}; delivered to session {{session}}",
+    "answeredNoSession": "{{key}}: answered {{q}}; no asking session on record",
+    "answeredPickNoSession": "{{key}}: answered {{q}} with {{pick}}; no asking session on record",
+    "tookNote": "took {{note}} over from {{from}} ({{why}}); you're shaping it now, heartbeat {{stamp}}",
+    "tookTask": "{{key}}: took over the claim from {{from}} ({{why}}); heartbeat {{stamp}} ({{path}})",
+    "nothingToTake": "nothing ready in {{project}} ({{root}}) that {{who}} may take",
+    "releasedNote": "released {{note}}: {{who}} isn't shaping it any more",
+    "heartbeat": "{{key}}: heartbeat {{stamp}}",
+    "checkedIn": "{{key}}: checked in; heartbeat {{stamp}}",
+    "checkedInHandoff": "{{key}}: checked in, handing off; heartbeat {{stamp}}. Your successor runs: muster claim {{key}} --takeover",
+    "messageSent": "{{key}}: message sent to session {{session}}",
+    "checkinAsked": "{{key}}: asked session {{session}} for a check-in",
+    "arrives": "It arrives after that session's next tool call.",
+    "asked": "asked Q{{n}} on {{key}}. The answer will be delivered to this session.",
+    "earlier": "Questions on this task so far (check that yours isn't answered here):",
+    "answeredTag": "[answered]",
+    "openTag": "[open]",
+    "pickMark": "  ← pick",
+    "noAnswer": "With no answer: ({{letter}})",
+    "escalated": "escalated Q{{n}} on {{key}}; add it to WAITING-FOR-OWNER.md",
+    "escalatedOptions": "escalated Q{{n}} on {{key}}; add it to WAITING-FOR-OWNER.md with its options:",
+    "nothingToSend": "nothing to send: no open question on a Shaping or Ready task that isn't blocked is waiting to go to the owner",
+    "questions_one": "{{count}} question",
+    "questions_other": "{{count}} questions",
+    "onTasks_one": "{{questions}} on {{count}} task",
+    "onTasks_other": "{{questions}} on {{count}} tasks",
+    "sent": "sent {{what}} to the owner as one batch ({{each}}); they wait in Waiting for you. Add them to WAITING-FOR-OWNER.md.",
+    "dropped": "dropped {{note}} ({{path}})",
+    "nothingToRestore": "nothing to restore: the queue matches its last commit",
+    "restored_one": "restored {{count}} file from the queue's history: {{files}}",
+    "restored_other": "restored {{count}} files from the queue's history: {{files}}",
+    "createdQueue": "created {{queue}} (prefix {{prefix}}: its tasks are {{prefix}}-1, {{prefix}}-2…)",
+    "driverSet": "set {{keys}} in the repo's git config, so work log entries merge whole (muster merge-log)",
+    "and": " and ",
+    "accountAdded": "added {{name}}",
+    "accountRemoved": "removed {{name}}",
+    "accountSaved": "{{name}}: {{field}} saved",
+    "projectCleared": "{{name}}: {{field}} cleared",
+    "projectSet": "{{name}}: {{field}} set to {{command}}",
+    "projectPrefix": "{{name}}: prefix set to {{prefix}} (its tasks are {{prefix}}-1, {{prefix}}-2…)"
+  },
+  "reclaim": {
+    "released": "released {{key}} from {{holder}} (no heartbeat for {{quiet}}): {{now}} ({{path}})",
+    "stillShaping": "unheld, still in Shaping",
+    "backInReady": "back in Ready",
+    "releasedNote": "released backlog note {{note}} from {{holder}} (no heartbeat for {{quiet}}): nobody is shaping it now",
+    "nothing": "nothing to release: every claim in Shaping and Building, and on a backlog note, was heard from within {{within}}"
+  },
+  "merge": {
+    "merging": "{{key}}: merging into main (gate: {{gate}})",
+    "backInBuilding": "{{key}}: back in Building: {{why}}",
+    "leftBehind": "left behind: {{what}} (muster check lists it)",
+    "report": "{{key}}: {{report}}",
+    "next": "next: {{key}} {{title}}: muster start {{key}}",
+    "nextNone": "next: nothing else ready that's safe beside the tasks still running"
+  },
+  "start": {
+    "started": "started {{key}} in {{project}} ({{root}})",
+    "pickedUp": "picked up {{key}} in {{project}} ({{root}})",
+    "worktree": "worktree: {{path}}",
+    "branch": "branch:   {{branch}}",
+    "brief": "brief:    {{path}}",
+    "touches": "touches:  {{list}}",
+    "criteria": "criteria:",
+    "ownerFindings": "owner findings first: {{findings}} (sent back from Your check; see the task's Review section): fix each here and answer it with muster review {{key}} --fixed R<n> \"<how>\" or --dispute R<n> \"<why>\"; this branch's review round re-checks them",
+    "lessons": "lessons (the owner accepted these from earlier reviews; follow them):",
+    "then": "Work in the worktree. Check in every 30 minutes (muster checkin {{key}} \"…\" --pct <n>); when the gate is green: muster pass {{key}} --from building --gate \"<the gate's line>\" --summary \"<what was built, one plain line in the owner's words>\". In Testing the engine reviews the branch (muster review {{key}}); answer what it finds with muster review {{key}} --fixed or --dispute."
+  },
+  "history": {
+    "nothingToCommit": "nothing to commit: the history has every file",
+    "committed": "committed {{files}}",
+    "nothingToRecord": "nothing to record: no file is missing since the last commit",
+    "recordedRemoved": "recorded as removed: {{files}} (older commits keep them: muster restore <path> brings one back)",
+    "notKept": "this queue keeps no history of its own: only a local .muster queue (local = true) in a repo's main checkout has one",
+    "notStarted": "history: not started yet: the queue's next write starts it",
+    "allCommitted": "history: every file committed"
+  },
+  "check": {
+    "ownerVerifies": "{{key}}: waits on the owner to verify {{which}}",
+    "lessons_one": "{{count}} lesson from reviews waits for the owner's yes (muster lessons)",
+    "lessons_other": "{{count}} lessons from reviews wait for the owner's yes (muster lessons)"
+  },
+  "help": {
+    "cmd": {
+      "new": {
+        "what": "Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks. With --human it's the owner's own to do (for: human): only the owner makes one, and agents never take it; an agent that finds something only the owner can do proposes it with muster add. A criterion only the owner verifies (— verify: owner) is refused unless the owner makes the task (--as owner): make it provable (a test, a measurement, a screen state with a baseline), or make it a walkthrough check (qa: walkthrough). An idea that isn't a task yet goes in the backlog instead (muster add).",
+        "opt": {
+          "--type": "code (default), bug, chore, tech-debt, spike, design, docs or research; task still means code",
+          "--priority": "high, normal (default) or low",
+          "--tags": "comma-separated: spike, chore, tech-debt, code, docs, design, research, test, perf, security, or your own",
+          "--time": "estimated agent time, the first claim to leaving Testing, review and QA included, time blocked or paused left out: 45m, 2h, 1.5d",
+          "--test-time": "estimated time of your check only, not the wait before it (QA is in --time): 30m, 1h",
+          "--tokens": "estimated tokens: input, output and cache writes, not cache reads: 150k, 1.2M",
+          "--touches": "where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel*, docs/), for muster ready --parallel",
+          "--level": "goal, feature or task (default)",
+          "--parent": "the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none",
+          "--due": "a goal's date, YYYY-MM-DD",
+          "--human": "the owner's own task, To do → Doing → Done, hatched on the board with the You ribbon (only the owner, --as owner)",
+          "--body": "the description in Markdown; \\n is a line break; - reads it from stdin. It can't have a \"## Comments\" line (comments are the tool's)"
+        }
+      },
+      "list": {
+        "what": "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, [you] on the owner's own tasks (for: human), what a blocked task waits on, estimate, tags, \"needs you\" and open questions. Backlog notes come first, under Backlog notes, by file name and title (not under a filter only tasks have). Search, filters and sort follow the app's rules, so the same query lists the same tasks. Several values in one option (ready,building) mean any of them; options together mean all of them. When more of the agents' tasks wait in Your check than the project's limit (5 unless set in the app's Settings › Projects), a line on stderr under the Your check heading says so; the list and the exit code don't change.",
+        "opt": {
+          "--search": "words in any order, case and accents aside, each in the id (19 finds 0019), title, tags, text or holder; a word of digits only is an id, and a key (mu-19, MU-19) is that task",
+          "--stage": "backlog, shaping, ready, building, testing, your-check or done",
+          "--type": "code, bug, chore, tech-debt, spike, design, docs or research (task means code)",
+          "--tag": "only tasks with this tag",
+          "--holder": "who holds it in its stage, as the board shows it, without the session (drover/main, wt-a, owner)",
+          "--blocked": "only blocked tasks, those waiting only on the tasks they depend on too",
+          "--sort": "priority (needs you, then high to low; Done last, newest finished first), newest, oldest, changed, estimate or id (the default)",
+          "--status": "the old status: inbox, todo, doing, blocked or done",
+          "--json": "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents. Each task's sessionState (working, needs-input, ended or unknown) is what Claude Code says its holder's session is doing, read from claude agents --json for this listing only; unknown when it can't be read or the session holds other open tasks too"
+        }
+      },
+      "show": {
+        "what": "One task in full: its file as Markdown, then its key, who's on it and the latest check-in; or its parsed fields with --json. Name it by its key (mu-7, MU-7) or its number (7, 0007); another project's key shows that project's task.",
+        "opt": {
+          "--json": "fields (its key beside its id), questions, attachments, log tail"
+        }
+      },
+      "move": {
+        "what": "The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it; refused for whoever built the task, as stage is, and for a task made with muster start whose branch isn't in main yet), blocked is muster block. Use pass, return, block and stage instead.",
+        "opt": {
+          "--on": "for blocked: as muster block's --on, the kind and what it waits on in one (\"you: pick a colour\", \"0012\")"
+        }
+      },
+      "claim": {
+        "what": "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in. With --takeover, a successor session takes over a claim in Building, or a filed note's shaper's in Shaping (0097), made under its own label by another session: allowed once that session checked in with --handoff after the claim, or when the claim has been quiet for 30 minutes; the owner may always take over. The claim and its lease become yours, the task's mail waiting for the old session moves to yours (answers to its questions come to you), you count as its builder (so you don't test it), and the log says \"took over the claim from <old> (handed off)\" or \"(quiet 42 min)\". On a claim of yours that names no session (a bare label), or names your session under another account, --takeover stamps it with your session instead, logged \"(stamped)\"; your check-in, heartbeat, note, pass or block as its holder stamps it the same way, once. A task sent back to another session under your label that hasn't acted on it since, while that session holds no other unblocked task in Building (it may have ended), is taken over at once, logged \"(sent back, not picked up)\"; muster next points you there (not while it's paused). Refused for another label, while the task is paused, for a blocked task unless its holder handed off (it's waiting, not gone; the owner may still take it over), and while the old session is still working: then it says who holds it, since when, and when you may take it over. A takeover that says its mail wasn't all moved still moved the claim and every file it could: run it again, as the session that took over, and it moves what's left (\"moved 2 messages from mail/<old>\", or \"nothing left to move\"), renewing the heartbeat without another log line; a holder whose claim didn't come from a takeover gets \"you already hold\". With --role, the claim is made for the role's lowest free slot (muster team): you're Kaveh-2 from then on (--as Kaveh-2, or --as coder-2, which is the same slot), and the stamp says slot coder-2, so the board shows the role's name even after it's renamed; refused when every slot of the role is held, beside --as, and with --takeover (a successor keeps the slot's name with --as). One session is one slot, in every queue Muster knows: while it holds a slot in Building or Testing, a claim, next or takeover as another slot is refused, and so is a second Building task under any label beside a slot's; a slot's name from before a rename is still that slot. A slot is one session's: a claim as a slot another session holds is refused, and a task that comes back to you after your slot went to another session comes back without it.",
+        "opt": {
+          "--takeover": "take over a claim under your label from another session (after its checkin --handoff, or 30 quiet minutes); run again by the session that took over, it moves the task's mail still left behind; with a backlog note's file name, its shaping claim (30 quiet minutes, or its holder releases it)",
+          "--role": "claim for a role's lowest free slot (coder, or its name Kaveh): you act as the slot's name (Kaveh-2) and the claim's stamp carries it (slot coder-2); not with --as",
+          "--as": "who you are (your branch or worktree); default $MUSTER_AS, then the folder's git user.name"
+        }
+      },
+      "next": {
+        "what": "Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on merged (in Your check or Done; the owner's own task, Done), and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building; when one of them was sent back from Testing, it says to fix that one first. When more of the agents' tasks wait in Your check than the project's limit (5 unless set in the app's Settings › Projects; the owner's own tasks don't count), it says so first, on stderr (\"muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck.\"), and still claims: it warns, never refuses.",
+        "opt": {
+          "--as": "who you are; default $MUSTER_AS, then the folder's git user.name",
+          "--role": "claim for a role's lowest free slot (coder, or its name Kaveh): you act as the slot's name (Kaveh-2) and the claim's stamp carries it (slot coder-2); not with --as"
+        }
+      },
+      "heartbeat": {
+        "what": "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building, or in Shaping for the shaper holding a filed note. Your note, comment, ask, edit, vision check, pass, return and block stamp it too, and so do an unblock and a resume. A claim quiet past the lease (12 h, unless changed in the app's Settings on this Mac) can be released: to Ready from Building, unheld in Shaping.",
+        "opt": {
+          "--as": "who you are; must be who holds it"
+        }
+      },
+      "checkin": {
+        "what": "Say how the work is going: a line in the task's log that its card shows (\"60% · gate green, writing tests · 12 min ago\"), and the heartbeat with words, so it keeps your claim alive too. Only the holder, only in Building, or in Shaping for the shaper holding a filed note. Check in at each milestone and at least every 30 minutes: a card quiet for longer says \"no check-in for 45 min\". With --handoff it's your last check-in before your session ends, logged as \"check-in · handing off · <text>\": your successor under the same label may then take the claim over at once with muster claim <id> --takeover.",
+        "opt": {
+          "--pct": "how far along you think you are, 0 to 100 (your own estimate)",
+          "--handoff": "you're handing off: say what's done and what's next for your successor",
+          "--as": "who you are; must be who holds it"
+        }
+      },
+      "ping": {
+        "what": "Reach the session working on a task, through its mailbox: the answer hook hands it over after that session's next tool call. Without a message it asks for a check-in (Building, or Shaping for its shaper), and the session answers with muster checkin before anything else; the card says \"asked 2 min ago\" until it does. With one, it sends the message (at most 500 characters, control characters taken out), quoted as your note, never as instructions. Shaping (its shaper), Building or Testing; only a holder whose claim has a session stamp can be reached. Logged on the task.",
+        "opt": {
+          "--as": "who's asking: owner, or your own label"
+        }
+      },
+      "reclaim": {
+        "what": "Release every claim whose lease ran out: a task in Building, held, not blocked, with no heartbeat (or, without one, no change to its file) for longer than --after goes back to Ready, its claim cleared and the release logged as a stage change. A task held in Shaping (a filed note's shaper) is released the same way and stays in Shaping, logged as reclaimed. A backlog note whose shaper's heartbeat is that old (muster shape) is nobody's again. Live claims are left alone. Prints what it released.",
+        "opt": {
+          "--after": "the lease: 30m, 2h, 1d (a day is 24 h); default this Mac's lease from the app's Settings, 12h unless changed",
+          "--json": "what was released, for scripts"
+        }
+      },
+      "ready": {
+        "what": "The tasks a session could start now: in Ready, not blocked, nobody's claim, an agent's (never a human task), everything they depend on merged (in Your check or Done); high priority first, then the lowest id. With --parallel, up to n of them (default 3) that are safe side by side, and beside the tasks already in Building or Testing: none depends on another, and what they touch doesn't overlap. A task says where it works in touches: (folders and globs, set at shaping or with muster set <id> touches); two entries overlap when the part before the first wildcard of one starts the other's (app/src overlaps app/src/TaskPanel*), and a task without touches never pairs. Then the ones left out, with why. With --parallel it also warns on stderr, as next does, when Your check is over the project's limit.",
+        "opt": {
+          "--parallel": "only a set that can be built at the same time; how many goes after it (1 to 20, default 3)",
+          "--json": "{\"tasks\": […], \"left\": [{\"id\", \"why\"}]}, for a dispatcher"
+        }
+      },
+      "start": {
+        "what": "Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/<id>-<slug> from the local main's commit (however dirty the main checkout is) and a worktree for it, at <project>/worktrees/<repo>/<id>-<slug> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch: (and gates: on: its merge needs the criteria gate, muster gates), and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. A task back in Building with your claim and no branch (sent back from Your check after its merge, mu-101) gets a fresh branch and worktree from main the same way, its claim kept, and the brief names the owner findings to settle first: this branch's review round re-checks them. Refused claims leave nothing behind. It also sets git's merge driver for the work log in the repo's own config (merge.muster-log.name and .driver, muster merge-log), when git has none yet, touching nothing else, so a rebase in any worktree keeps both sides' new entries whole. Warns on stderr, as next does, when Your check is over the project's limit, and still starts.",
+        "opt": {
+          "--at": "where to make the worktree instead (a path that doesn't exist yet)",
+          "--here": "use the worktree you're in (one a runner like a Drover lane made, with nothing uncommitted): it's switched to the task's branch, and it stays the runner's: muster never removes it",
+          "--as": "who you are; default $MUSTER_AS, then the folder's git user.name",
+          "--role": "claim for a role's lowest free slot (coder, or its name Kaveh): you act as the slot's name (Kaveh-2) and the claim's stamp carries it (slot coder-2); not with --as"
+        }
+      },
+      "release": {
+        "what": "Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. A runner's worktree (start --here) is never removed: it's left detached with its files, and only the branch goes. In Building only its holder or the owner releases it. A paused task is refused: resume it first. With a backlog note's file name instead (a .md name), it lets go of the note you're shaping (muster shape), so another session can take it; only its holder or the owner, and a claim left on a note that's gone is cleared the same way.",
+        "opt": {
+          "--clean": "remove the worktree and the branch (required: to send a task back and keep them, use muster return)",
+          "--force": "throw away the uncommitted files and unpushed commits it listed"
+        }
+      },
+      "merge-log": {
+        "what": "Git's merge driver for the work log (decision 0009): git runs it, you don't. The repo's .gitattributes names it for docs/WORKLOG.md (docs/WORKLOG.md merge=muster-log), start and init write it to the repo's git config (merge.muster-log.driver: muster merge-log %O %A %B, then git merge-file when muster can't run); when they can't (a sandboxed session can't write .git/config), they say so last, with the two git config lines to run from outside the sandbox, and muster check keeps saying so until they're run. A merge (muster pass --from testing) passes it to its rebase itself, so it works with no config. It merges the three versions git gives it as git would, and when they clash only because both sides added whole dated ## entries, at any number of points, on top or under any entry (a ## line inside a ``` or ~~~ code block is part of its entry), it keeps them all, each whole, at its point; where both sides added at one place, newest date first and, on the same date, the incoming side (the commit a rebase replays, the branch a merge brings in) above. An entry both sides added is kept once where the sides clash; where git merge-file merges them cleanly (the same entry added at two points that don't touch), git's result stands and the entry is there twice. An older entry changed or removed on one side merges too, entry by entry (mu-209): it's as that side has it, and one both sides changed the same way, or both removed, is there once or gone once; an entry is its whole ## line, so an edited heading is the old entry removed and a new one in its place, and it stays in that place among the other side's new entries. Anything else (the text above the entries changed, one older entry changed differently on each side or changed on one and removed on the other, an edited heading where the other side changed, removed or edited it, a new entry between two older entries the other side removed or renamed while putting new ones there, an entry moved, a new entry with no date) gets git's conflict markers. The result goes into <ours>; it exits 0 when it's clean, 1 with conflicts. When it can't merge (a file it can't read or over 64 MB, git merge-file failing), git merge-file merges in its place, so a conflict always has both sides in its markers; only when that fails too is <ours> left as it was, with exit 2. When git can't start muster (not on the PATH, as for a GUI git client), the configured driver runs git merge-file itself, with the same result."
+      },
+      "pass": {
+        "what": "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria, no open vision conflict (muster vision), no [NEEDS CLARIFICATION: …] marker left in the write-up, and no open question without a --no-answer default (muster clarify). Building → Testing needs the gate's result line, a summary of what was built (one plain line, 160 characters at most, no line breaks; the task's own summary: from muster set or an earlier pass does too; a goal, a feature or the owner's own task needs none), and every review finding open for the builder answered (muster review), and releases your claim. When the project has now pages (docs/now/<area>.md: the rules in force per area, each with covers: <globs>), a task whose touches: a page's covers: overlap must change that page on its branch (committed, since it left main), or say why it still holds with --now-unchanged \"<why>\" (one line, 500 characters); either way its log names the pages. Refused otherwise, naming the page. A task without touches:, one no page covers, and a project without docs/now/ pass as before. The summary leads the owner's check: Your check's card and its What you're accepting. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, once its review of record is clean at its branch's tip (muster review) and every gate record it needs is green there (muster gates: criteria for a task started since gate records, visual QA when qa: is set; needs-walkthrough doesn't hold it) (the owner may merge without them, and the report says so; a commit made while it waits for another merge or while its gate runs stops it, unmerged), in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files; the review and the gate records carry over to the replayed commits); run the project's gate in its worktree (muster projects set <name> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, the review, the gate records, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.",
+        "opt": {
+          "--from": "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)",
+          "--gate": "Building → Testing: the gate's result line, verbatim",
+          "--summary": "Building → Testing: what was built, in one plain line in the owner's words (160 characters); kept as the task's summary:",
+          "--now-unchanged": "Building → Testing: why the now pages (docs/now/) the task covers still hold though its branch doesn't change them; logged",
+          "--commit": "Your check → Done: the commit that ships it",
+          "--as": "who you are; must match who claimed it to pass it out of Building"
+        }
+      },
+      "return": {
+        "what": "Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there, by that exact session. A send-back from Testing is always allowed, even when that holder already holds another task in Building: it isn't a new claim. It comes first (`muster next` says \"fix mu-59 first (sent back by the review)\", and the card does), and the holder's other task waits behind it. Sent back from Your check (merged), the tasks that depend on it and haven't started show blocked by it again; ones already under way keep going, with a note on their log (\"0002 went back to Building: <why>\"). From Your check to Building (--to building) it's the owner's QA send-back, whoever runs it: it goes to its builder first in line in the same way (\"fix mu-82 first (sent back by you: <why>)\", or \"by <who>\" when an agent sent it), its reason becomes an owner finding in the task's review (the next R number; a task with no review yet gets one, round 0) that the builder answers with `muster review <id> --fixed R<n>` or `--dispute R<n>` before passing it to Testing, where the next round checks it like any finding, and the builder's session is told through its mailbox (when it can't be, the task's log says so and the send-back still stands). Only the owner settles a disputed owner finding: a round that accepts the dispute leaves it for the owner, and the three-round cap never holds an owner finding. Every agent's task gets the owner finding, merged or not: with no branch (the merge clears it) the finding names the merged commit, the task can't pass on while the finding is open or answered, and the builder's `muster start <id>` makes a fresh branch from main whose review round settles it first (or the owner settles it with --settle). The owner's own task gets none. Without --to, from Your check it goes to Testing.",
+        "opt": {
+          "--to": "an earlier stage: backlog, shaping, ready, building, testing or your-check"
+        }
+      },
+      "block": {
+        "what": "Mark a task blocked, and say why: the card, the table, the timeline and the task pane say plainly what it waits for (\"Your answer: Q2 …\", \"Your action: …\", \"Permission: …\", \"After mu-14\", \"Outside: …\"). It stays in its stage and keeps its claim; blocked is a flag, not a stage. Task ids go into its depends instead of a flag: it shows blocked by them until they're all merged (in Your check or Done; the owner's own task, Done), and clears by itself then (logged). A block on a question clears when it's answered. You, permission and outside stay until muster unblock. Blocked on you or by a permission counts as waiting for you. Refused: an unknown kind, no detail, a question that isn't open in the task.",
+        "opt": {
+          "--on": "the kind, then what it waits on (in --on after the kind, or after it): task ids 0014,0016 (added to depends); you \"<what you have to do or decide>\"; permission \"<what access, and where to grant it>\"; question Q2 (an open question in this task); outside \"<a third party, a service, a release>\". owner … and capture … still work, as you and question"
+        }
+      },
+      "unblock": {
+        "what": "Clear the blocked flag (on you, by a permission, a question or outside). The task carries on in its stage. A block on tasks has no flag: it clears by itself once they're done."
+      },
+      "pause": {
+        "what": "Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree and goes to the Paused lane, out of the working columns, until Resume puts it back in its column. It isn't blocked. Nobody can claim, pass or pick it (next, ready), and nobody, the owner included, returns it, moves its stage or releases it (return, stage, move, release) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. A task (not a goal or feature), from Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as \"paused (why)\"; the timeline and the Work section's time leave paused stretches out.",
+        "opt": {
+          "--as": "who's pausing it: owner, or your own label"
+        }
+      },
+      "resume": {
+        "what": "Carry on with a paused task, as it was. In Building its claim's lease starts over, so the holder has one lease to come back before muster reclaim gives it to whoever claims it next; the session working on it in Building or Testing gets a message to carry on from its last check-in. Logged as \"resumed after 2 h\".",
+        "opt": {
+          "--as": "who's resuming it: owner, or your own label"
+        }
+      },
+      "stage": {
+        "what": "Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim. A builder can't use it to skip its tester: from Testing or before to Your check or Done it's refused for whoever built the task, as pass is; the owner's is logged as the owner's override. A task made with muster start can't be put in Your check or Done until its branch is in main (the merge is how it gets there), for the owner too: it is refused with muster pass <id> --from testing to merge it or muster release <id> --clean to drop the branch; once the branch is in main (merged some other way, even deleted since) it goes. Tasks with no branch, and the owner's own, aren't held to it.",
+        "opt": {
+          "--from": "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"
+        }
+      },
+      "set": {
+        "what": "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time (QA included) and test-time your check only. touches is where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel*, docs/), which muster ready --parallel keeps apart; empty clears it. summary is what was built, in one plain line (160 characters at most, no line breaks or control characters), the line that leads the owner's check: it writes or fixes it in any stage, Your check too. qa is the visual QA its screens get (docs/GATES.md): reference, walkthrough or both, set by the shaper for a task that touches UI; it makes visual QA (G4) a gate the merge needs (muster gates), and \"\" clears it. Once the task is started (on its own branch, even sent back to Ready) or in Building or later, only the owner changes it. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do)."
+      },
+      "edit": {
+        "what": "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. A new criterion only the owner verifies (— verify: owner) is refused unless the owner edits (--as owner); the ones the task has stay (mu-132). Once a task has a vision check, its ## Vision section is the tool's too: left out of the write-up and kept as it is, and a new \"## Vision\" line is refused. So is its ## Questions section, wherever it sits (muster ask writes it): left out of the write-up, put back where it was, and a new \"## Questions\" line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
+        "opt": {
+          "--body -": "read the new write-up from stdin instead of opening an editor (for scripts)",
+          "--as": "who's editing; the holder of a task in Building may edit it"
+        }
+      },
+      "note": {
+        "what": "Add a line to the task's log (the tool stamps the time)."
+      },
+      "comment": {
+        "what": "Add a comment to a task's thread: under ## Comments, above the Log, stamped with who and when, and logged as commented. Anyone may comment on any task at any stage, one someone else holds included: comments don't touch the write-up, and edit leaves them alone. The holder's own comment keeps their claim alive, like a note. Lines are kept (each after the first indented in the file); control characters go, at most 4,000 characters, and a line that would read as a stage change is refused. The owner's comment (the app's, or --as owner) acts when its first word is an @action: @accept passes it out of Your check, as Accept does (only in Your check); @sendback <why> sends it back as the Send back form does by default (from Your check an agent's task to its builder, with <why> as an owner finding, as `muster return --to building` does; elsewhere one stage back), and needs a why; @block <why> blocks it as block --on reads it: on the tasks when <why> starts with their keys (@block mu-12,mu-14; a colon after the keys sets a reason that starts with a number apart, @block mu-12: 2026 budget), on you, permission, question or outside when it starts with that kind (@block you: pick the icon), else on outside with <why>, a digit or the word tasks first included (@block 3pm call, @block 9:30 standup: a word with a colon inside is never a key); @ask <question> sends the question to the session working on it, to answer with a comment (refused when nobody holds it or its session can't be reached). Only the first word counts, one action per comment. The action runs first: if it's refused, the comment isn't saved and the reason is shown as it is; once it ran, the comment is saved with what it did on a line after the text (\"→ sent back to Building (owner finding R3)\"); if the comment then can't be saved, it says what the action did and why, exits 1, and the action stands: don't send it again. An @ word that isn't one of these is refused, naming them, and nothing is saved. Anyone else's comment that starts with @ is a plain comment.",
+        "opt": {
+          "--body": "the comment instead of the words after the id; \\n is a line break; - reads it from stdin",
+          "--as": "who's commenting; default $MUSTER_AS, then $USER"
+        }
+      },
+      "link": {
+        "what": "Add an external link to a task (a spec, a PR, a design), or remove one by its number (from 1) or address. Links are https only, up to 2,000 characters, printable ASCII (percent-encode the rest), without a user name or password or a percent-encoded host; a title has no <, > or ;. At most 20 per task. They're in the front matter as links: title <https://…>; <https://…>, the task pane lists them, and a click opens one in your browser. Logged.",
+        "opt": {
+          "--remove": "the link's number (1 is the first) or its address"
+        }
+      },
+      "tick": {
+        "what": "Tick one of the criteria only the owner verifies (\"— verify: owner\"), in Your check. Agents tick their own in the file, with the proof; these have no proof but the owner's look. Testing passes to Your check without them; Done needs them."
+      },
+      "untick": {
+        "what": "Undo muster tick: untick one of the owner's criteria."
+      },
+      "attach": {
+        "what": "Copy files into the task's attachments/<id>/ (25 MB each; never overwrites, a clash gets -2)."
+      },
+      "ask": {
+        "what": "Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there. When the answer is a choice, ask with options: 2 to 6, each one line of up to 200 characters, with your pick and what you'll do with no answer. They're written under the question as (a), (b)…, and the owner answers with one click in the app or muster answer --pick.",
+        "opt": {
+          "--option": "one option, once for each (2 to 6, in order: the first is a)",
+          "--pick": "the option you recommend, by letter or number",
+          "--no-answer": "the option you'll take if no answer comes, by letter or number",
+          "--as": "who's asking (your branch); default $MUSTER_AS, then the folder's git user.name",
+          "--session": "your session id; default $CLAUDE_CODE_SESSION_ID"
+        }
+      },
+      "answer": {
+        "what": "Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session; for a question asked with a --no-answer default, whoever holds the task by then gets it (the builder, or the tester in Testing), the asker only when nobody does. A question asked with options can be answered by picking one: the answer is that option's text, then any words you add. A pick that isn't one of its options is refused, and so is a second answer to a question already answered; any open question can still be answered in words.",
+        "opt": {
+          "--pick": "answer with this option, by letter or number"
+        }
+      },
+      "escalate": {
+        "what": "Mark a question \"Escalated to owner\": it shows as waiting for you. Capture then adds it to WAITING-FOR-OWNER.md, with its options and the asker's pick when it has them (escalate prints them). Once per question.",
+        "opt": {
+          "--as": "who takes it to the owner, usually capture"
+        }
+      },
+      "clarify": {
+        "what": "The clarify pass in Shaping: the questions shapers asked, sent to the owner as one batch. Lists every open question not yet escalated on a task nobody has started (Shaping, Ready) and that isn't blocked, grouped by task, each with the task's key and title, the question, its options, the asker's pick and the no-answer default (\"going with (b) unless you answer\"). The questions are quoted as data. Writes nothing. --send escalates them all in one step, as escalate does, with one log line per task: the owner sees them together in Waiting for you under \"From shaping\", and gets one notification. A second --send finds nothing to send. Run it once at the end of a shaping run, not after each task. A shaper marks what it doesn't know in a write-up as [NEEDS CLARIFICATION: <what's unknown>]; muster pass --from shaping refuses while one is left, and muster file warns about them. Each is decided (written under ## Questions as \"Decided by <you>, overrule any time: …\") or asked with muster ask, the marker replaced with \"(see Q2)\". A question with a --no-answer default lets the task go to Ready on it; one without holds it in Shaping until it's answered.",
+        "opt": {
+          "--send": "escalate every question listed to the owner, as one batch",
+          "--json": "the list as JSON: key, id, title, stage and questions (n, asker, question, options, pick and noAnswer by letter or null); with --send, what it sent in the same shape ([] when nothing)",
+          "--as": "with --send: who takes them to the owner, usually the shaper"
+        }
+      },
+      "inbox": {
+        "what": "Answers waiting for your session, each handed over once and moved to delivered/ (unless --keep). Without the answer hook, run it between steps.",
+        "opt": {
+          "--session": "your session id; default $CLAUDE_CODE_SESSION_ID",
+          "--keep": "show them without marking them delivered"
+        }
+      },
+      "check": {
+        "what": "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine), and in a local queue files missing since its history's last commit (muster restore --all, or muster history removed when they were deleted on purpose) or writes the history couldn't commit (muster history commit). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), a pause from before muster pause (a block whose reason says paused: make it a pause with --fix-pauses), an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), and a repo whose .gitattributes uses merge=muster-log without the work log's merge driver in its git config (with the two git config lines that set it), and files changed outside muster since a local queue's history's last commit (muster history commit), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, lessons from reviews waiting for the owner's yes, Shaping tasks with no vision check yet, a now page (docs/now/) over 60 lines or 4 KB, without covers:, with the same covers: as another, or that's a symlink (warnings: they never fail the check or stop a command), and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/<id>- branch whose task is past Testing, each with the command that cleans it; and a task whose stage lags its code: in Building or Testing (not paused), its task/ branch already in main (merged by hand) with a commit the branch made itself (a fast-forward or rebase onto main with nothing built doesn't count), with the pass that catches it up (muster pass <id> --from building --gate \"<the gate's line>\" --summary \"<what was built>\", then --from testing; in Testing only the second; with its worktree gone, the pass from Testing, run in the project's repo, records the merge main already has, with no rebase, gate or push, keeping origin's copy of the branch until origin's main has it). With --fix-pauses, in every queue Muster knows (or the one --queue names): lists each block from before muster pause whose reason says paused (\"paused\", \"owner (paused)\") with its stage, since when and the reason it keeps, then makes each a pause with that reason and time: paused-why is what the reason says besides owner and paused, paused the time of the line that blocked it (else the latest line about the pause, else the last line), and the block is cleared as muster unblock clears it, the stage kept (an old blocked file with no stage is Ready, and goes back to todo/). No session is told. A block that says anything else is never touched, and running it again changes nothing. Exit 1 if one couldn't be converted (it's left as it was).",
+        "opt": {
+          "--fix-pauses": "make the old paused blocks pauses, in every queue Muster knows",
+          "--dry-run": "with --fix-pauses: list them and change nothing",
+          "--as": "with --fix-pauses: who's converting them; default $MUSTER_AS, then the folder's git user.name"
+        }
+      },
+      "index": {
+        "what": "Rebuild INDEX.md, the queue's master list: every goal with its features and tasks, then the tasks under none by stage, the backlog notes, and what's done, each with its stage, the tasks it still waits on, priority, type, estimate (agent time, test time, tokens), how many comments it has and a link to its file. Muster rewrites it after every change it makes, so this is for after a hand edit. It's generated: never edit it by hand. With --as-built <file>, the same run also writes the queue at a glance into that document (an as-built doc such as docs/AS_BUILT.md) between the lines <!-- muster:queue-at-a-glance start --> and <!-- muster:queue-at-a-glance end -->: the counts, then every task by stage with its key, title and who's on it, then the backlog notes. Only ids, titles, stages and holders' labels go in, never a write-up or an answer, and $HOME reads as ~. Everything outside the two lines stays byte for byte; without both, each once and in that order, it's refused and nothing is written, INDEX.md included.",
+        "opt": {
+          "--check": "write nothing; exit 1 if INDEX.md is missing or isn't exactly what muster would write now",
+          "--as-built": "also write the queue at a glance between the two marker lines in this file (a plain file, never a symlink)"
+        }
+      },
+      "restore": {
+        "what": "Put back the last committed copy of queue files from a local queue's history (0109). A local queue (local = true) keeps a git of its own in the repo's git folder (.git/muster/history.git), which muster commits to after every write it makes, so a git clean -fdx, a deleted folder or a bad hand edit costs nothing: --all brings back every file missing since the last commit, and a new task made in the meantime never takes one of their ids; a path (from the queue's folder, or absolute inside it) brings back that file, missing or changed, or every such file under a folder. A file changed since is put back only when it's named, and files added since are left alone. A file recorded as removed (muster history removed) comes back only when it or a folder holding it is named (--all leaves it gone), from the commit before its last removal, and is in the history again; a removed task file whose id another task holds now is refused, naming that task, and nothing is put back. It runs under the queue's lock, rebuilds INDEX.md, and the history logs it as a commit of its own (\"muster: restored 3 files (who)\"). Mail, INDEX.md and tasks.json aren't in the history. muster check says when there's something to restore. A committed queue (local = false) is in the repo's own history: use git there.",
+        "opt": {
+          "--all": "every file missing since the last commit",
+          "--as": "who restores, for the history's log; default $MUSTER_AS, then the folder's git user.name"
+        }
+      },
+      "history": {
+        "what": "A local queue's history (0109): whether every file is committed, what isn't (writes git couldn't commit, files missing since the last commit, files changed outside muster), and the last 10 commits, each named by its task's key and the log line its write added (a write of several files, such as a review or an attachment, by its task's). commit commits what the history doesn't have yet: files changed or added outside muster (a hand edit, Drover's answers) and writes that couldn't be committed, and starts a history that has no commit. It never commits a missing file as gone: muster restore brings it back. removed records files deleted on purpose as removed (the paths, files or folders from the queue's folder, or --all for every file missing since the last commit), so muster check stops asking to restore them and restore --all leaves them gone; only a file that's gone and in the last commit can be. Older commits keep a removed file: muster restore <path> brings it back. A removed task's id is never given to a new task. The history is packed by git gc --auto once it has enough loose objects. Never pushed; the history has no remote.",
+        "opt": {
+          "--all": "with removed: every file missing since the last commit",
+          "--json": "the state as JSON (kept, started, lastCommit, pending, pendingError, missing, changed)",
+          "--as": "who records a removal, for the history's log; default $MUSTER_AS, then the folder's git user.name"
+        }
+      },
+      "add": {
+        "what": "Drop a one-liner in the backlog, to be shaped into a task later. It's a file in the backlog folder (inbox/ today), named by the time and the line; prints its name. No id, no front matter. Line breaks in the line become spaces, and it's refused over 200 characters; the body, if any, is Markdown up to 50,000. Checked like a claim: with $MUSTER_ROOT at another project's queue, pass --queue to mean it.",
+        "opt": {
+          "--body": "more detail in Markdown; \\n is a line break; - reads it from stdin",
+          "--as": "who found it; default $MUSTER_AS, then the folder's git user.name"
+        }
+      },
+      "shape": {
+        "what": "Claim a backlog note for shaping and print its brief: its full text, what the product, tech and UI roles each write, the project's docs to read (CLAUDE.md, docs/VISION.md, docs/DESIGN.md, docs/decisions/), open tasks that share words with it (to catch a duplicate) and the now pages (docs/now/) their touches: cover, the lenses, the estimates, measured on this queue (what its finished tasks took against est-time, as actual ÷ estimate at p50 and p80 and the median hours, overall, by type and by size: S up to 1h, M up to 3h, L up to 8h, XL over; a group of fewer than 5 says \"too few (n)\"; nothing finished yet says to estimate by scope; --json: measured) with which estimate is whose (--time is agent time, from the first claim to leaving Testing, review rounds and QA included, time blocked or paused left out; --test-time is your check only; your wait in Your check is neither), and the exact muster file command with the task template, and what to do with unknowns: mark them [NEEDS CLARIFICATION: …], decide or ask each, and send the run's questions with muster clarify --send once, at its end. The lenses are the concerns every project shares: accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs. The template has a **Lenses:** block with one line for each, which the shaper fills in: what the task must do for it, or \"n/a\" and why. Every lens applies unless the project skips it, with its reason, and the brief names the skipped ones and why. A .muster queue skips in .muster/config.toml: [shaping] skip = [\"payments\"], then [shaping.reasons] payments = \"<why>\". An old queue skips in its README.md's front matter: shaping-skip: payments, themes, and a shaping-reason-payments: <why> line for each. A skip of a lens that doesn't exist, or one with no reason, doesn't count, so the lens still applies, and muster check reports it. The claim is yours (--as, with your session) while you shape: it's in shaping.json at the queue's root, the board shows who holds the note, and muster list says \"· shaping: <you>, 12 min\". Running it again renews its heartbeat. Someone else's note is refused (\"Shapour is shaping it (since 14:02, session 145fae…); --peek to read it\") until their heartbeat is older than the lease (12 h unless changed in the app's Settings), when you take it over. One note at a time: file, drop or release it (muster release <note-file>) before you shape the next; the owner may hold several. Filing it carries the claim to the task in Shaping; passing that to Ready ends it.",
+        "opt": {
+          "--peek": "print the brief only: the note isn't claimed and nothing is written",
+          "--json": "the same as JSON, for Drover and scripts, with the claim as claim",
+          "--as": "who you are; default $MUSTER_AS, then the folder's git user.name"
+        }
+      },
+      "file": {
+        "what": "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria). It warns, on stderr, naming each lens the project doesn't skip that the body has no **Lenses:** line for (or only the template's <…>), and files it anyway; --json gives them as missingLenses. It warns the same way about each [NEEDS CLARIFICATION: …] marker left in the body (--json: markers): filed anyway, but the pass into Ready waits until each is decided or asked (muster help clarify). A criterion only the owner verifies (— verify: owner) is refused unless the owner files it (--as owner): make it provable (a test, a measurement, a screen state with a baseline), or make it a walkthrough check (qa: walkthrough). A note you're shaping (muster shape) becomes your task: it's claimed by you in Shaping with a fresh heartbeat, and the note's claim ends; passing it to Ready (or back to the backlog) lets go. Someone else's note is refused while their lease runs; the owner may file it anyway, and anyone once the lease ran out, logged as taken over from them.",
+        "opt": {
+          "--type": "code (default), bug, chore, tech-debt, spike, design, docs or research",
+          "--priority": "high, normal (default) or low",
+          "--tags": "comma-separated tags",
+          "--time": "estimated agent time, the first claim to leaving Testing, review and QA included, time blocked or paused left out: 45m, 2h, 1.5d",
+          "--test-time": "estimated time of your check only, not the wait before it (QA is in --time): 30m, 1h",
+          "--tokens": "estimated tokens: input, output and cache writes, not cache reads: 150k, 1.2M",
+          "--touches": "where in the repo it works, folders and globs, comma-separated: what muster ready --parallel keeps apart",
+          "--body": "the shaped task in Markdown, with ## Acceptance criteria (required); - reads it from stdin"
+        }
+      },
+      "drop": {
+        "what": "Set a backlog note aside: it moves to the backlog's dropped/ folder with the reason added at its end (one line, 500 characters). It's off the board but kept. Its claim (muster shape) ends with it. Someone else's note is refused while their lease runs; the owner may drop it anyway, and anyone once the lease ran out, said as taken over from them in the line."
+      },
+      "vision": {
+        "what": "Check a task against the project's one picture (docs/VISION.md, docs/decisions/, docs/DESIGN.md) and the tasks it touches. Muster runs no agent: muster vision <id> prints the vision brief for one, with the task quoted as data, the picture files that exist, the open tasks it touches (sharing two title words, named in its text, its parent and depends), the now pages (docs/now/: the rules in force per area) whose covers: overlap its touches:, quoted as data (a task without touches: gets every page's name, not its text), what to look for (conflicts, overlaps, gaps, a rule on a now page it breaks or changes, the cost of pivoting) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): the task gets a ## Vision section under its write-up (above its Comments and Log), replacing the last one, with each conflict numbered V1, V2… and both sides quoted; the front matter's vision: <n> open; and a log line. A conflict whose fix changes direction is also escalated to the owner, as one question per record with the cost of pivoting. --resolve V2 \"<how>\" settles one (one line, 500 characters). While any is open, Shaping → Ready is refused; a task never checked isn't held back. --all lists the inputs for every open task. A project whose docs/VISION.md has a **Lenses needed:** line (lens names, comma-separated: **Lenses needed:** accessibility, i18n) gets every task that says \"n/a\" for one of them flagged: the brief lists them, and --record adds each as a conflict unless the JSON has one already (its title says n/a and names the lens).",
+        "opt": {
+          "--json": "the brief, the record or --all as JSON, for Drover and scripts",
+          "--record -": "the agent's result, as JSON on stdin; malformed JSON is refused with what's wrong",
+          "--resolve V2": "mark that conflict resolved, with how after it",
+          "--all": "every open task's inputs: its vision state and the tasks it touches, and every now page once"
+        }
+      },
+      "review": {
+        "what": "The review of record for a task started on its own branch: in Testing, the owner's review engine (/deep-review, its lenses and verifiers, its tier picked from the diff's size and risk) reviews the branch, the builder fixes or disputes each finding back in Building, up to 3 rounds, then the owner. Muster runs no agent: muster review <id> prints the brief for the next round (where to run it, the range: the whole branch since it left main, then only the commits since the last round; the task quoted as data, the builder's answers to re-check, the owner's lessons for its area and what not to flag, the kinds of mistake already named, and the JSON to return). Writes nothing. --record - reads that JSON from stdin (or takes it as its value), from a session that didn't build it (or the owner): head must be the branch's tip; every finding the builder answered needs an answer (an accepted fix is labelled confirmed, an accepted dispute false-positive, the rest open again); new findings are numbered on (R1, R2… across rounds); the round is kept in the queue's reviews/<id>.json, the task gets a ## Review section under its write-up (above its Comments and Log) and review: round <n> · <open> open · <answered> answered in its front matter, and a log line with the tokens it took. Then, with anything but nits open, rounds 1 and 2 return it to Building for its builder, and round 3 blocks it on the owner instead of a fourth round; clean, the merge may go ahead. --fixed R1 and --dispute R1 \"<why>\" are the builder's answers, in Building (the holder or the owner; a dispute says why, 500 characters); Building → Testing waits until every open finding but a nit is answered. --settle is the owner's: any finding, any state, also to change a label. Merging a started task (muster pass <id> --from testing) needs the review clean at the branch's tip; the owner may merge without one, and the merge report says which. A finding's kind (a short slug) recurring confirmed on 2 tasks proposes a lesson (muster lessons).",
+        "opt": {
+          "--json": "the brief or the record's result as JSON",
+          "--record -": "the reviewer's result, as JSON on stdin; malformed JSON, a head that isn't the branch's tip, a missing answer, or a finding without a confidence or under 75, is refused, and nothing changes",
+          "--fixed R1": "the builder: fixed, with how after it (optional)",
+          "--dispute R1": "the builder: it's wrong, with why after it",
+          "--settle R1": "the owner: confirmed, false-positive, wont-fix or open, with why"
+        }
+      },
+      "team": {
+        "what": "The team (task 0112): every role in roles.toml with its name, title, stage, preferred models, turn, budget and context caps, workers, and its slots: Kaveh-1, Kaveh-2 and on, each with the task and holder that holds it, or free, and the next one --role hands out (the lowest free). A slot is held while a task in Building or Testing, in any queue Muster knows (and the one you're in), has a holder with it: a stamp's slot part (slot coder-2), or a label that names it (Kaveh-2). roles.toml sits beside projects.json; Muster writes it from its defaults on first read: Shapour (shaper), Arash (architect), Dariush (designer), Kaveh (coder), Kia (tester), Sohrab (security), Parviz (performance), Azadeh (accessibility), Mehran (release), Leila (lead) and Pouya (researcher). One table per role, keyed by its id, which never changes: [coder] then name = \"Kaveh\", so renaming a role is one line, and every view shows the new name, since stamps keep the id and the number. The other keys: title, stage, prompt, tools, permission, models, max_turns, max_budget_usd, context_cap, workers, slots, moves, providers, writes. A file with an unknown table or key, a value of the wrong shape, or one out of bounds or off its allowlist is refused with its line and key, and so is every command that reads it. Settings › Agents › Roles edits it too. Writes nothing to the queue.",
+        "opt": {
+          "--json": "the roles, each with its profile's fields, slotLines (slot, name, heldBy) and free"
+        }
+      },
+      "instructions": {
+        "what": "A role's brief, for a session's prompt to load (task 0112): what the role does, its stage and the stage moves it may make, its tools, permission, models and caps, its slots and the name to act as, and the rules from PROTOCOL.md it keeps. The role by its id (coder) or its name (Kaveh), from roles.toml (see muster team). Writes nothing."
+      },
+      "verify": {
+        "what": "The criteria gate (G3, mu-132, docs/GATES.md) for a task started on its own branch, in Testing. Without --record it prints the brief for the ac-verifier agent (the personal layer's, linked into each repo's .claude/agents/): the worktree and branch, the diff against the merge-base with main, where each gate stands at the tip (the builder's gate line, the review, the records), and the criteria, quoted as data. The agent finds each criterion's code and the evidence that would fail if it broke, may run one targeted test per criterion (never the full gate), never edits, and gives each criterion met, partial, unmet or unproven, with the gap. Muster runs no agent. Writes nothing. --record - takes the agent's JSON on stdin as the task's criteria record, exactly as muster gate <id> criteria --record does (the same checks, the same refusals; a session that didn't build it, or the owner). The record ticks the criteria: each met one gets [x] and a proof of what was checked, its evidence and the record's commit (a proof from before is replaced; an item over several lines is put on one), each other one is unticked if it was ticked, and its gap (AC2 unproven: <why>, or not in the record) is logged in the task. The owner's own criteria (— verify: owner) are never touched. It's green only when every criterion but the owner's is met, and the merge needs it green at the tip.",
+        "opt": {
+          "--record -": "the agent's result, as JSON on stdin; malformed JSON, a head that isn't the tip, the builder's session or evidence outside attachments/<id>/ is refused, and nothing changes",
+          "--json": "the record's result as JSON, with ticked, unticked and gaps"
+        }
+      },
+      "gate": {
+        "what": "A gate record for a task started on its own branch (mu-131, docs/GATES.md): in Testing, a session that didn't build it (or the owner) checks the branch's tip and records the result, one record per gate. criteria (G3) gives each acceptance criterion met, partial, unmet or unproven; visual (G4) gives each touched screen state pass, fail or needs-walkthrough, with expected false for a difference nobody asked for (which can't pass). Without --record it prints what to check (the criteria with their ids, the tip) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): {\"head\", \"verdict\", \"items\": [{\"id\", \"verdict\", \"expected\", \"text\", \"evidence\", \"note\"}], \"not_checked\": [...]}, checked strictly: an unknown field, over 1 MB, over 200 items or 20 evidence paths an item is refused. not_checked (criteria only, optional) lists what the tester didn't verify, at most 20 lines of 200 characters: shown under the record as Not checked: …, never part of the verdict. head must be the branch's tip. Criterion ids are matched however they're typed (AC1, ac1 and 1 are the same). Muster works the verdict out (criteria: green when every criterion but the owner's own is met; visual: red with any fail, needs-walkthrough with any walkthrough, else green) and refuses a stated one that differs; needs-walkthrough is only for visual. Evidence paths must be files that exist inside the task's attachments/<id>/ (muster attach): ../, an absolute path, a symlink out and an attachments folder that is itself a symlink are refused. The record is kept in the queue's gates/<id>/<gate>.json, replacing the last one; the task gets a ## Gates section under its write-up (above its Comments and Log), gate-records: criteria green · visual needs-walkthrough in its front matter, and a log line. A criteria record also ticks the criteria, as muster verify's does (mu-132): each met one with its evidence, the rest unticked with their gaps logged. Merging it (muster pass <id> --from testing) needs every gate it needs green at the tip (muster gates).",
+        "opt": {
+          "--record -": "the tester's result, as JSON on stdin; malformed JSON, a head that isn't the tip, the builder's session or evidence outside attachments/<id>/ is refused, and nothing changes",
+          "--json": "the record's result as JSON"
+        }
+      },
+      "gates": {
+        "what": "Which gates a started task needs and where each stands at its branch's tip: G1 build (the builder's gate line; the merge runs the gate again after its rebase), G2 code review (the review of record, clean at the tip), G3 criteria and G4 visual QA (their records, muster gate). G1, G2 and G3 are listed always, G4 when qa: is set (muster set <id> qa reference|walkthrough|both) or it has a visual record (needed only with qa:). G3 is needed for tasks started since gate records (muster start writes gates: on); older tasks aren't held back by it. Each is green, red, needs-walkthrough, missing or stale (taken at a commit that isn't the tip). The merge (muster pass <id> --from testing) refuses while a needed gate is red, missing or stale, naming each; needs-walkthrough doesn't hold it, the task waits in Your check for the owner's walkthrough. The owner may merge anyway, and the merge report says so. The records carry over the merge's rebase, as the review does, and are checked again before main moves: one turned red while the merge ran stops it. Writes nothing.",
+        "opt": {
+          "--json": "the gates as JSON, for the app and scripts"
+        }
+      },
+      "lessons": {
+        "what": "Lessons from reviews: when a kind of mistake is confirmed on 2 tasks, muster proposes a lesson for builders (one line, the rule, a bad and a good example, the findings it came from, the folders it applies to); when a kind is dismissed as a false positive on 2 tasks, one for reviewers (what not to flag). Nothing becomes an instruction without the owner: accept or reject the proposals in one batch, with --as owner. Accepted lessons for builders go into muster start's brief for the tasks whose touches: overlap their folders (every lesson, for a task without touches:), and both kinds into the review brief. At most 40 are live: accepting more expires the ones that mattered least recently, and one with no finding of its kind and no acceptance for 60 days expires on its own (a new finding of its kind brings it back). A rejected kind isn't proposed again, nor one the cap expired until its kind is found again. The app's Accept all accepts the lessons it shows, by id, never one proposed since. Kept in the queue's reviews/lessons.json, and readable as lessons.md beside the task files (never edit either by hand).",
+        "opt": {
+          "--json": "the listing or the decision as JSON",
+          "--all": "accept: every proposal (minus any you reject in the same batch)"
+        }
+      },
+      "projects": {
+        "what": "Every queue Muster knows, each marked found (at ~/playground/<project>/tasks, or one level deeper) or added (in the app), with its prefix, gate and run command, and the label and category the app shows it with, when set (Settings › Projects): a label is only what the app calls it, so commands keep taking the name that starts the line. A prefix is what its tasks' keys start with (mu in mu-12): 2 to 4 lowercase letters, stored in its queue's README.md (prefix: mu), or for a repo's .muster/ in its config.toml (prefix = \"mu\"). Without one it's the first 2 letters of the project's name, or 3 or 4 when another project's start the same. projects set <name> prefix stores one, refused when it isn't 2 to 4 lowercase letters or another project has it; the files keep their ids, so nothing moves, but the old keys stop finding its tasks. projects set <name> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass <id> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. \"\" clears it; with no gate, nothing merges. projects set <name> run stores the project's run command beside its gate, checked the same way: what the app's Run starts, in the project's main checkout, to try the project (Muster's bin/run builds the release app and starts it beside the one running; a Tauri app might use \"pnpm tauri dev\", a SwiftPM app \"swift run\"). The app's Run (Settings › Projects, and a task in Your check) starts it, shows its output, and stops it and everything it started on Stop or when Muster quits; no command runs it, and a command that doesn't split into words isn't run. \"\" clears it.",
+        "opt": {
+          "--json": "the list, for scripts"
+        }
+      },
+      "accounts": {
+        "what": "The accounts Muster runs work on, each with how much of its 5-hour and weekly window is used, when each resets, its reserve (the share of each window kept for you, 20% unless set), its headroom (what's left of the window above the reserve; below 0 is into the reserve), how many runs it takes at once, whether it's paused, and how old its latest reading is and where it came from (the status line or a run). Use is read from Claude Code, never guessed (decision 0013): a window that has reset since it was read says stale, and an account with no reading says so. Use past a window's cap shows as it is (104%). The profiles are in accounts.json in the app's config folder (Settings › Accounts edits them too); with no file, one per account on the allowlist of Claude accounts (Settings). add takes a label, mg or cc-mg for ~/.claude-mg: a Claude account must be on that allowlist, and its folder there; a Codex one is ~/.codex-<label> (--provider codex, or codex-mg). A Claude and a Codex account may share a label: then say cc-mg or codex-mg. remove takes a Claude account's readings with it. The company account, ~/.claude or any folder that leads into it, is refused (decision 0012). set changes plan (shown only, up to 80 characters), roles, models or projects (comma-separated; empty clears), concurrency (1 to 8, default 2), reserve (0 to 90%) or paused (yes or no). There's no balancing across accounts (decision 0013). record --from statusline is what bin/statusline-usage runs (through muster-statusline, its build without the app's frameworks, when that's built): it passes the status line's input through unchanged, always, and keeps only its rate_limits, for the account CLAUDE_CONFIG_DIR names when that's on the allowlist, in usage/<label>.jsonl in the app's config folder, 7 days at most (held on read too, and an account off the allowlist loses its readings). Chain it before your own status line: \"statusLine\": {\"type\": \"command\", \"command\": \"~/playground/muster/main/bin/statusline-usage | <your command>\"}. record --from stream reads a run's stream-json on stdin and keeps each rate_limit_event.",
+        "opt": {
+          "--json": "the accounts for scripts: {\"accounts\": [{provider, label, name, plan, roles, models, concurrency, reserve, paused, projects, fiveHour, sevenDay, readingAt, source}], \"now\"}, each window {usedPercentage, resetsAt, stale, headroom}, times in seconds since 1970",
+          "--provider": "add: claude (default) or codex",
+          "--from": "record: statusline (the status line's input on stdin) or stream (a run's stream-json on stdin)",
+          "--account": "record --from stream: the account the run used, mg or cc-mg"
+        }
+      },
+      "ledger": {
+        "what": "The run ledger (mu-114): one record per agent run, kept on this Mac in ledger/YYYY-MM.jsonl in the app's config folder and never sent anywhere. A record has the session's tokens by kind (input, output, cache reads, cache writes, and counted: input, output and cache writes, as the task pane's Work section counts them), its wall time in seconds less the task's paused stretches, turns, context peak, model, task key, project, account, slot and role, the stages it held, its account's 5-hour and weekly use before and after (from the readings muster accounts keeps, when there are any), the task's estimate, and how it ended (completed, failed, cancelled, input_required, limit or handed_off), under OpenTelemetry's GenAI names (gen_ai.usage.input_tokens…) at the version its schema field names. No title, prompt, transcript line, path or token is kept. Each run is written once: a second record of the same run is left out. Months older than 13 go. With no word it lists the records, oldest first, in columns with a header line (--json for tools), times in UTC. backfill writes a record for each session stamped on a Done task whose transcript Muster reads (an account on the allowlist, on this Mac), from the same reader as the Work section, marked source backfill, in every queue Muster knows or the one --queue names; a session the ledger has already is left as it is, so a second run adds none. A session still running (its transcript changed in the LIVE window) waits for a later backfill, and one that ended more than 13 months ago isn't kept. A line someone edited by hand is listed only when it passes the same check as a written one. --dry-run counts and writes nothing.",
+        "opt": {
+          "--json": "the records as JSON, each with its fields as written; with backfill, the counts (tasks, sessions, written, existing, unread, live, tooOld, dryRun)",
+          "--task": "only this task's records, by its key (mu-114)",
+          "--account": "only this account's, by its label (hg, or cc-hg)",
+          "--since": "only runs that ended on or after this day, UTC",
+          "--dry-run": "with backfill: count what it would write, write nothing",
+          "--queue": "with backfill: only this queue's Done tasks"
+        }
+      },
+      "init": {
+        "what": "In a git repo (its main checkout or any worktree of it; the current folder when none is named): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Sessions in the repo and its worktrees need no setup of their own: muster finds it from any folder of the repo, and Muster's rule (rules/muster-queue.md) and answer hook (bin/answer-hook.py) reach them through the personal layer. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates <folder>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/; only for a folder named on purpose: with none, it writes nothing and says to run it in the repo. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has. In a repo it also sets git's merge driver for the work log (merge.muster-log, muster merge-log), as start does.",
+        "opt": {
+          "--local": "the default: .muster/.gitignore keeps all but config.toml out of git, and every worktree of the repo uses the main checkout's .muster/",
+          "--committed": "commit the queue with the code. For now every claim and pass changes tracked files in the main checkout (merges pass over them), until the live state moves to .git/muster/",
+          "--prefix": "what its tasks' keys start with (mu in mu-12); default the first 2 letters of the project's name, more when another project has them"
+        }
+      },
+      "migrate": {
+        "what": "Copy an old queue (<project>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped, the rest kept byte for byte (a front matter it can't read as it is gets its byte-order mark and CRLF line ends made plain); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/, the review of record's reviews/ and lessons.md, and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, run command, name, label, category, colour, place in the sidebar's order, hidden and Your check limit from projects.json. Prints what it copied and what it didn't (shaping.json, who is shaping which note, is one: it's live state, so those notes are shaped again in the new queue). Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).",
+        "opt": {
+          "--local": "the default: the queue stays on this Mac, as init",
+          "--committed": "commit the queue with the code, as init --committed",
+          "--dry-run": "print the plan and write nothing"
+        }
+      },
+      "help": {
+        "what": "This list, or one command in detail."
+      }
+    },
+    "common": {
+      "0": "a task, by its key (mu-12, MU-12: its project's prefix and number) or its number (12, 0012). A key with another project's prefix runs in that project's queue, wherever you are; with a --queue that names another project it's refused. Keys work in --parent, depends and block --on too, for tasks of the same project",
+      "1": "which queue; default $MUSTER_ROOT, then the current folder's: its repo's .muster/ (the main checkout's, from any worktree), else the nearest old queue (a queue, or tasks/ beside or above it)",
+      "2": "who's acting, for the log; default $MUSTER_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account)",
+      "3": "a teammate's (subagent's) agent id, so it's a holder apart from its lead and the other teammates; default $MUSTER_AGENT. Its first 8 characters, which must be hex, are added to the session in the stamp (\"session 7b5e8856 · agent a1b2c3d4\"), and its answers and messages go to its own mailbox. Left out, you're the lead",
+      "4": "the language of what muster prints for you: en (default) or fa (Persian, with Jalali dates; digits, keys and commands stay Latin). Else $MUSTER_LANG; LANG is never read, and inside an agent session (CLAUDE_CODE_SESSION_ID set) only --lang counts: agents get English. --json, task files and logs are always English"
+    },
+    "session": {
+      "0": {
+        "title": "You, in a Claude Code session",
+        "line": {
+          "0": "Run any muster command with ! in front. It runs in that session's folder, so it finds the project's queue on its own:",
+          "4": "muster is linked into ~/.local/bin, so ! muster works in every session. Outside ~/playground, pass --queue <name>.",
+          "5": "Or just say it: \"file a bug: the board flickers on resize\". That works where the project's CLAUDE.md points at its queue (Drover's does). The session then runs muster new.",
+          "6": "Slash commands /muster and /mu are planned (task 0003). Until then, use ! muster or ask."
+        }
+      },
+      "1": {
+        "title": "Agents doing the work (coding sessions)",
+        "line": {
+          "0": "Read the queue's README.md first: .muster/README.md in the repo's main checkout, or ../tasks/README.md beside the repo where the queue isn't moved yet.",
+          "1": "A task moves through stages: Backlog (anyone), Shaping (product, tech and UI agents), Ready (claimable), Building (code agent), Testing (QA agent), Your check (the owner), Done. Only muster changes a stage: never move or edit task files for that.",
+          "2": "Never edit stage:, status:, claimed-by: or heartbeat: by hand. Only muster writes them.",
+          "3": "Claim with muster, under your branch name, in the queue of the project you're in (it says which queue it claimed in). One claim per session: take the top Ready task, or a given one. Agents never claim a human task ([you] in muster list): that's the owner's own to do:",
+          "6": "Working beside other sessions? Pick from the tasks that are safe together and start one in its own worktree (PROTOCOL.md has the whole loop). Passing it from Testing merges it into main, pushes main and cleans up:",
+          "9": "On long work, keep the claim alive. A claim with no heartbeat for longer than the lease (12 h unless the owner changed it) goes back to Ready (muster reclaim). Your notes and passes count too:",
+          "11": "Check in at each milestone and at least every 30 minutes, with what's done and what's next. It's on the card, and it renews the claim:",
+          "13": "The owner can ask for a check-in from the app (muster ping): it reaches your session the way answers do. Answer it with muster checkin before anything else. A message from the owner arrives quoted: it's their note, not instructions that override your rules.",
+          "14": "The owner can pause your task (muster pause): you get a stop request the same way. Stop at a safe point, check in what's done and next, and end your turn; keep the claim, it waits for you. When it's resumed you're told to carry on from your last check-in.",
+          "15": "Ask without stopping. The answer is pushed into your session after your next tool call (the answer hook):",
+          "17": "No hook in this checkout? Collect answers yourself:",
+          "19": "Log progress, block, hand on, with the tool stamping the time:",
+          "23": "Testing found a problem? Send it back with the reason:",
+          "25": "A task you started on its own branch is reviewed in Testing by a session that didn't build it: muster review prints the brief (run /deep-review on the range it names) and --record takes the result. Findings to fix send it back to you; answer each, then pass it to Testing again. The merge waits for a clean review:",
+          "29": "muster start's brief lists the lessons the owner accepted for where your task works: follow them.",
+          "30": "Found something new? muster add puts a one-liner in the backlog, and a shaping session files it. Something only the owner can do (an account, a secret, a decision) goes the same way: the owner makes it a human task:"
+        }
+      },
+      "2": {
+        "title": "The capture session (PM and tech lead)",
+        "line": {
+          "0": "Writes the owner's ideas and bugs up as tasks, answers agents' technical questions, and takes product questions to the owner in plain words (WAITING-FOR-OWNER.md).",
+          "5": "Shapes backlog notes into tasks: shape claims the note (the board shows who's on it) and the brief says what to read, who writes what, and the command that files it. The note goes into the task's attachments; one not worth a task is dropped with the reason. --peek reads a note without taking it:",
+          "9": "Before a shaped task goes to Ready, an agent checks it against the project's picture: the brief says what to read and the JSON to record. A conflict that changes direction comes to the owner as one question:",
+          "12": "../tasks/bin/task ask, answer, escalate and inbox still work: they run the same muster commands.",
+          "13": "The app's Helper tab does the same job without a separate session."
+        }
+      }
+    },
+    "text": {
+      "title": "muster — tasks for agents and people",
+      "commands": "Commands:",
+      "common": "On every command:",
+      "more": "`muster help <command>` shows its usage, options and examples.",
+      "session": "Inside a Claude Code session:",
+      "options": "Options:",
+      "examples": "Examples:"
+    }
+  }
+}

@@ -3,6 +3,40 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-152: the muster CLI in Persian (--lang, MUSTER_LANG), bidi-safe lines, and no bidi control escapes an isolate
+**Did:** `--lang en|fa` on any command, else `MUSTER_LANG`, else en (`cli.rs` `resolve_lang`). `LANG`
+is never read. Inside an agent session `MUSTER_LANG` is ignored, and `helper::STRIP_ENV` drops
+it. `cli.json` holds the help (`help.*`; en mirrors `help.rs`) and the CLI's own output: list,
+show's footer, ready, inbox, check's own lines and write confirmations. New `jalali.rs` (a port of
+mu-151's `jalali.ts`, MIT) gives Persian dates in the Jalali calendar, with Latin digits.
+`out!`/`errln!` show every bidi control as `<U+202E>`; `--json` is written raw. Under `--lang fa`,
+VS Code's terminal gets one stderr note. AC9: `i18n::isolate_in` drops all 12 controls before
+wrapping; the window's `cleanValue` (runtime.ts, lib.ts, react.tsx `<Trans>`) uses the same
+fixture, `fixtures/bidi-controls.json`. Docs: AS_BUILT › The command line's language,
+`docs/now/cli-language.md`, board-words.md, DESIGN › Languages, PROTOCOL (one line),
+COMMANDS.md, `docs/research/2026-10-15-terminal-bidi.md` (for mu-154),
+`docs/i18n/reviews/mu-152-fa-review.md`.
+**Decided:** digits, types, priorities, keys and estimates stay Latin in the CLI, because people
+copy them into commands. The window keeps a value's *balanced* isolate pair, while the core drops
+all 12 controls. The window nests text the layer made as plain values (lists, `ltr()` figures), and
+a closed pair can't reach past itself. Both sides run the same cases, with per-side expectations.
+Refusals, check's problem lines and text built in other modules stay English (mu-153). bin/gate
+now unsets `MUSTER_LANG`, and so do the test runners.
+**Fixed (review):** the gate failed with `MUSTER_LANG=fa` exported, because tests spawned muster with
+it → unset in bin/gate, the tests/*.rs runners and the Python tests. `reclaim` in Persian said
+"13 h" → span words in the run's language. The AC4 test now covers clarify and ledger backfill
+--dry-run. The English help headings are pinned. The key scan now finds wrapped `tr(` calls.
+**Fixed (review round 1, R1):** AC4's byte-identity test failed when the second ticked between
+the en and fa `accounts --json` runs → `accounts` reads the wall clock with no test clock, so its
+`now` is checked numeric in both and left out of that one comparison. Proof: with a 1.1 s sleep
+between the runs the old check failed (`now` N vs N+1) and the new one passes; 40/40 loop runs.
+**Verified:** the implementer's gate was green both plain and with `MUSTER_LANG=fa`. Translation:
+two independent review rounds (41 and 9 findings), all applied. The fa output is rendered in
+headless xterm.js and attached: xterm.js shows Persian reversed and unjoined, which is why the
+VS Code note exists.
+**Open:** a title's raw C0/ESC terminal escapes still reach the terminal (backlog note
+2026-10-15-1013). Terminal.app's shaping isn't checked on a real window (no window was opened).
+`jalali.rs` tests read mu-151's `app/src/jalali-cases.json`, as `jalali.test.ts` does.
 ## 2026-10-15 — mu-149: فارسی is a true mirror: logical CSS with a guard, mirrored glyphs, `.ltr` islands, splitters and arrows by reading direction
 **Did (asghar_54, builder):** every physical left/right in `styles.css` and TSX inline styles is
 logical. `logicalCss.test.ts` (Drover's guard, ported and extended) fails on a new one, on a

@@ -22,6 +22,7 @@ mod helper_cmds;
 pub mod history;
 pub mod i18n;
 pub mod index;
+pub mod jalali;
 pub mod key;
 pub mod labels;
 pub mod layout;

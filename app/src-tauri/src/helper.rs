@@ -232,14 +232,16 @@ pub fn args(message: &str, brief: &str, resume: Option<&str>, model: &str) -> Ve
 }
 
 /// Environment variables removed before running the helper: routers and tokens that would
-/// override the chosen account, or send the conversation through someone else.
-pub const STRIP_ENV: [&str; 6] = [
+/// override the chosen account, or send the conversation through someone else; and the owner's
+/// `MUSTER_LANG` (mu-152), so the `muster` an agent runs talks English.
+pub const STRIP_ENV: [&str; 7] = [
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_CUSTOM_HEADERS",
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "CLAUDE_CONFIG_DIR",
+    "MUSTER_LANG",
 ];
 
 /// One stream-json line → events for the window. Unknown lines give nothing.
@@ -549,6 +551,24 @@ mod tests {
                 assert_eq!(env_of(cmd, k), Some(None), "{k}");
             }
         }
+    }
+
+    /// mu-152: the owner's `MUSTER_LANG` never reaches an agent Muster starts, so its `muster`
+    /// prints English (agents.rs's runs take `STRIP_ENV` too).
+    #[test]
+    fn muster_lang_never_reaches_an_agent() {
+        let d = fake_home();
+        let a = allowed(d.path(), &["hg"]);
+        assert!(STRIP_ENV.contains(&"MUSTER_LANG"));
+        let run = run_command(
+            Path::new("/bin/claude"),
+            &a[0],
+            &args("hi", "b", None, "sonnet"),
+            Path::new("/p"),
+            "/bin",
+            Path::new("/p/tasks"),
+        );
+        assert_eq!(env_of(&run, "MUSTER_LANG"), Some(None));
     }
 
     #[test]

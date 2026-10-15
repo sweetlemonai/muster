@@ -1,5 +1,8 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **Language (mu-152):** agents get English. `--lang fa` is the owner's, and inside an agent
+> session `MUSTER_LANG` is ignored; `--json`, task files and logs are English in every language.
+
 > **Gate records (Muster mu-131, 2026-10-14, decision 0014, `docs/GATES.md`).** A started task
 > leaves Testing only when every gate it needs is green **at the branch's tip**. G1 (build) is the
 > gate line and the merge's own gate run; G2 (code review) is the review of record below. G3

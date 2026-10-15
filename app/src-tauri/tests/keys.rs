@@ -51,6 +51,7 @@ impl World {
             .env("MUSTER_TOOLS", "/opt/muster/bin")
             .env_remove("MUSTER_ROOT")
             .env_remove("TASKS_ROOT")
+            .env_remove("MUSTER_LANG")
             .env_remove("CLAUDE_CODE_SESSION_ID")
             .output()
             .expect("muster runs");

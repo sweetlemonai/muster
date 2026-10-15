@@ -1638,6 +1638,7 @@ muster ledger backfill
 | `--queue <name\|folder>` | which queue; default $MUSTER\_ROOT, then the current folder's: its repo's .muster/ (the main checkout's, from any worktree), else the nearest old queue (a queue, or tasks/ beside or above it) |
 | `--as <who>` | who's acting, for the log; default $MUSTER\_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account) |
 | `--agent <id>` | a teammate's (subagent's) agent id, so it's a holder apart from its lead and the other teammates; default $MUSTER\_AGENT. Its first 8 characters, which must be hex, are added to the session in the stamp ("session 7b5e8856 · agent a1b2c3d4"), and its answers and messages go to its own mailbox. Left out, you're the lead |
+| `--lang en\|fa` | the language of what muster prints for you: en (default) or fa (Persian, with Jalali dates; digits, keys and commands stay Latin). Else $MUSTER\_LANG; LANG is never read, and inside an agent session (CLAUDE\_CODE\_SESSION\_ID set) only --lang counts: agents get English. --json, task files and logs are always English |
 
 ## Inside a Claude Code session
 

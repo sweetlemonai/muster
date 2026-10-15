@@ -272,7 +272,7 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_AS": "wt-a",
                     "CLAUDE_CODE_SESSION_ID": "aaaa1111-test",
                     "CLAUDE_CONFIG_DIR": str(self.home / ".claude-hg"), "HOME": str(self.home)}
-        for k in ("TASKS_ROOT", "MUSTER_BASE", "MUSTER_AGENT"):
+        for k in ("TASKS_ROOT", "MUSTER_BASE", "MUSTER_AGENT", "MUSTER_LANG"):
             self.env.pop(k, None)
         self.routes = {r["key"]: r for r in rows(ROUTER.read_text(encoding="utf-8"))}
         self.a = self.new("Synthetic first")
@@ -445,7 +445,7 @@ class Hermetic(unittest.TestCase):
         self.env = {**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
                     "MUSTER_BASE": str(base), "GIT_CONFIG_NOSYSTEM": "1", "MUSTER_AS": "wt-a",
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
-        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "GIT_DIR", "GIT_WORK_TREE", "MUSTER_AGENT"):
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "GIT_DIR", "GIT_WORK_TREE", "MUSTER_AGENT", "MUSTER_LANG"):
             self.env.pop(k, None)
         # The muster the tests run: the one on the PATH, unless a test names another.
         self.exe = "muster"

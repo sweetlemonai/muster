@@ -1,0 +1,13 @@
+{
+  "about": "Bidi controls in a filled-in value (mu-152 AC9), one list for both sides: i18n.rs's tests (isolate_in, notify.rs's lines) read `clean`, the window's (bidi.test.ts, react.test.tsx) read `window`. `controls` is every character index::is_bidi_control matches, by code point; each `cases` value is filled in as written and must come out as its side's text, then isolated right to left. The core drops every control (`clean`); the window keeps an isolate pair the value opens and closes itself, since it fills text it made into other text (`window`, which differs from `clean` only there). Written with \\u escapes, so the file itself holds no control.",
+  "controls": ["U+202A", "U+202B", "U+202C", "U+202D", "U+202E", "U+2066", "U+2067", "U+2068", "U+2069", "U+200E", "U+200F", "U+061C"],
+  "cases": [
+    { "about": "a lone U+2069 inside a title", "value": "Fix \u2069the board", "clean": "Fix the board", "window": "Fix the board" },
+    { "about": "an unclosed U+2066", "value": "\u2066Fix the board", "clean": "Fix the board", "window": "Fix the board" },
+    { "about": "an override that reverses the rest", "value": "Pay \u202Eecivni\u202C now", "clean": "Pay ecivni now", "window": "Pay ecivni now" },
+    { "about": "marks around Persian", "value": "\u200Fرفع\u200E \u061Cبورد", "clean": "رفع بورد", "window": "رفع بورد" },
+    { "about": "nothing but controls, none of them a closed pair", "value": "\u2069\u2066\u202E\u200F", "clean": "", "window": "" },
+    { "about": "a closed pair the value opens itself", "value": "Run \u2066mu-1\u2069 now", "clean": "Run mu-1 now", "window": "Run \u2066mu-1\u2069 now" },
+    { "about": "a title with none", "value": "Fix the board", "clean": "Fix the board", "window": "Fix the board" }
+  ]
+}

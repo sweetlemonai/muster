@@ -39,6 +39,7 @@ fn run_code(root: &Path, script: &str, args: &[&str]) -> (i32, String) {
         .env("MUSTER_ROOT", root)
         .env("MUSTER_BIN", env!("CARGO_BIN_EXE_muster"))
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_LANG")
         .env_remove("CLAUDE_CODE_SESSION_ID")
         .env_remove("MUSTER_AS")
         .output()
@@ -64,6 +65,7 @@ fn hook(root: &Path, session: &str) -> String {
         .arg(tool("answer-hook.py"))
         .current_dir(root)
         .env("MUSTER_ROOT", root)
+        .env_remove("MUSTER_LANG")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -570,6 +572,7 @@ fn muster(base: &Path, cwd: &Path, env: &[(&str, &Path)], args: &[&str]) -> (i32
         .env("MUSTER_BASE", base)
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_LANG")
         .env_remove("MUSTER_AS")
         .env_remove("CLAUDE_CODE_SESSION_ID");
     for (k, v) in env {
@@ -734,6 +737,7 @@ fn muster_in(root: &Path, env: &[(&str, &str)], args: &[&str], input: &str) -> (
         .env_remove("MUSTER_BASE")
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_LANG")
         .env_remove("MUSTER_AS")
         // Run inside a Claude Code session, muster would stamp that session on who acts (0030).
         .env_remove("CLAUDE_CODE_SESSION_ID")

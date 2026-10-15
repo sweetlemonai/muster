@@ -5,7 +5,7 @@
 // "common" before it renders. Call these while rendering a component that
 // uses useT, so the text follows a language switch; never keep the result
 // in a module constant.
-import { FSI, getLocale, isolates, PDI, translate, type Params } from "./runtime";
+import { cleanValue, FSI, getLocale, isolates, PDI, translate, type Params } from "./runtime";
 import type { Ns, TKey } from "./types";
 
 export function tl(key: TKey<"common">, params?: Params): string {
@@ -24,9 +24,11 @@ export function tn<N extends Ns>(ns: N, key: TKey<N>, params?: Params): string {
 
 /** A value (a path, a name, an email) put into text outside a translation,
  *  isolated in a right-to-left language as a filled-in placeholder is
- *  (`runtime.isolates`; Drover's task 0020), so `~/.ssh` keeps its tilde in place. */
+ *  (`runtime.isolates`; Drover's task 0020), so `~/.ssh` keeps its tilde in place.
+ *  It goes in clean, in every language, as a placeholder's value does (`runtime.cleanValue`). */
 export function isolate(value: string): string {
-  return value && isolates(getLocale(), "common") ? `${FSI}${value}${PDI}` : value;
+  const clean = cleanValue(value);
+  return clean && isolates(getLocale(), "common") ? `${FSI}${clean}${PDI}` : clean;
 }
 
 const ISOLATES = /[\u2066-\u2069]/g;

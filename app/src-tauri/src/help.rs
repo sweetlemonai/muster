@@ -732,6 +732,7 @@ pub const COMMON: &[(&str, &str)] = &[
     ("--queue <name|folder>", "which queue; default $MUSTER_ROOT, then the current folder's: its repo's .muster/ (the main checkout's, from any worktree), else the nearest old queue (a queue, or tasks/ beside or above it)"),
     ("--as <who>", "who's acting, for the log; default $MUSTER_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account)"),
     ("--agent <id>", "a teammate's (subagent's) agent id, so it's a holder apart from its lead and the other teammates; default $MUSTER_AGENT. Its first 8 characters, which must be hex, are added to the session in the stamp (\"session 7b5e8856 · agent a1b2c3d4\"), and its answers and messages go to its own mailbox. Left out, you're the lead"),
+    ("--lang en|fa", "the language of what muster prints for you: en (default) or fa (Persian, with Jalali dates; digits, keys and commands stay Latin). Else $MUSTER_LANG; LANG is never read, and inside an agent session (CLAUDE_CODE_SESSION_ID set) only --lang counts: agents get English. --json, task files and logs are always English"),
 ];
 
 pub const SESSION: &[Topic] = &[
@@ -1086,49 +1087,81 @@ pub fn commands_page() -> String {
     out
 }
 
-/// `muster help` as plain text.
-pub fn text() -> String {
-    let mut out = String::from("muster — tasks for agents and people\n\nCommands:\n");
+/// A heading of the help as text, in `lang` (mu-152): `help.text.<key>` in cli.json.
+fn heading(lang: &str, key: &str) -> String {
+    crate::i18n::cli_text(lang, &format!("help.text.{key}"), None, &[])
+}
+
+/// A row of the help in `lang`: as written here in English, else cli.json's `help.<key>` when
+/// that language has it (a test fails on one it doesn't). This file stays the English source.
+fn said(lang: &str, key: &str, en: &'static str) -> &'static str {
+    if lang == "en" {
+        return en;
+    }
+    crate::i18n::cli_has(lang, &format!("help.{key}")).unwrap_or(en)
+}
+
+/// `muster help` as plain text, in `lang` (mu-152): the rows and headings translated, the
+/// commands and examples as they are typed.
+pub fn text(lang: &str) -> String {
+    let mut out = format!(
+        "{}\n\n{}\n",
+        heading(lang, "title"),
+        heading(lang, "commands")
+    );
     let w = COMMANDS.iter().map(|c| c.name.len()).max().unwrap_or(4);
     for c in COMMANDS {
+        let what = said(lang, &format!("cmd.{}.what", c.name), c.what);
         out.push_str(&format!(
             "  {:<w$}  {}\n",
             c.name,
-            c.what
-                .split(". ")
+            what.split(". ")
                 .next()
-                .unwrap_or(c.what)
+                .unwrap_or(what)
                 .trim_end_matches('.')
         ));
     }
-    out.push_str("\nOn every command:\n");
-    for (k, v) in COMMON {
-        out.push_str(&format!("  {k:<22} {v}\n"));
+    out.push_str(&format!("\n{}\n", heading(lang, "common")));
+    for (i, (k, v)) in COMMON.iter().enumerate() {
+        out.push_str(&format!(
+            "  {k:<22} {}\n",
+            said(lang, &format!("common.{i}"), v)
+        ));
     }
-    out.push_str("\n`muster help <command>` shows its usage, options and examples.\n\nInside a Claude Code session:\n");
-    for t in SESSION {
-        out.push_str(&format!("\n  {}\n", t.title));
-        for l in t.lines {
+    out.push_str(&format!(
+        "\n{}\n\n{}\n",
+        heading(lang, "more"),
+        heading(lang, "session")
+    ));
+    for (i, t) in SESSION.iter().enumerate() {
+        let title = said(lang, &format!("session.{i}.title"), t.title);
+        out.push_str(&format!("\n  {title}\n"));
+        for (j, l) in t.lines.iter().enumerate() {
             match l.strip_prefix("$ ") {
                 Some(cmd) => out.push_str(&format!("      {cmd}\n")),
-                None => out.push_str(&format!("    {l}\n")),
+                None => out.push_str(&format!(
+                    "    {}\n",
+                    said(lang, &format!("session.{i}.line.{j}"), l)
+                )),
             }
         }
     }
     out
 }
 
-/// `muster help <command>`.
-pub fn command_text(name: &str) -> Option<String> {
+/// `muster help <command>`, in `lang`: its usage line and examples as they are typed.
+pub fn command_text(name: &str, lang: &str) -> Option<String> {
     let c = COMMANDS.iter().find(|c| c.name == name)?;
-    let mut out = format!("{}\n\n  {}\n", c.usage, c.what);
+    let what = said(lang, &format!("cmd.{name}.what"), c.what);
+    let mut out = format!("{}\n\n  {what}\n", c.usage);
     if !c.options.is_empty() {
-        out.push_str("\nOptions:\n");
+        out.push_str(&format!("\n{}\n", heading(lang, "options")));
         for (k, v) in c.options {
+            let v = said(lang, &format!("cmd.{name}.opt.{k}"), v);
             out.push_str(&format!("  {k:<12} {v}\n"));
         }
     }
-    out.push_str("\nExamples:\n");
+    out.push_str(&format!("\n{}\n", heading(lang, "examples")));
     for e in c.examples {
         out.push_str(&format!("  {e}\n"));
     }
@@ -1142,12 +1175,12 @@ mod tests {
     #[test]
     fn pause_is_described_as_the_paused_lane_everywhere() {
         // mu-59 moved a paused task to its own lane; mu-68 makes every text say so.
-        let summary = text()
+        let summary = text("en")
             .lines()
             .find(|l| l.trim_start().starts_with("pause "))
             .expect("pause in the summary list")
             .to_string();
-        let full = command_text("pause").expect("muster help pause");
+        let full = command_text("pause", "en").expect("muster help pause");
         let (_, app) = APP
             .iter()
             .find(|(name, _)| *name == "Pause · Resume")
@@ -1250,6 +1283,226 @@ mod tests {
         assert_eq!(COMMANDS.len(), 56);
     }
 
+    /// The help's rows as cli.json keeps them under `help` (mu-152 D7): `cmd.<name>.what`,
+    /// `cmd.<name>.opt.<option>`, `common.<i>`, `session.<i>.title` and `session.<i>.line.<j>`
+    /// (lines that are commands, `$ …`, left out: they're never translated).
+    fn rows() -> serde_json::Value {
+        use serde_json::{json, Map, Value};
+        let mut cmd = Map::new();
+        for c in COMMANDS {
+            let mut one = Map::new();
+            one.insert("what".into(), json!(c.what));
+            if !c.options.is_empty() {
+                let opt: Map<String, Value> = c
+                    .options
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), json!(v)))
+                    .collect();
+                one.insert("opt".into(), Value::Object(opt));
+            }
+            cmd.insert(c.name.into(), Value::Object(one));
+        }
+        let common: Map<String, Value> = COMMON
+            .iter()
+            .enumerate()
+            .map(|(i, (_, v))| (i.to_string(), json!(v)))
+            .collect();
+        let session: Map<String, Value> = SESSION
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let line: Map<String, Value> = t
+                    .lines
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, l)| !l.starts_with("$ "))
+                    .map(|(j, l)| (j.to_string(), json!(l)))
+                    .collect();
+                (i.to_string(), json!({"title": t.title, "line": line}))
+            })
+            .collect();
+        json!({"cmd": cmd, "common": common, "session": session})
+    }
+
+    /// Every key under `help` that `rows` has, dotted, with its English.
+    fn row_keys() -> Vec<(String, String)> {
+        fn walk(v: &serde_json::Value, at: &str, out: &mut Vec<(String, String)>) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    for (k, x) in m {
+                        walk(x, &format!("{at}.{k}"), out);
+                    }
+                }
+                serde_json::Value::String(s) => out.push((at.to_string(), s.clone())),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        walk(&rows(), "help", &mut out);
+        out
+    }
+
+    /// mu-152 D7: en/cli.json's `help` is help.rs's text, row for row, so the Persian is always
+    /// of the English shown. On a change to help.rs, paste the JSON this prints under `help`
+    /// (keeping `help.text`) and translate the rows that changed into fa/cli.json.
+    #[test]
+    fn the_english_help_in_cli_json_is_help_rs() {
+        let en: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/i18n/locales/en/cli.json")).unwrap();
+        let mut kept = en["help"].clone();
+        if let Some(m) = kept.as_object_mut() {
+            m.remove("text");
+        }
+        let want = rows();
+        assert!(
+            kept == want,
+            "en/cli.json's help isn't help.rs's: put this under \"help\" (with its \"text\"):\n{}",
+            serde_json::to_string_pretty(&want).unwrap()
+        );
+    }
+
+    /// mu-152 R4: English keeps its headings exactly, now that they come from cli.json.
+    #[test]
+    fn the_english_help_keeps_its_headings_exactly() {
+        let t = text("en");
+        assert!(t.starts_with("muster — tasks for agents and people\n\nCommands:\n  new "));
+        let (first, _) = COMMON[0];
+        assert!(t.contains(&format!("\n\nOn every command:\n  {first:<22} ")));
+        assert!(t.contains(
+            "\n\n`muster help <command>` shows its usage, options and examples.\n\nInside a Claude Code session:\n\n  "
+        ));
+        for c in COMMANDS {
+            let one = command_text(c.name, "en").unwrap();
+            if let Some((k, _)) = c.options.first() {
+                assert!(
+                    one.contains(&format!("\n\nOptions:\n  {k:<12} ")),
+                    "{}",
+                    c.name
+                );
+            } else {
+                assert!(!one.contains("Options:"), "{}", c.name);
+            }
+            let e = c.examples[0];
+            assert!(
+                one.contains(&format!("\n\nExamples:\n  {e}\n")),
+                "{}",
+                c.name
+            );
+        }
+    }
+
+    /// The headings `text` and `command_text` print (`heading`).
+    const HEADINGS: [&str; 7] = [
+        "title", "commands", "common", "more", "session", "options", "examples",
+    ];
+
+    /// mu-152 AC2: every row of the help, and each heading, has its Persian.
+    #[test]
+    fn every_help_row_has_persian() {
+        let mut missing: Vec<String> = row_keys()
+            .into_iter()
+            .map(|(k, _)| k)
+            .filter(|k| crate::i18n::cli_has("fa", k).is_none())
+            .collect();
+        for k in HEADINGS {
+            if crate::i18n::cli_has("fa", &format!("help.text.{k}")).is_none() {
+                missing.push(format!("help.text.{k}"));
+            }
+            assert!(
+                crate::i18n::cli_has("en", &format!("help.text.{k}")).is_some(),
+                "{k}"
+            );
+        }
+        assert!(missing.is_empty(), "no Persian for {}", missing.join(", "));
+        assert!(row_keys().len() > 200, "{}", row_keys().len());
+    }
+
+    /// `text` in a language: no bidi control (a terminal shows one as a box), Latin digits only.
+    fn plain_terminal_text(t: &str, what: &str) {
+        assert!(
+            !t.chars().any(crate::index::is_bidi_control),
+            "{what}: a bidi control"
+        );
+        assert!(
+            !t.chars().any(|c| ('\u{6f0}'..='\u{6f9}').contains(&c)),
+            "{what}: Persian digits"
+        );
+    }
+
+    /// mu-152 AC2: `muster --lang fa help` and `help <command>` are Persian for every command:
+    /// no English summary or row left, every usage line and example as it is.
+    #[test]
+    fn the_persian_help_is_persian_with_its_commands_as_written() {
+        let all = text("fa");
+        plain_terminal_text(&all, "help");
+        assert!(all.starts_with("تسک‌ها برای ایجنت‌ها و انسان‌ها — muster\n\nفرمان‌ها:\n"));
+        for c in COMMANDS {
+            let summary = c
+                .what
+                .split(". ")
+                .next()
+                .unwrap_or(c.what)
+                .trim_end_matches('.');
+            assert!(
+                !all.contains(summary),
+                "{}'s English summary: {summary}",
+                c.name
+            );
+            let one = command_text(c.name, "fa").unwrap();
+            plain_terminal_text(&one, c.name);
+            assert!(one.starts_with(&format!("{}\n\n  ", c.usage)), "{}", c.name);
+            assert!(!one.contains(c.what), "{}'s English what", c.name);
+            for (k, v) in c.options {
+                assert!(one.contains(&format!("  {k:<12} ")), "{} {k}", c.name);
+                assert!(!one.contains(v), "{} {k}'s English", c.name);
+            }
+            for e in c.examples {
+                assert!(one.contains(&format!("\n  {e}\n")), "{}: {e}", c.name);
+            }
+            assert!(one.contains("\nنمونه‌ها:\n"), "{}", c.name);
+        }
+        for (k, v) in COMMON {
+            assert!(all.contains(&format!("  {k:<22} ")), "{k}");
+            assert!(!all.contains(v), "{k}'s English");
+        }
+        for t in SESSION {
+            assert!(!all.contains(t.title), "{}", t.title);
+            for l in t.lines {
+                match l.strip_prefix("$ ") {
+                    Some(cmd) => assert!(all.contains(&format!("      {cmd}\n")), "{cmd}"),
+                    None => assert!(!all.contains(l), "{l}"),
+                }
+            }
+        }
+        // English is today's, from the same rows.
+        assert!(text("en").starts_with("muster — tasks for agents and people\n\nCommands:\n"));
+        assert_eq!(command_text("frob", "fa"), None);
+    }
+
+    /// mu-152: `--lang` is on every command, and says where else the language comes from, that
+    /// agents get English, and what never changes.
+    #[test]
+    fn lang_is_documented_on_every_command() {
+        let (_, what) = COMMON
+            .iter()
+            .find(|(k, _)| *k == "--lang en|fa")
+            .expect("--lang is an option of every command");
+        for words in [
+            "$MUSTER_LANG",
+            "LANG is never read",
+            "CLAUDE_CODE_SESSION_ID",
+            "agents get English",
+            "Jalali",
+            "stay Latin",
+            "--json, task files and logs are always English",
+        ] {
+            assert!(what.contains(words), "{words}: {what}");
+        }
+        assert!(text("en").contains("\n  --lang en|fa           the language"));
+        assert!(commands_page().contains("| `--lang en\\|fa` | the language"));
+        assert!(help().common.iter().any(|(k, _)| *k == "--lang en|fa"));
+    }
+
     #[test]
     fn every_command_is_on_the_commands_page_once_in_its_group() {
         let mut seen: Vec<&str> = Vec::new();
@@ -1324,7 +1577,7 @@ mod tests {
 
     #[test]
     fn pass_and_stage_say_the_tester_isnt_the_builder() {
-        let pass = command_text("pass").unwrap();
+        let pass = command_text("pass", "en").unwrap();
         for words in [
             "didn't build it",
             "own --as",
@@ -1333,8 +1586,10 @@ mod tests {
         ] {
             assert!(pass.contains(words), "{words}: {pass}");
         }
-        assert!(command_text("stage").unwrap().contains("skip its tester"));
-        assert!(command_text("move")
+        assert!(command_text("stage", "en")
+            .unwrap()
+            .contains("skip its tester"));
+        assert!(command_text("move", "en")
             .unwrap()
             .contains("whoever built the task"));
     }
@@ -1342,7 +1597,7 @@ mod tests {
     #[test]
     fn projects_help_says_what_the_run_command_is_for() {
         // 0077: set like the gate, what the app's Run starts in the main checkout, and kept by migrate.
-        let projects = command_text("projects").unwrap();
+        let projects = command_text("projects", "en").unwrap();
         for words in [
             "muster projects set <name> run \"<command>\"",
             "what the app's Run starts, in the project's main checkout, to try the project",
@@ -1350,7 +1605,7 @@ mod tests {
         ] {
             assert!(projects.contains(words), "{words}: {projects}");
         }
-        assert!(command_text("migrate")
+        assert!(command_text("migrate", "en")
             .unwrap()
             .contains("gate, run command, name"));
         assert!(commands_page().contains("muster projects set muster run bin/run"));
@@ -1380,7 +1635,7 @@ mod tests {
     fn estimated_tokens_say_cache_reads_dont_count() {
         // mu-172: est-tokens is held against input, output and cache writes only.
         for cmd in ["new", "file"] {
-            let text = command_text(cmd).unwrap();
+            let text = command_text(cmd, "en").unwrap();
             assert!(
                 text.contains("estimated tokens: input, output and cache writes, not cache reads"),
                 "{cmd}: {text}"
@@ -1390,7 +1645,7 @@ mod tests {
 
     #[test]
     fn types_test_time_links_and_comments_are_documented() {
-        let new = command_text("new").unwrap();
+        let new = command_text("new", "en").unwrap();
         for words in [
             "code|bug|chore|tech-debt|spike|design|docs|research",
             "--test-time",
@@ -1399,9 +1654,9 @@ mod tests {
             assert!(new.contains(words), "{words}: {new}");
         }
         assert!(!new.contains("idea]"), "{new}");
-        assert!(command_text("file").unwrap().contains("--test-time"));
-        assert!(command_text("set").unwrap().contains("test-time"));
-        let link = command_text("link").unwrap();
+        assert!(command_text("file", "en").unwrap().contains("--test-time"));
+        assert!(command_text("set", "en").unwrap().contains("test-time"));
+        let link = command_text("link", "en").unwrap();
         for words in [
             "https only",
             "--remove",
@@ -1411,7 +1666,7 @@ mod tests {
         ] {
             assert!(link.contains(words), "{words}: {link}");
         }
-        let comment = command_text("comment").unwrap();
+        let comment = command_text("comment", "en").unwrap();
         for words in [
             "## Comments",
             "--body",
@@ -1421,7 +1676,7 @@ mod tests {
         ] {
             assert!(comment.contains(words), "{words}: {comment}");
         }
-        assert!(command_text("check").unwrap().contains("https"));
+        assert!(command_text("check", "en").unwrap().contains("https"));
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for words in ["Links", "Comments", "the comment", "Type"] {
             assert!(app.contains(words), "{words}: {app}");
@@ -1430,7 +1685,7 @@ mod tests {
 
     #[test]
     fn vision_says_what_it_reads_records_and_holds_back() {
-        let t = command_text("vision").unwrap();
+        let t = command_text("vision", "en").unwrap();
         for words in [
             "docs/VISION.md",
             "docs/decisions/",
@@ -1448,9 +1703,17 @@ mod tests {
         ] {
             assert!(t.contains(words), "{words}: {t}");
         }
-        assert!(command_text("check").unwrap().contains("no vision check"));
-        assert!(command_text("pass").unwrap().contains("vision conflict"));
-        assert!(text().contains("      muster vision <id>\n"), "{}", text());
+        assert!(command_text("check", "en")
+            .unwrap()
+            .contains("no vision check"));
+        assert!(command_text("pass", "en")
+            .unwrap()
+            .contains("vision conflict"));
+        assert!(
+            text("en").contains("      muster vision <id>\n"),
+            "{}",
+            text("en")
+        );
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for words in ["⚠ 2 vision", "Resolve", "Copy vision brief"] {
             assert!(app.contains(words), "{words}: {app}");
@@ -1459,27 +1722,27 @@ mod tests {
 
     #[test]
     fn the_backlog_commands_and_where_sessions_put_what_they_find() {
-        let t = text();
+        let t = text("en");
         // Found something new: muster add, not a hand-written file.
         assert!(t.contains("Found something new? muster add"), "{t}");
         assert!(t.contains("      muster add \"<one line>\""), "{t}");
         assert!(!t.contains("Drop a note in ../tasks/inbox/"), "{t}");
         assert!(t.contains("      muster shape "), "{t}");
-        assert!(command_text("add").unwrap().contains("--body"));
-        assert!(command_text("add")
+        assert!(command_text("add", "en").unwrap().contains("--body"));
+        assert!(command_text("add", "en")
             .unwrap()
             .contains("refused over 200 characters"));
-        assert!(!command_text("add").unwrap().contains("cut to"));
-        let list = command_text("list").unwrap();
+        assert!(!command_text("add", "en").unwrap().contains("cut to"));
+        let list = command_text("list", "en").unwrap();
         assert!(
             list.contains("Backlog notes") && list.contains("\"backlog\""),
             "{list}"
         );
-        assert!(command_text("shape").unwrap().contains("--json"));
-        assert!(command_text("shape")
+        assert!(command_text("shape", "en").unwrap().contains("--json"));
+        assert!(command_text("shape", "en")
             .unwrap()
             .contains("the estimates, measured on this queue"));
-        let file = command_text("file").unwrap();
+        let file = command_text("file", "en").unwrap();
         assert!(file.contains("the first claim to leaving Testing, review and QA included, time blocked or paused left out"));
         assert!(file.contains(
             "estimated time of your check only, not the wait before it (QA is in --time)"
@@ -1496,7 +1759,7 @@ mod tests {
         }
         assert!(file.contains("Shaping") && file.contains("attachments"));
         // The lenses (0076): what shape lists, how a project skips one, file's warning, vision's line.
-        let shape = command_text("shape").unwrap();
+        let shape = command_text("shape", "en").unwrap();
         for words in [
             "accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs",
             "**Lenses:**",
@@ -1514,12 +1777,12 @@ mod tests {
             file.contains("warns") && file.contains("files it anyway"),
             "{file}"
         );
-        let vision = command_text("vision").unwrap();
+        let vision = command_text("vision", "en").unwrap();
         assert!(
             vision.contains("**Lenses needed:**") && vision.contains("n/a"),
             "{vision}"
         );
-        assert!(command_text("drop").unwrap().contains("dropped/"));
+        assert!(command_text("drop", "en").unwrap().contains("dropped/"));
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for word in [
             "Add to the backlog",
@@ -1534,7 +1797,7 @@ mod tests {
     #[test]
     fn human_tasks_are_documented() {
         // 0022: the owner's own tasks, made by the owner, never taken by agents.
-        let new = command_text("new").unwrap();
+        let new = command_text("new", "en").unwrap();
         for words in [
             "--human",
             "only the owner",
@@ -1543,21 +1806,21 @@ mod tests {
         ] {
             assert!(new.contains(words), "{words}: {new}");
         }
-        let set = command_text("set").unwrap();
+        let set = command_text("set", "en").unwrap();
         for words in ["|for>", "human or ai", "muster set 0041 for human"] {
             assert!(set.contains(words), "{words}: {set}");
         }
         for name in ["claim", "next"] {
-            let c = command_text(name).unwrap();
+            let c = command_text(name, "en").unwrap();
             assert!(c.contains("human task"), "{name}: {c}");
         }
-        let pass = command_text("pass").unwrap();
+        let pass = command_text("pass", "en").unwrap();
         for words in ["human task", "To do", "Doing", "Done", "no gate line"] {
             assert!(pass.contains(words), "{words}: {pass}");
         }
-        assert!(command_text("list").unwrap().contains("[you]"));
-        assert!(command_text("check").unwrap().contains("for"));
-        let t = text();
+        assert!(command_text("list", "en").unwrap().contains("[you]"));
+        assert!(command_text("check", "en").unwrap().contains("for"));
+        let t = text("en");
         assert!(t.contains("never claim a human task"), "{t}");
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         // One board (owner, 2026-10-13): the owner's own tasks hatched among the agents', the Who
@@ -1578,13 +1841,13 @@ mod tests {
         }
         for gone in ["Human board", "AI board", "From the agents"] {
             assert!(!app.contains(gone), "{gone}: {app}");
-            assert!(!text().contains(gone), "{gone} in the commands' help");
+            assert!(!text("en").contains(gone), "{gone} in the commands' help");
         }
     }
 
     #[test]
     fn edit_says_who_may_edit_and_how() {
-        let t = command_text("edit").unwrap();
+        let t = command_text("edit", "en").unwrap();
         for words in [
             "$VISUAL",
             "$EDITOR",
@@ -1605,7 +1868,7 @@ mod tests {
 
     #[test]
     fn text_and_details() {
-        let t = text();
+        let t = text("en");
         assert!(t.contains("Inside a Claude Code session"));
         assert!(t.contains("      ! muster list"));
         // Agents claim, keep claims alive, ask and hand work on with muster, never by hand.
@@ -1615,7 +1878,7 @@ mod tests {
         assert!(t.contains(
             "      muster checkin 0007 \"gate green, writing tests\" --pct 60 --as <your branch>\n"
         ));
-        assert!(command_text("checkin").unwrap().contains("--pct"));
+        assert!(command_text("checkin", "en").unwrap().contains("--pct"));
         assert!(!t.contains("$USER"), "the login name is never who's acting");
         assert!(t.contains("      muster ask 0007 "));
         assert!(t.contains("      muster inbox\n"));
@@ -1626,18 +1889,18 @@ mod tests {
             !t.contains("--as <your branch> --from ready"),
             "claims use claim/next"
         );
-        assert!(command_text("reclaim").unwrap().contains("--after"));
-        assert!(command_text("inbox").unwrap().contains("--keep"));
+        assert!(command_text("reclaim", "en").unwrap().contains("--after"));
+        assert!(command_text("inbox", "en").unwrap().contains("--keep"));
         assert!(t.contains("      muster block 0007 --on 0012\n"));
         assert!(t.contains("      muster return 0007"));
         assert!(!t.contains("mv ../tasks"));
         assert!(!t.contains("muster move 0007"));
-        assert!(command_text("pass").unwrap().contains("--gate"));
-        assert!(command_text("pass").unwrap().contains("--summary"));
-        assert!(command_text("return").unwrap().contains("--to"));
-        assert!(command_text("new").unwrap().contains("--tags"));
+        assert!(command_text("pass", "en").unwrap().contains("--gate"));
+        assert!(command_text("pass", "en").unwrap().contains("--summary"));
+        assert!(command_text("return", "en").unwrap().contains("--to"));
+        assert!(command_text("new", "en").unwrap().contains("--tags"));
         // list's search, filters and sort (task 0032), and the app's search key.
-        let list = command_text("list").unwrap();
+        let list = command_text("list", "en").unwrap();
         for opt in [
             "--search",
             "--stage",
@@ -1650,19 +1913,19 @@ mod tests {
             assert!(list.contains(opt), "{opt}: {list}");
         }
         assert!(APP.iter().any(|(k, _)| *k == "⌘F"));
-        assert!(command_text("frob").is_none());
-        assert!(command_text("pass").unwrap().contains("--from"));
+        assert!(command_text("frob", "en").is_none());
+        assert!(command_text("pass", "en").unwrap().contains("--from"));
         // Levels: the flags of new, the keys of set, and what check looks for.
-        let new = command_text("new").unwrap();
+        let new = command_text("new", "en").unwrap();
         for flag in ["--level", "--parent", "--due"] {
             assert!(new.contains(flag), "{flag}: {new}");
         }
-        let set = command_text("set").unwrap();
+        let set = command_text("set", "en").unwrap();
         assert!(set.contains("level|parent|due"), "{set}");
         assert!(set.contains("muster set 0031 parent \"\""), "{set}");
-        assert!(command_text("check").unwrap().contains("parent"));
+        assert!(command_text("check", "en").unwrap().contains("parent"));
         // The master list (0018): what index does, its --check, and that check reports a stale one.
-        let index = command_text("index").unwrap();
+        let index = command_text("index", "en").unwrap();
         for words in [
             "INDEX.md",
             "--check",
@@ -1674,7 +1937,7 @@ mod tests {
         ] {
             assert!(index.contains(words), "{words}: {index}");
         }
-        assert!(command_text("check").unwrap().contains("INDEX.md"));
+        assert!(command_text("check", "en").unwrap().contains("INDEX.md"));
         // The app's help names the pane's stage actions.
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for word in [
@@ -1694,17 +1957,19 @@ mod tests {
     #[test]
     fn summary_is_in_the_help_the_manual_and_the_session_steps() {
         // mu-78: pass and set say how to write it, and a session is told to.
-        let pass = command_text("pass").unwrap();
+        let pass = command_text("pass", "en").unwrap();
         assert!(
             pass.contains("--summary") && pass.contains("160 characters"),
             "{pass}"
         );
-        let set = command_text("set").unwrap();
+        let set = command_text("set", "en").unwrap();
         assert!(
             set.contains("|summary|") && set.contains("muster set 0007 summary"),
             "{set}"
         );
-        assert!(text().contains("--from building --gate \"<the gate's result line>\" --summary"));
+        assert!(
+            text("en").contains("--from building --gate \"<the gate's result line>\" --summary")
+        );
         assert!(commands_page().contains("--summary"));
     }
 }

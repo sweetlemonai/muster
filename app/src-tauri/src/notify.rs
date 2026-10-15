@@ -328,8 +328,10 @@ pub fn message(items: &[Item]) -> (String, String) {
             if one_project {
                 cut(&line, LONG)
             } else {
-                let at = [("project", i.label.as_str()), ("line", line.as_str())];
-                cut(&i18n::t_args("notify.inProject", &at), LONG)
+                // The line is this layer's own text: its values keep their isolates in it.
+                let at = [("project", i.label.as_str())];
+                let made = [("line", line.as_str())];
+                cut(&i18n::t_args_with("notify.inProject", &at, &made), LONG)
             }
         })
         .collect();
@@ -1320,6 +1322,97 @@ mod tests {
                 format!("{} {}: تسک خودتان", iso("mu-1"), iso(&cut_title))
             );
         });
+    }
+
+    /// The isolates of `s` balance (none closes one that isn't open) and there are `pairs` of
+    /// them: one for each value filled in.
+    fn balanced_pairs(s: &str) -> usize {
+        let mut depth = 0usize;
+        let mut pairs = 0;
+        for c in s.chars() {
+            match c {
+                '\u{2068}' => depth += 1,
+                '\u{2069}' => {
+                    depth = depth
+                        .checked_sub(1)
+                        .unwrap_or_else(|| panic!("a PDI too many: {s:?}"));
+                    pairs += 1;
+                }
+                c if crate::index::is_bidi_control(c) => panic!("U+{:04X} in {s:?}", u32::from(c)),
+                _ => {}
+            }
+        }
+        assert_eq!(depth, 0, "an isolate left open: {s:?}");
+        pairs
+    }
+
+    /// mu-152 AC9: a task's title with its own bidi controls (a lone U+2069, an unclosed U+2066,
+    /// each control in the shared list) can't reorder a Persian notification: the line keeps one
+    /// isolate pair per value, the title cleaned, and its Persian words in order, on its own and
+    /// filled into the line naming its project.
+    #[test]
+    fn a_title_with_bidi_controls_cant_reorder_a_persian_notification() {
+        let b = crate::i18n::tests::bidi_cases();
+        let mut titles: Vec<(String, String)> = b
+            .cases
+            .iter()
+            .map(|(_, value, clean)| (value.clone(), clean.clone()))
+            .collect();
+        for c in &b.controls {
+            titles.push((format!("Fix{c} the board"), "Fix the board".into()));
+        }
+        for (value, clean) in &titles {
+            let d = queue();
+            fs::write(
+                d.path().join("0001-buy.md"),
+                format!("---\nid: 0001\nstage: ready\nfor: human\n---\n\n# {value}\n\n## Log\n- 2026-10-13 captured\n"),
+            )
+            .unwrap();
+            let s = read(&d);
+            let own = waiting(&s.tasks, &s.queues)
+                .into_iter()
+                .find(|i| i.key == "muster/0001/own")
+                .unwrap();
+            assert_eq!(
+                own.title,
+                value.trim(),
+                "the title reaches the line as written"
+            );
+            assert_eq!(own.line(1), format!("mu-1 {clean}: your task"));
+            crate::i18n::stub::app("fa", || {
+                let line = own.line(1);
+                let title = if clean.is_empty() {
+                    String::new()
+                } else {
+                    iso(clean)
+                };
+                assert_eq!(line, format!("{} {title}: تسک خودتان", iso("mu-1")));
+                assert_eq!(balanced_pairs(&line), if clean.is_empty() { 1 } else { 2 });
+                assert_eq!(outside_isolates(&line), " : تسک خودتان");
+                let (heading, body) = message(std::slice::from_ref(&own));
+                assert_eq!(body, line);
+                assert_eq!(balanced_pairs(&heading), 1, "{heading:?}");
+                // From two projects the line is filled into another: still one pair per value.
+                let other = Item {
+                    queue: "b".into(),
+                    label: "B\u{2069}".into(),
+                    ..own.clone()
+                };
+                let (_, body) = message(&[own.clone(), other]);
+                let first = body.lines().next().unwrap();
+                assert_eq!(first, format!("در {}: {}", iso("Muster app"), iso(&line)));
+                assert!(body
+                    .lines()
+                    .nth(1)
+                    .unwrap()
+                    .starts_with(&format!("در {}: ", iso("B"))));
+                for l in body.lines() {
+                    let values = if clean.is_empty() { 3 } else { 4 };
+                    assert_eq!(balanced_pairs(l), values, "{l:?}");
+                    assert_eq!(outside_isolates(l), "در : ");
+                }
+            });
+        }
     }
 
     #[test]

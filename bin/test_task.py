@@ -110,7 +110,7 @@ class MusterDirTests(unittest.TestCase):
         home = base / "home"
         home.mkdir()
         self.env = {**outside, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
-        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT"):
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT", "MUSTER_LANG"):
             self.env.pop(k, None)
         # "pr" is free only if init sees no other projects: with the outer HOME or MUSTER_BASE leaking
         # in, `proto` holds "pr" and init picks another prefix, so this fails.
@@ -252,7 +252,7 @@ class OtherProjectsTests(unittest.TestCase):
         home = self.base / "home"
         home.mkdir()
         self.env = {**os.environ, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
-        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT"):
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT", "MUSTER_LANG"):
             self.env.pop(k, None)
 
     def tearDown(self):
@@ -406,7 +406,7 @@ class TaskTests(unittest.TestCase):
         self.home = tempfile.TemporaryDirectory()
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_BIN": str(MUSTER),
                     "HOME": self.home.name}
-        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT"):
+        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT", "MUSTER_LANG"):
             self.env.pop(k, None)
 
     def tearDown(self):

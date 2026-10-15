@@ -82,6 +82,11 @@ external links, and a comment thread anyone may add to), index (task 0018), visi
 checked against the project's picture, task 0029), review and lessons (task 0027), gate and gates
 (gate records, mu-131), verify (the criteria gate, mu-132), and ready, start and release (parallel sessions, task 0023).
 
+Language (mu-152): `--lang fa` on any command, or `MUSTER_LANG=fa` in the owner's shell, prints
+Persian (help, list, show, ready, inbox, the write confirmations; Jalali dates, Latin digits and
+keys). `LANG` is never read. Inside an agent session `MUSTER_LANG` is ignored, so agents get
+English. `--json` is the same in every language.
+
 Parallel sessions (task 0023): `ready [--parallel [<n>]] [--json]` lists the tasks a session could
 start now, or up to n (default 3) safe side by side: none depends on another, and their `touches:`
 (folders and globs, `new`/`file --touches`, `set <id> touches`) don't overlap; a task without

@@ -112,14 +112,301 @@ fn reads_only(a: &Args) -> bool {
     }
 }
 
-/// One piece of a command's output, through `STDOUT`. Unit tests drop it: a direct write to
-/// stdout would land in the test runner's own output, past its capture.
+/// One piece of a command's output for a person, through `out_raw`, every bidi control in it
+/// shown as `<U+XXXX>` (mu-152), in every language: a title, a note or a body can't reorder
+/// the line it's printed in.
 fn out_str(s: &str) {
-    if cfg!(test) {
+    out_raw(&crate::i18n::escape_bidi(s));
+}
+
+/// One piece of a command's output, through `STDOUT`, as it is: `print_json`'s, which a script
+/// reads and must get byte for byte. Unit tests keep it on their own thread when they ask
+/// (`capture`) and drop it otherwise: a direct write to stdout would land in the test runner's
+/// own output, past its capture.
+fn out_raw(s: &str) {
+    #[cfg(test)]
+    {
+        capture::keep(s);
         STDOUT.write(&mut std::io::sink(), s);
-    } else {
-        STDOUT.write(&mut std::io::stdout().lock(), s);
     }
+    #[cfg(not(test))]
+    STDOUT.write(&mut std::io::stdout().lock(), s);
+}
+
+/// A line for a person on stderr (a warning, a refusal, a note), its bidi controls shown as
+/// `<U+XXXX>` as on stdout (mu-152): a title, a body's marker or what was typed can't reorder it.
+/// A failed write is let go, as `eprintln!` would have panicked on it.
+fn err_str(s: &str) {
+    let s = crate::i18n::escape_bidi(s);
+    #[cfg(test)]
+    if capture::keep_err(&s) {
+        return;
+    }
+    use std::io::Write as _;
+    let _ = std::io::stderr().lock().write_all(s.as_bytes());
+}
+
+/// `eprintln!` for a person, through `err_str`.
+macro_rules! errln {
+    ($($arg:tt)*) => {
+        err_str(&format!("{}\n", format_args!($($arg)*)))
+    };
+}
+
+/// Tests: what a command prints on the calling thread, and the language each piece was printed
+/// in (tests run side by side).
+#[cfg(test)]
+mod capture {
+    use std::cell::RefCell;
+
+    #[derive(Debug, Default)]
+    pub(super) struct Printed {
+        pub text: String,
+        pub langs: Vec<&'static str>,
+        /// What it said on stderr (`err_str`).
+        pub err: String,
+    }
+
+    thread_local! {
+        static OUT: RefCell<Option<Printed>> = const { RefCell::new(None) };
+    }
+
+    /// Ends the capture when `output` ends, even by a failed assertion.
+    struct Stop;
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            OUT.with(|o| *o.borrow_mut() = None);
+        }
+    }
+
+    pub(super) fn keep(s: &str) {
+        OUT.with(|o| {
+            if let Some(p) = o.borrow_mut().as_mut() {
+                p.text.push_str(s);
+                p.langs.push(super::lang());
+            }
+        });
+    }
+
+    /// Keeps a stderr line while capturing; says whether it did.
+    pub(super) fn keep_err(s: &str) -> bool {
+        OUT.with(|o| match o.borrow_mut().as_mut() {
+            Some(p) => {
+                p.err.push_str(s);
+                true
+            }
+            None => false,
+        })
+    }
+
+    /// What `f` printed through `out_raw` and `err_str`, and what it returned.
+    pub(super) fn output<R>(f: impl FnOnce() -> R) -> (Printed, R) {
+        OUT.with(|o| *o.borrow_mut() = Some(Printed::default()));
+        let _stop = Stop;
+        let r = f();
+        (OUT.with(|o| o.borrow_mut().take()).unwrap_or_default(), r)
+    }
+}
+
+thread_local! {
+    /// The language of what this run prints for a person (mu-152): `resolve_lang`'s, set by
+    /// `run_with` before it prints anything.
+    static CLI_LANG: std::cell::Cell<&'static str> = const { std::cell::Cell::new("en") };
+}
+
+/// The language this run prints in for a person: "en" or "fa". `--json`, task files and logs
+/// stay English whatever it is.
+fn lang() -> &'static str {
+    CLI_LANG.with(std::cell::Cell::get)
+}
+
+/// Puts the language back as it was when it's dropped, so a run's language ends with the run.
+struct LangReset(&'static str);
+impl Drop for LangReset {
+    fn drop(&mut self) {
+        CLI_LANG.with(|l| l.set(self.0));
+    }
+}
+
+/// Sets the language until the returned guard is dropped.
+fn set_lang(l: &'static str) -> LangReset {
+    LangReset(CLI_LANG.with(|c| c.replace(l)))
+}
+
+/// Tests: `f` printing in `l`, on the calling thread only.
+#[cfg(test)]
+fn with_lang<R>(l: &'static str, f: impl FnOnce() -> R) -> R {
+    let _reset = set_lang(l);
+    f()
+}
+
+/// The language a run prints in for a person (mu-152): `--lang`, else `$MUSTER_LANG`, else
+/// English. `LANG` and `LC_*` are never read: agents inherit the owner's shell. Inside an agent
+/// session (`CLAUDE_CODE_SESSION_ID` set) `$MUSTER_LANG` doesn't count either, only `--lang`, so
+/// agents get English while the owner's own `! muster --lang fa …` there still works. A `--lang`
+/// other than en or fa is refused; a `$MUSTER_LANG` of another one is English.
+fn resolve_lang(a: &Args, env: Env) -> Result<&'static str, String> {
+    if let Some(l) = a.flags.get("lang") {
+        return crate::i18n::known(l)
+            .ok_or_else(|| format!("--lang takes en or fa, not {l:?} (see `muster help`)"));
+    }
+    if env("CLAUDE_CODE_SESSION_ID").is_some_and(|s| !s.is_empty()) {
+        return Ok("en");
+    }
+    Ok(env("MUSTER_LANG")
+        .and_then(|l| crate::i18n::known(&l))
+        .unwrap_or("en"))
+}
+
+/// The command line's text for `key` in this run's language (mu-152, `cli.json`), `args` filled
+/// in as they are. English is the text muster has always printed.
+fn tr(key: &str, args: &[(&str, &str)]) -> String {
+    crate::i18n::cli_text(lang(), key, None, args)
+}
+
+/// `tr`'s plural form for `n`, which fills `{{count}}` in Latin digits.
+fn tr_n(key: &str, n: usize, args: &[(&str, &str)]) -> String {
+    crate::i18n::cli_text(
+        lang(),
+        key,
+        Some(u64::try_from(n).unwrap_or(u64::MAX)),
+        args,
+    )
+}
+
+/// A stamp (`YYYY-MM-DD HH:MM` or a day) as this run shows it: Jalali in Persian.
+fn when(stamp: &str) -> String {
+    crate::jalali::stamp_in(lang(), stamp)
+}
+
+/// A stage's name in this run's language ("" for none), as `queue::stage_label` in English.
+fn stage_word(stage: &str) -> String {
+    if queue::stage_label(stage).is_empty() {
+        return String::new();
+    }
+    tr(&format!("stage.{stage}"), &[])
+}
+
+/// How long something has been quiet, as `ops::quiet_text` says it, in this run's language.
+fn quiet_words(minutes: u64) -> String {
+    let n = |m: u64| usize::try_from(m).unwrap_or(usize::MAX);
+    if minutes >= 60 {
+        tr_n("time.hours", n(minutes / 60), &[])
+    } else {
+        tr_n("time.minutes", n(minutes), &[])
+    }
+}
+
+/// A span of `minutes` as `settings::span_text` writes it (days, hours, minutes), in this run's
+/// language.
+fn span_words(minutes: u64) -> String {
+    let n = |m: u64| usize::try_from(m).unwrap_or(usize::MAX);
+    let parts: Vec<String> = [
+        (minutes / 1440, "time.days"),
+        (minutes % 1440 / 60, "time.hours"),
+        (minutes % 60, "time.minutes"),
+    ]
+    .into_iter()
+    .filter(|(k, _)| *k > 0)
+    .map(|(k, key)| tr_n(key, n(k), &[]))
+    .collect();
+    if parts.is_empty() {
+        tr_n("time.minutes", 0, &[])
+    } else {
+        parts.join(&tr("time.join", &[]))
+    }
+}
+
+/// How long a claim was quiet, as `ops` writes it (`quiet_text`: "13 h", "5 min"), in this run's
+/// language; anything else as written. The JSON keeps ops's own.
+fn quiet_said(quiet: &str) -> String {
+    let minutes = quiet.split_once(' ').and_then(|(n, unit)| {
+        let n: u64 = n.parse().ok()?;
+        match unit {
+            "h" => n.checked_mul(60),
+            "min" => Some(n),
+            _ => None,
+        }
+    });
+    minutes.map_or_else(|| quiet.to_string(), quiet_words)
+}
+
+/// A task's estimate, as `ops::estimate_text` writes it, in this run's language: the times and
+/// tokens as typed.
+fn estimate_words(t: &queue::Task) -> String {
+    let agent = (!t.est_time.is_empty()).then(|| tr("list.estAgent", &[("time", &t.est_time)]));
+    let test =
+        (!t.est_test_time.is_empty()).then(|| tr("list.estTest", &[("time", &t.est_test_time)]));
+    let tokens = (!t.est_tokens.is_empty()).then(|| t.est_tokens.clone());
+    [agent, test, tokens]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// What blocks `t`, as `block::sentence_of` says it, in this run's language (mu-152 D6: block.rs
+/// stays English; this builds the same sentence from the block's kind, detail and tasks).
+fn block_text(t: &queue::Task, short: bool) -> String {
+    if t.blocked_kind.is_empty() {
+        return String::new();
+    }
+    let asked = crate::block::asked(t);
+    let look = crate::block::look(&t.blocked_kind, asked);
+    let lead = tr(
+        &format!(
+            "block.lead.{}",
+            if look.is_empty() { "other" } else { look }
+        ),
+        &[],
+    );
+    let by = !t.blocked_by.is_empty();
+    let words = match look {
+        "tasks" if by => t
+            .blocked_by
+            .iter()
+            .map(|b| {
+                let key = crate::key::key(&t.prefix, &b.id);
+                let stage = stage_word(&b.stage);
+                match (short || stage.is_empty(), b.holder.is_empty()) {
+                    (true, _) => key,
+                    (false, true) => tr("block.taskStage", &[("key", &key), ("stage", &stage)]),
+                    (false, false) => tr(
+                        "block.taskStageHolder",
+                        &[("key", &key), ("stage", &stage), ("holder", &b.holder)],
+                    ),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(&tr("block.separator", &[])),
+        "question" if !short => {
+            let detail = t.block_detail.trim();
+            let shown = match asked.and_then(|q| q.text.lines().next()).map(str::trim) {
+                Some(q) if !q.is_empty() => format!("{detail} {q}"),
+                _ => detail.to_string(),
+            };
+            if shown.is_empty() {
+                tr("block.waitingOnCapture", &[])
+            } else {
+                tr("block.detailWaitingOnCapture", &[("detail", &shown)])
+            }
+        }
+        _ => crate::block::words(&t.blocked_kind, &t.block_detail, &[], asked, short),
+    };
+    match look {
+        "tasks" if by => format!("{lead} {words}"),
+        "tasks" if words.is_empty() => tr("block.afterOther", &[]),
+        "tasks" => tr("block.afterOtherDetail", &[("detail", &words)]),
+        _ if words.is_empty() => lead,
+        _ => format!("{lead}: {words}"),
+    }
+}
+
+/// The stderr line for a run in Persian in VS Code's terminal (mu-152), which can't lay out
+/// right-to-left text: once per run, never with `--json`.
+fn vscode_note(lang: &str, json: bool, env: Env) -> Option<String> {
+    (lang == "fa" && !json && env("TERM_PROGRAM").as_deref() == Some("vscode"))
+        .then(|| crate::i18n::cli_text(lang, "terminal.vscode", None, &[]))
 }
 
 /// `print!` for a command's output, through `out_str`.
@@ -235,7 +522,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
             | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built"
             | "--agent" | "--now-unchanged" | "--role" | "--account" | "--provider" | "--task"
-            | "--since" => {
+            | "--since" | "--lang" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -417,16 +704,19 @@ fn accounts_cmd(a: &Args, env: Env) -> Result<i32, String> {
         Some("add") => {
             let provider = a.flags.get("provider").map(String::as_str).unwrap_or("");
             let p = profiles::add(&file, &settings, &home, label()?, provider)?;
-            outln!("added {}", p.name());
+            outln!("{}", tr("said.accountAdded", &[("name", &p.name())]));
         }
         Some("remove") => {
             let p = profiles::remove(&file, &allowed, label()?)?;
-            outln!("removed {}", p.name());
+            outln!("{}", tr("said.accountRemoved", &[("name", &p.name())]));
         }
         Some("set") => {
             let field = need(a, 3, "the field to set")?;
             let p = profiles::set(&file, &allowed, label()?, field, need(a, 4, "its value")?)?;
-            outln!("{}: {field} saved", p.name());
+            outln!(
+                "{}",
+                tr("said.accountSaved", &[("name", &p.name()), ("field", field)])
+            );
         }
         Some("record") => match a.flags.get("from").map(String::as_str) {
             Some("statusline") => return Ok(record_statusline(env)),
@@ -553,7 +843,7 @@ fn your_check_line(
 fn warn_your_check(root: &Path, prefix: &str) {
     let config = projects::load(&config_file());
     if let Some(l) = your_check_line(root, &keyed(root, prefix).tasks, &config) {
-        eprintln!("{l}");
+        errln!("{l}");
     }
 }
 
@@ -866,31 +1156,33 @@ fn task_lists(a: &mut Args, cmd: &str, prefix: &str, project: &str) -> Result<()
 fn returned_lines(k: &str, r: &ops::Returned) -> Vec<String> {
     let mut out = Vec::new();
     if !r.finding.is_empty() {
-        out.push(format!(
-            "{k}: owner finding {} for the builder to fix or dispute; first in line",
-            r.finding
-        ));
+        out.push(tr("said.finding", &[("key", k), ("finding", &r.finding)]));
     }
     if !r.not_told.is_empty() {
-        out.push(format!(
-            "{k}: the builder's session wasn't told ({}); muster next shows it",
-            r.not_told
-        ));
+        out.push(tr("said.notTold", &[("key", k), ("why", &r.not_told)]));
     } else if !r.told.is_empty() {
-        out.push(format!("{k}: told session {}", r.told));
+        out.push(tr("said.told", &[("key", k), ("session", &r.told)]));
     }
     out
 }
 
 /// `claimed mu-19 in muster (/…/muster/tasks)`, then where it is now.
 fn claimed_message(root: &Path, prefix: &str, id: &str, path: &str) -> String {
+    let at = [
+        ("key", crate::key::key(prefix, id)),
+        ("project", projects::default_name(root)),
+        ("root", root.display().to_string()),
+    ];
     format!(
-        "claimed {} in {} ({})\n{}",
-        crate::key::key(prefix, id),
-        projects::default_name(root),
-        root.display(),
+        "{}\n{}",
+        tr("said.claimed", &pairs(&at)),
         stage_message(root, prefix, id, path)
     )
+}
+
+/// Named values as `tr` takes them.
+fn pairs<'a>(named: &'a [(&'a str, String)]) -> Vec<(&'a str, &'a str)> {
+    named.iter().map(|(k, v)| (*k, v.as_str())).collect()
 }
 
 /// What `muster shape` says of the note's claim (0097), before the brief.
@@ -920,26 +1212,30 @@ fn reclaim_text(r: &ops::Reclaimed, within: &str, key: impl Fn(&str) -> String) 
     let mut out = String::new();
     for x in &r.released {
         let now = if x.stage == "shaping" {
-            "unheld, still in Shaping"
+            tr("reclaim.stillShaping", &[])
         } else {
-            "back in Ready"
+            tr("reclaim.backInReady", &[])
         };
-        out += &format!(
-            "released {} from {} (no heartbeat for {}): {now} ({})\n",
-            key(&x.id),
-            x.holder,
-            x.quiet,
-            x.path
-        );
+        let k = key(&x.id);
+        let at = [
+            ("key", k.as_str()),
+            ("holder", &x.holder),
+            ("quiet", &quiet_said(&x.quiet)),
+            ("now", &now),
+            ("path", &x.path),
+        ];
+        out += &format!("{}\n", tr("reclaim.released", &at));
     }
     for n in &r.notes {
-        out += &format!(
-            "released backlog note {} from {} (no heartbeat for {}): nobody is shaping it now\n",
-            n.note, n.holder, n.quiet
-        );
+        let at = [
+            ("note", n.note.as_str()),
+            ("holder", &n.holder),
+            ("quiet", &quiet_said(&n.quiet)),
+        ];
+        out += &format!("{}\n", tr("reclaim.releasedNote", &at));
     }
     if r.released.is_empty() && r.failed.is_empty() && r.notes.is_empty() {
-        out += &format!("nothing to release: every claim in Shaping and Building, and on a backlog note, was heard from within {within}\n");
+        out += &format!("{}\n", tr("reclaim.nothing", &[("within", within)]));
     }
     out
 }
@@ -956,12 +1252,12 @@ fn shape_json(b: &backlog::Brief, claim: Option<&backlog::Claim>) -> serde_json:
 
 /// `filed mu-31 in muster (Shaping)`: what `muster file` made, and where.
 fn filed_message(root: &Path, prefix: &str, f: &backlog::Filed) -> String {
-    format!(
-        "filed {} in {} ({})",
-        crate::key::key(prefix, &f.id),
-        projects::default_name(root),
-        queue::stage_label("shaping")
-    )
+    let at = [
+        ("key", crate::key::key(prefix, &f.id)),
+        ("project", projects::default_name(root)),
+        ("stage", stage_word("shaping")),
+    ];
+    tr("said.filed", &pairs(&at))
 }
 
 /// What `muster file` warns, task `k` filed, when its body has no line for some of the project's
@@ -1010,13 +1306,18 @@ fn question_number(q: &str) -> Result<u32, String> {
 fn options_text(c: &crate::choices::Choices) -> String {
     let mut out = String::new();
     for (i, o) in c.options.iter().enumerate() {
-        let mine = if c.pick == Some(i) { "  ← pick" } else { "" };
+        let mine = if c.pick == Some(i) {
+            tr("said.pickMark", &[])
+        } else {
+            String::new()
+        };
         out.push_str(&format!("  ({}) {o}{mine}\n", crate::choices::letter(i)));
     }
     if let Some(i) = c.no_answer {
+        let letter = crate::choices::letter(i).to_string();
         out.push_str(&format!(
-            "  With no answer: ({})\n",
-            crate::choices::letter(i)
+            "  {}\n",
+            tr("said.noAnswer", &[("letter", &letter)])
         ));
     }
     out
@@ -1262,15 +1563,16 @@ fn stage_message(root: &Path, prefix: &str, id: &str, path: &str) -> String {
     match ops::tasks_now(root).into_iter().find(|t| t.id == id) {
         Some(mut t) => {
             t.prefix = prefix.to_string();
-            let why = crate::block::sentence_of(&t, false);
-            let blocked = if why.is_empty() {
-                why
+            let why = block_text(&t, false);
+            let stage = stage_word(&t.stage);
+            let at = [("key", k.as_str()), ("stage", &stage), ("path", path)];
+            if why.is_empty() {
+                tr("said.stage", &at)
             } else {
-                format!(", {why}")
-            };
-            format!("{k}: {}{blocked} ({path})", queue::stage_label(&t.stage))
+                tr("said.stageBlocked", &[at[0], at[1], at[2], ("why", &why)])
+            }
         }
-        None => format!("{k}: changed ({path})"),
+        None => tr("said.changed", &[("key", &k), ("path", path)]),
     }
 }
 
@@ -1351,8 +1653,8 @@ fn checkin_text(c: &queue::Checkin, max: usize) -> String {
         text = format!("{}…", text.trim_end());
     }
     match c.pct {
-        Some(n) => format!("{n}% · {text} ({})", c.at),
-        None => format!("{text} ({})", c.at),
+        Some(n) => format!("{n}% · {text} ({})", when(&c.at)),
+        None => format!("{text} ({})", when(&c.at)),
     }
 }
 
@@ -1361,25 +1663,28 @@ fn checkin_text(c: &queue::Checkin, max: usize) -> String {
 fn show_footer(t: &queue::Task) -> String {
     let mut out = String::new();
     if !t.prefix.is_empty() {
-        out.push_str(&format!("key: {}\n", crate::key::key(&t.prefix, &t.id)));
+        let k = crate::key::key(&t.prefix, &t.id);
+        out.push_str(&format!("{}\n", tr("show.key", &[("key", &k)])));
     }
     let holder = t.holder();
     if !holder.is_empty() {
-        let since = if t.stage_since.is_empty() {
-            String::new()
+        let stage = stage_word(&t.stage);
+        let on_it = if t.stage_since.is_empty() {
+            tr("show.onIt", &[("who", holder), ("stage", &stage)])
         } else {
-            format!(", since {}", t.stage_since)
+            let since = when(&t.stage_since);
+            tr(
+                "show.onItSince",
+                &[("who", holder), ("stage", &stage), ("since", &since)],
+            )
         };
-        out.push_str(&format!(
-            "on it: {holder} ({}{since})\n",
-            queue::stage_label(&t.stage)
-        ));
+        out.push_str(&format!("{on_it}\n"));
     }
     if let Some(c) = t.current_checkin() {
+        let text = checkin_text(c, usize::MAX);
         out.push_str(&format!(
-            "latest check-in, by {}: {}\n",
-            c.who,
-            checkin_text(c, usize::MAX)
+            "{}\n",
+            tr("show.checkin", &[("who", &c.who), ("text", &text)])
         ));
     }
     if out.is_empty() {
@@ -1460,11 +1765,14 @@ fn shaping_text(n: &backlog::Note, stamp: &str) -> String {
     }
     let who = session::split(&n.held_by).0;
     match (ops::stamp_minutes(&n.held_since), ops::stamp_minutes(stamp)) {
-        (Some(at), Some(now)) => format!(
-            "  · shaping: {who}, {}",
-            ops::quiet_text(u64::try_from(now - at).unwrap_or(0))
-        ),
-        _ => format!("  · shaping: {who}"),
+        (Some(at), Some(now)) => {
+            let quiet = quiet_words(u64::try_from(now - at).unwrap_or(0));
+            format!(
+                "  · {}",
+                tr("list.shapingFor", &[("who", who), ("quiet", &quiet)])
+            )
+        }
+        _ => format!("  · {}", tr("list.shaping", &[("who", who)])),
     }
 }
 
@@ -1479,13 +1787,10 @@ fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task], stamp: &str) -> 
     let key = |t: &queue::Task| crate::key::key(&t.prefix, &t.id);
     let width = tasks.iter().map(|t| key(t).len()).max().unwrap_or(0);
     if !notes.is_empty() {
-        out.push_str(&format!("Backlog notes ({})\n", notes.len()));
+        out.push_str(&format!("{}\n", tr_n("list.notes", notes.len(), &[])));
+        let empty = tr("list.emptyNote", &[]);
         for n in notes {
-            let title = if n.title.is_empty() {
-                "(empty note)"
-            } else {
-                &n.title
-            };
+            let title = if n.title.is_empty() { &empty } else { &n.title };
             out.push_str(&format!(
                 "  {}  {title}{}\n",
                 n.file,
@@ -1501,23 +1806,27 @@ fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task], stamp: &str) -> 
         if st == "done" {
             out = &mut tail;
         }
-        out.push_str(&format!("{} ({})\n", ops::stage_label(st), group.len()));
+        out.push_str(&format!("{} ({})\n", stage_word(st), group.len()));
         for t in group {
             let mut extra = String::new();
             // The owner's own task (0022): only they do it.
             if t.is_human() {
-                extra.push_str("  [you]");
+                extra.push_str(&format!("  {}", tr("list.you", &[])));
             }
             if !t.blocked_kind.is_empty() {
-                extra.push_str(&format!(" [{}]", crate::block::sentence_of(t, true)));
+                extra.push_str(&format!(" [{}]", block_text(t, true)));
             }
             if !t.paused.is_empty() {
-                extra.push_str(&format!("  [paused since {}]", t.paused));
+                let since = when(&t.paused);
+                extra.push_str(&format!(
+                    "  {}",
+                    tr("list.pausedSince", &[("since", &since)])
+                ));
             }
             if t.waiting_for_owner {
-                extra.push_str("  [needs you]");
+                extra.push_str(&format!("  {}", tr("list.needsYou", &[])));
             }
-            let estimate = ops::estimate_text(t);
+            let estimate = estimate_words(t);
             if !estimate.is_empty() {
                 extra.push_str(&format!("  ~{estimate}"));
             }
@@ -1525,13 +1834,14 @@ fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task], stamp: &str) -> 
                 extra.push_str(&format!("  #{}", t.tags.join(" #")));
             }
             if t.open_questions > 0 {
-                extra.push_str(&format!("  [{} open Q]", t.open_questions));
+                extra.push_str(&format!("  {}", tr_n("list.openQ", t.open_questions, &[])));
             }
             if !t.holder().is_empty() {
-                extra.push_str(&format!("  [on it: {}]", t.holder()));
+                extra.push_str(&format!("  {}", tr("list.onIt", &[("who", t.holder())])));
             }
             if let Some(c) = t.current_checkin() {
-                extra.push_str(&format!("  [check-in {}]", checkin_text(c, 60)));
+                let text = checkin_text(c, 60);
+                extra.push_str(&format!("  {}", tr("list.checkin", &[("text", &text)])));
             }
             out.push_str(&format!(
                 "  {:<width$} {:<9} {:<7} {}{extra}\n",
@@ -1643,20 +1953,23 @@ fn run_history(a: &Args, root: &Path, me: &dyn Fn() -> String) -> Result<i32, St
         Some("commit") => {
             let done = crate::history::commit_outside(root)?;
             if done.is_empty() {
-                outln!("nothing to commit: the history has every file");
+                outln!("{}", tr("history.nothingToCommit", &[]));
             } else {
-                outln!("committed {}", done.join(", "));
+                outln!(
+                    "{}",
+                    tr("history.committed", &[("files", &done.join(", "))])
+                );
             }
             return Ok(0);
         }
         Some("removed") => {
             let done = crate::history::removed(root, &a.pos[2..], a.all, &me())?;
             if done.is_empty() {
-                outln!("nothing to record: no file is missing since the last commit");
+                outln!("{}", tr("history.nothingToRecord", &[]));
             } else {
                 outln!(
-                    "recorded as removed: {} (older commits keep them: muster restore <path> brings one back)",
-                    done.join(", ")
+                    "{}",
+                    tr("history.recordedRemoved", &[("files", &done.join(", "))])
                 );
             }
             return Ok(0);
@@ -1674,20 +1987,20 @@ fn run_history(a: &Args, root: &Path, me: &dyn Fn() -> String) -> Result<i32, St
         return Ok(0);
     }
     if !s.kept {
-        outln!("this queue keeps no history of its own: only a local .muster queue (local = true) in a repo's main checkout has one");
+        outln!("{}", tr("history.notKept", &[]));
         return Ok(0);
     }
     let problems = crate::history::problems("q", root);
     if !s.started && problems.is_empty() {
-        outln!("history: not started yet: the queue's next write starts it");
+        outln!("{}", tr("history.notStarted", &[]));
     } else if problems.is_empty() {
-        outln!("history: every file committed");
+        outln!("{}", tr("history.allCommitted", &[]));
     }
     for p in &problems {
         outln!("{}", p.trim_start_matches("q: "));
     }
     for (at, what) in crate::history::log(root, 10)? {
-        outln!("{at}  {what}");
+        outln!("{}  {what}", when(&at));
     }
     Ok(0)
 }
@@ -1731,11 +2044,11 @@ fn new_task(a: &Args, title: &str, body: String) -> ops::NewTask {
     }
 }
 
+/// `v` as pretty JSON and a newline, written as it is (`out_raw`): what a script reads is never
+/// escaped or translated.
 fn print_json<T: serde::Serialize>(v: &T) -> Result<(), String> {
-    outln!(
-        "{}",
-        serde_json::to_string_pretty(v).map_err(|e| e.to_string())?
-    );
+    let json = serde_json::to_string_pretty(v).map_err(|e| e.to_string())?;
+    out_raw(&format!("{json}\n"));
     Ok(())
 }
 
@@ -1928,9 +2241,12 @@ fn set_project_command(
     }
     set(config, base, name, cmd)?;
     Ok(if cmd.trim().is_empty() {
-        format!("{name}: {field} cleared")
+        tr("said.projectCleared", &[("name", name), ("field", field)])
     } else {
-        format!("{name}: {field} set to {}", cmd.trim())
+        tr(
+            "said.projectSet",
+            &[("name", name), ("field", field), ("command", cmd.trim())],
+        )
     })
 }
 
@@ -1943,8 +2259,9 @@ fn set_project_prefix(a: &Args, config: &projects::Config, base: &Path) -> Resul
         return Err("projects set <name> prefix takes one prefix (see `muster help`)".into());
     }
     projects::set_prefix(config, base, name, prefix)?;
-    Ok(format!(
-        "{name}: prefix set to {prefix} (its tasks are {prefix}-1, {prefix}-2…)"
+    Ok(tr(
+        "said.projectPrefix",
+        &[("name", name), ("prefix", prefix)],
     ))
 }
 
@@ -1980,11 +2297,18 @@ fn merge_cmd(
     }
     let (project, gate) = gate.unwrap_or_else(|| (projects::default_name(root), String::new()));
     let argv = gate_words(&project, &gate)?;
-    outln!("{k}: merging into main (gate: {})", argv.join(" "));
+    let gate_line = argv.join(" ");
+    outln!(
+        "{}",
+        tr("merge.merging", &[("key", &k), ("gate", &gate_line)])
+    );
     let mut say = |line: String| outln!("{line}");
     match crate::parallel::merge(root, id, who, &local_stamp, &argv, cwd, &mut say)? {
         crate::parallel::Merge::Returned(why) => {
-            outln!("{k}: back in Building: {why}");
+            outln!(
+                "{}",
+                tr("merge.backInBuilding", &[("key", &k), ("why", &why)])
+            );
             Ok(1)
         }
         crate::parallel::Merge::Merged {
@@ -1995,18 +2319,19 @@ fn merge_cmd(
             next,
         } => {
             for n in &notes {
-                outln!("left behind: {n} (muster check lists it)");
+                outln!("{}", tr("merge.leftBehind", &[("what", n)]));
             }
             outln!("{}", stage_message(root, prefix, id, &path));
-            outln!("{k}: {report}");
+            outln!(
+                "{}",
+                tr("merge.report", &[("key", &k), ("report", &report)])
+            );
             match next {
                 Some((n, title)) => {
                     let n = crate::key::key(prefix, &n);
-                    outln!("next: {n} {title}: muster start {n}")
+                    outln!("{}", tr("merge.next", &[("key", &n), ("title", &title)]))
                 }
-                None => {
-                    outln!("next: nothing else ready that's safe beside the tasks still running")
-                }
+                None => outln!("{}", tr("merge.nextNone", &[])),
             }
             Ok(0)
         }
@@ -2017,27 +2342,40 @@ fn merge_cmd(
 /// its criteria), then what to do.
 fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Started) -> String {
     let k = crate::key::key(prefix, id);
+    let at = [
+        ("key", k.clone()),
+        ("project", projects::default_name(root)),
+        ("root", root.display().to_string()),
+    ];
+    let head = tr(
+        if s.resumed {
+            "start.pickedUp"
+        } else {
+            "start.started"
+        },
+        &pairs(&at),
+    );
+    let worktree = s.worktree.display().to_string();
+    let brief = root.join(&s.path).display().to_string();
     let mut out = format!(
-        "{} {k} in {} ({})\n{}\nworktree: {}\nbranch:   {}\nbrief:    {}\n",
-        if s.resumed { "picked up" } else { "started" },
-        projects::default_name(root),
-        root.display(),
+        "{head}\n{}\n{}\n{}\n{}\n",
         stage_message(root, prefix, id, &s.path),
-        s.worktree.display(),
-        s.branch,
-        root.join(&s.path).display()
+        tr("start.worktree", &[("path", &worktree)]),
+        tr("start.branch", &[("branch", &s.branch)]),
+        tr("start.brief", &[("path", &brief)])
     );
     let touches = queue::read_task(root, id)
         .map(|t| t.touches)
         .unwrap_or_default();
     if !touches.is_empty() {
-        out.push_str(&format!("touches:  {}\n", touches.join(", ")));
+        let list = touches.join(", ");
+        out.push_str(&format!("{}\n", tr("start.touches", &[("list", &list)])));
     }
     if let Ok(text) = queue::read_body(root, id) {
         let body = queue::front_matter(&text).map(|(_, b)| b).unwrap_or("");
         let items = queue::criteria_items(body);
         if !items.is_empty() {
-            out.push_str("criteria:\n");
+            out.push_str(&format!("{}\n", tr("start.criteria", &[])));
             for c in items {
                 let proof = if c.proof.is_empty() {
                     String::new()
@@ -2059,13 +2397,17 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
     // review round settles them.
     let owners = review::owner_to_recheck(root, id);
     if !owners.is_empty() {
+        let findings = owners.join(", ");
         out.push_str(&format!(
-            "owner findings first: {} (sent back from Your check; see the task's Review section): fix each here and answer it with muster review {k} --fixed R<n> \"<how>\" or --dispute R<n> \"<why>\"; this branch's review round re-checks them\n",
-            owners.join(", ")
+            "{}\n",
+            tr(
+                "start.ownerFindings",
+                &[("findings", &findings), ("key", &k)]
+            )
         ));
     }
     if !learned.is_empty() {
-        out.push_str("lessons (the owner accepted these from earlier reviews; follow them):\n");
+        out.push_str(&format!("{}\n", tr("start.lessons", &[])));
         for l in &learned {
             out.push_str(&format!(
                 "  - {}\n",
@@ -2073,9 +2415,7 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
             ));
         }
     }
-    out.push_str(&format!(
-        "Work in the worktree. Check in every 30 minutes (muster checkin {k} \"…\" --pct <n>); when the gate is green: muster pass {k} --from building --gate \"<the gate's line>\" --summary \"<what was built, one plain line in the owner's words>\". In Testing the engine reviews the branch (muster review {k}); answer what it finds with muster review {k} --fixed or --dispute.\n"
-    ));
+    out.push_str(&format!("{}\n", tr("start.then", &[("key", &k)])));
     out
 }
 
@@ -2086,10 +2426,10 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
 fn set_merge_driver(dir: &Path) {
     match crate::merge_log::configure(dir) {
         Ok(keys) if keys.is_empty() => {}
-        Ok(keys) => outln!(
-            "set {} in the repo's git config, so work log entries merge whole (muster merge-log)",
-            keys.join(" and ")
-        ),
+        Ok(keys) => {
+            let keys = keys.join(&tr("said.and", &[]));
+            outln!("{}", tr("said.driverSet", &[("keys", &keys)]))
+        }
         Err(e) => out!("\n{}", crate::merge_log::not_set(&e)),
     }
 }
@@ -2121,9 +2461,9 @@ fn driver_warning(prefix: &str) -> String {
 /// One line per task for `muster ready`: key, priority, title, and what it touches.
 fn ready_line(t: &queue::Task) -> String {
     let touches = if t.touches.is_empty() {
-        "no touches".to_string()
+        tr("ready.noTouches", &[])
     } else {
-        format!("touches: {}", t.touches.join(", "))
+        tr("ready.touches", &[("list", &t.touches.join(", "))])
     };
     format!(
         "  {} {:<7} {}  [{touches}]\n",
@@ -2156,7 +2496,7 @@ fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
     let (set, left) = if a.parallel {
         // Planning parallel sessions (0023): say first when the owner's review is the bottleneck.
         if let Some(l) = your_check_line(root, &s.tasks, &projects::load(&config_file())) {
-            eprintln!("{l}");
+            errln!("{l}");
         }
         let p = crate::parallel::ready_parallel(&s.tasks, n);
         (p.set, p.left)
@@ -2175,23 +2515,24 @@ fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
         return Ok(0);
     }
     if set.is_empty() {
-        outln!(
-            "nothing ready to start in {} ({})",
-            projects::default_name(root),
-            root.display()
-        );
+        let at = [
+            ("project", projects::default_name(root)),
+            ("root", root.display().to_string()),
+        ];
+        outln!("{}", tr("ready.nothing", &pairs(&at)));
         return Ok(0);
     }
     let mut out = if a.parallel {
-        format!("Can start together ({} of up to {n}):\n", set.len())
+        let max = n.to_string();
+        format!("{}\n", tr_n("ready.together", set.len(), &[("max", &max)]))
     } else {
-        format!("Ready to start ({}):\n", set.len())
+        format!("{}\n", tr_n("ready.heading", set.len(), &[]))
     };
     for t in &set {
         out.push_str(&ready_line(t));
     }
     if !left.is_empty() {
-        out.push_str("Not with them:\n");
+        out.push_str(&format!("{}\n", tr("ready.notWith", &[])));
         for (t, why) in &left {
             out.push_str(&format!(
                 "  {} {}: {why}\n",
@@ -2236,7 +2577,7 @@ fn main_with(argv: &[String], env: Env) -> i32 {
     match run_with(argv, env) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("muster: {e}");
+            errln!("{}", error_line(&e));
             if e.contains("see `muster help`") || e.starts_with("unknown") {
                 2
             } else {
@@ -2244,6 +2585,12 @@ fn main_with(argv: &[String], env: Env) -> i32 {
             }
         }
     }
+}
+
+/// The stderr line of a refusal or failure. It may name a title: its bidi controls are shown
+/// (`<U+202E>`), as on stdout.
+fn error_line(e: &str) -> String {
+    format!("muster: {}", crate::i18n::escape_bidi(e))
 }
 
 fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
@@ -2260,6 +2607,11 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
         return Ok(record_statusline(env));
     }
     let a = parse(argv)?;
+    // The language, before anything is printed (help too), for this run only.
+    let _lang = set_lang(resolve_lang(&a, env)?);
+    if let Some(note) = vscode_note(lang(), a.json, env) {
+        errln!("{note}");
+    }
     if !reads_only(&a) {
         STDOUT.writes(a.pos.first().map_or("help", String::as_str));
     }
@@ -2283,11 +2635,11 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 return Ok(0);
             }
             match a.pos.get(1) {
-                Some(name) => match crate::help::command_text(name) {
+                Some(name) => match crate::help::command_text(name, lang()) {
                     Some(t) => out!("{t}"),
                     None => return Err(format!("unknown command {name:?} (see `muster help`)")),
                 },
-                None => out!("{}", crate::help::text()),
+                None => out!("{}", crate::help::text(lang())),
             }
             Ok(0)
         }
@@ -2373,10 +2725,11 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             let known = crate::key::known();
             // In a repo, its `.muster/` (0005); elsewhere, the old `<folder>/tasks`.
             let (q, prefix) = projects::new_queue(&dir, committed, wanted, &known, &tools_dir())?;
-            outln!(
-                "created {} (prefix {prefix}: its tasks are {prefix}-1, {prefix}-2…)",
-                q.display()
-            );
+            let at = [
+                ("queue", q.display().to_string()),
+                ("prefix", prefix.clone()),
+            ];
+            outln!("{}", tr("said.createdQueue", &pairs(&at)));
             if q.file_name().is_some_and(|n| n == crate::layout::DIR) {
                 set_merge_driver(&dir);
             }
@@ -2499,7 +2852,8 @@ fn run_on(
             if a.json {
                 print_json(&with_key(serde_json::json!(c), key(&c.id)))?;
             } else {
-                outln!("{} {}", key(&c.id), c.path);
+                let k = key(&c.id);
+                outln!("{}", tr("said.created", &[("key", &k), ("path", &c.path)]));
             }
             Ok(0)
         }
@@ -2515,13 +2869,13 @@ fn run_on(
             if a.json {
                 print_json(&list_json(&notes, &tasks))?;
                 if let Some(l) = over {
-                    eprintln!("{l}");
+                    errln!("{l}");
                 }
             } else {
                 let (head, tail) = list_parts(&notes, &tasks, stamp);
                 out!("{head}");
                 if let Some(l) = over {
-                    eprintln!("{l}");
+                    errln!("{l}");
                 }
                 out!("{tail}");
             }
@@ -2585,7 +2939,7 @@ fn run_on(
                 .is_ok_and(|t| t.stage == "testing" && !t.branch.is_empty())
             {
                 let k = key(id);
-                outln!("next: the review of record, by a session that didn't build it: muster review {k} prints its brief");
+                outln!("{}", tr("said.nextReview", &[("key", &k)]));
             }
             Ok(0)
         }
@@ -2637,19 +2991,17 @@ fn run_on(
             } else {
                 pause::resume(root, id, &me(), stamp)?
             };
-            outln!("{}: {cmd}d ({})", key(id), p.path);
+            let k = key(id);
+            let (done, ask) = if cmd == "pause" {
+                ("said.paused", "said.askedToStop")
+            } else {
+                ("said.resumed", "said.askedToCarryOn")
+            };
+            outln!("{}", tr(done, &[("key", &k), ("path", &p.path)]));
             if !p.session.is_empty() {
-                let ask = if cmd == "pause" {
-                    "to stop"
-                } else {
-                    "to carry on"
-                };
-                outln!(
-                    "Asked session {} {ask}: it arrives after that session's next tool call.",
-                    p.session
-                );
+                outln!("{}", tr(ask, &[("session", &p.session)]));
             } else if !p.unreached.is_empty() {
-                outln!("Its session can't be told: {}.", p.unreached);
+                outln!("{}", tr("said.cantTell", &[("why", &p.unreached)]));
             }
             Ok(0)
         }
@@ -2666,7 +3018,7 @@ fn run_on(
             let field = need(a, 2, "a field")?;
             let value = a.pos[3..].join(" ");
             ops::set_field(root, id, field, &value, &me(), stamp)?;
-            outln!("{}: {field} set", key(id));
+            outln!("{}", tr("said.set", &[("key", &key(id)), ("field", field)]));
             Ok(0)
         }
         "note" => {
@@ -2678,7 +3030,7 @@ fn run_on(
                 &me(),
                 stamp,
             )?;
-            outln!("{}: noted", key(id));
+            outln!("{}", tr("said.noted", &[("key", &key(id))]));
             Ok(0)
         }
         "tick" | "untick" => {
@@ -2686,11 +3038,8 @@ fn run_on(
             let which = need(a, 2, "which criterion (AC2 or 2)")?;
             let undo = cmd == "untick";
             ops::tick_criterion(root, id, which, undo, &me(), stamp)?;
-            outln!(
-                "{}: {} {which}",
-                key(id),
-                if undo { "unticked" } else { "ticked" }
-            );
+            let said = if undo { "said.unticked" } else { "said.ticked" };
+            outln!("{}", tr(said, &[("key", &key(id)), ("which", which)]));
             Ok(0)
         }
         "edit" => {
@@ -2724,8 +3073,8 @@ fn run_on(
                 _ => {}
             }
             match saved? {
-                Some(p) => outln!("{}: edited ({p})", key(id)),
-                None => outln!("{}: no change", key(id)),
+                Some(p) => outln!("{}", tr("said.edited", &[("key", &key(id)), ("path", &p)])),
+                None => outln!("{}", tr("said.unchanged", &[("key", &key(id))])),
             }
             Ok(0)
         }
@@ -2737,12 +3086,18 @@ fn run_on(
                         return Err("link --remove takes the link's number or address, nothing more (see `muster help`)".into());
                     }
                     let gone = fields::remove_link(root, id, which, &me(), stamp)?;
-                    outln!("{}: unlinked {}", key(id), gone.url);
+                    outln!(
+                        "{}",
+                        tr("said.unlinked", &[("key", &key(id)), ("url", &gone.url)])
+                    );
                 }
                 None => {
                     let url = need(a, 2, "an https link")?;
                     let l = fields::add_link(root, id, url, &a.pos[3..].join(" "), &me(), stamp)?;
-                    outln!("{}: linked {}", key(id), l.url);
+                    outln!(
+                        "{}",
+                        tr("said.linked", &[("key", &key(id)), ("url", &l.url)])
+                    );
                 }
             }
             Ok(0)
@@ -2763,13 +3118,19 @@ fn run_on(
             };
             let c = fields::comment(root, id, &text, &me(), stamp)?;
             if c.did.is_empty() {
-                outln!("{}: commented", key(id));
+                outln!("{}", tr("said.commented", &[("key", &key(id))]));
             } else if c.unsaved.is_empty() {
-                outln!("{}: {}; commented", key(id), c.did);
+                outln!(
+                    "{}",
+                    tr(
+                        "said.didAndCommented",
+                        &[("key", &key(id)), ("did", &c.did)]
+                    )
+                );
             } else {
                 // The action ran: sending the comment again would run it twice.
                 outln!("{}: {}", key(id), c.did);
-                eprintln!(
+                errln!(
                     "{}: the comment couldn't be saved ({}); the action stands, so don't send it again",
                     key(id),
                     c.unsaved
@@ -2794,7 +3155,10 @@ fn run_on(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let saved = ops::attach(root, id, &name, &bytes, &me, stamp)?;
-                outln!("{}: attached {saved}", key(id));
+                outln!(
+                    "{}",
+                    tr("said.attached", &[("key", &key(id)), ("file", &saved)])
+                );
             }
             Ok(0)
         }
@@ -2803,36 +3167,41 @@ fn run_on(
             let q = need(a, 2, "a question like Q2")?;
             let n = question_number(q)?;
             let text = a.pos[3..].join(" ");
-            let (asker, how) = match a.flags.get("pick") {
+            let (asker, pick) = match a.flags.get("pick") {
                 Some(pick) => {
                     let (asker, written) =
                         queue::answer_pick(root, id, n, pick, &text, &label(), stamp)?;
-                    (asker, format!(" with {written}"))
+                    (asker, Some(written))
                 }
-                None => (
-                    queue::answer(root, id, n, &text, &label(), stamp)?,
-                    String::new(),
-                ),
+                None => (queue::answer(root, id, n, &text, &label(), stamp)?, None),
             };
-            match asker {
-                Some(s) => outln!("{}: answered {q}{how}; delivered to session {s}", key(id)),
-                None => outln!(
-                    "{}: answered {q}{how}; no asking session on record",
-                    key(id)
-                ),
-            }
+            let k = key(id);
+            let said = match (&asker, &pick) {
+                (Some(_), Some(_)) => "said.answeredPick",
+                (Some(_), None) => "said.answered",
+                (None, Some(_)) => "said.answeredPickNoSession",
+                (None, None) => "said.answeredNoSession",
+            };
+            let at = [
+                ("key", k.as_str()),
+                ("q", q),
+                ("pick", pick.as_deref().unwrap_or("")),
+                ("session", asker.as_deref().unwrap_or("")),
+            ];
+            outln!("{}", tr(said, &at));
             Ok(0)
         }
         "claim" if a.takeover => {
             let id = need(a, 1, "a task id, or a backlog note's file name")?;
             if names_a_note(id) {
                 let t = backlog::takeover_note(root, id, &me(), stamp)?;
-                outln!(
-                    "took {} over from {} ({}); you're shaping it now, heartbeat {stamp}",
-                    t.note,
-                    t.from,
-                    t.why
-                );
+                let at = [
+                    ("note", t.note.as_str()),
+                    ("from", &t.from),
+                    ("why", &t.why),
+                    ("stamp", &when(stamp)),
+                ];
+                outln!("{}", tr("said.tookNote", &at));
                 return Ok(0);
             }
             let t = ops::takeover_task(root, id, &me(), stamp, queue::now_secs())?;
@@ -2840,13 +3209,14 @@ fn run_on(
                 outln!("{line}");
                 return Ok(0);
             }
-            outln!(
-                "{}: took over the claim from {} ({}); heartbeat {stamp} ({})",
-                key(id),
-                t.from,
-                t.why,
-                t.path
-            );
+            let at = [
+                ("key", key(id)),
+                ("from", t.from.clone()),
+                ("why", t.why.clone()),
+                ("stamp", when(stamp)),
+                ("path", t.path.clone()),
+            ];
+            outln!("{}", tr("said.tookTask", &pairs(&at)));
             Ok(0)
         }
         "claim" => {
@@ -2864,11 +3234,12 @@ fn run_on(
                     Ok(0)
                 }
                 None => {
-                    outln!(
-                        "nothing ready in {} ({}) that {me} may take",
-                        projects::default_name(root),
-                        root.display()
-                    );
+                    let at = [
+                        ("project", projects::default_name(root)),
+                        ("root", root.display().to_string()),
+                        ("who", me.clone()),
+                    ];
+                    outln!("{}", tr("said.nothingToTake", &pairs(&at)));
                     Ok(1)
                 }
             }
@@ -2898,10 +3269,8 @@ fn run_on(
             let id = need(a, 1, "a task id, or a backlog note's file name")?;
             if names_a_note(id) {
                 let h = backlog::release_note(root, id, &me())?;
-                outln!(
-                    "released {id}: {} isn't shaping it any more",
-                    session::split(&h.by).0
-                );
+                let who = session::split(&h.by).0;
+                outln!("{}", tr("said.releasedNote", &[("note", id), ("who", who)]));
                 return Ok(0);
             }
             if !a.clean {
@@ -2918,7 +3287,13 @@ fn run_on(
         "heartbeat" => {
             let id = need(a, 1, "a task id")?;
             ops::heartbeat_task(root, id, &me(), stamp)?;
-            outln!("{}: heartbeat {stamp}", key(id));
+            outln!(
+                "{}",
+                tr(
+                    "said.heartbeat",
+                    &[("key", &key(id)), ("stamp", &when(stamp))]
+                )
+            );
             Ok(0)
         }
         "checkin" => {
@@ -2927,27 +3302,39 @@ fn run_on(
             let text = a.pos[2..].join(" ").replace("\\n", " ");
             let pct = a.flags.get("pct").map(String::as_str).unwrap_or("");
             ops::checkin_task_with(root, id, &text, pct, a.handoff, &me(), stamp)?;
-            if a.handoff {
-                outln!(
-                    "{}: checked in, handing off; heartbeat {stamp}. Your successor runs: muster claim {} --takeover",
-                    key(id),
-                    key(id)
-                );
+            let said = if a.handoff {
+                "said.checkedInHandoff"
             } else {
-                outln!("{}: checked in; heartbeat {stamp}", key(id));
-            }
+                "said.checkedIn"
+            };
+            outln!(
+                "{}",
+                tr(said, &[("key", &key(id)), ("stamp", &when(stamp))])
+            );
             Ok(0)
         }
         "ping" => {
             let id = need(a, 1, "a task id")?;
             if a.pos.len() > 2 {
                 let p = ping::message(root, id, &a.pos[2..].join(" "), &me(), stamp)?;
-                outln!("{}: message sent to session {}", key(id), p.session);
+                outln!(
+                    "{}",
+                    tr(
+                        "said.messageSent",
+                        &[("key", &key(id)), ("session", &p.session)]
+                    )
+                );
             } else {
                 let p = ping::ask_checkin(root, id, &me(), stamp)?;
-                outln!("{}: asked session {} for a check-in", key(id), p.session);
+                outln!(
+                    "{}",
+                    tr(
+                        "said.checkinAsked",
+                        &[("key", &key(id)), ("session", &p.session)]
+                    )
+                );
             }
-            outln!("It arrives after that session's next tool call.");
+            outln!("{}", tr("said.arrives", &[]));
             Ok(0)
         }
         "reclaim" => {
@@ -2963,14 +3350,14 @@ fn run_on(
                 print_json(&r)?;
             } else {
                 let within = if after.trim().is_empty() {
-                    settings::span_text(lease)
+                    span_words(lease)
                 } else {
                     after.to_string()
                 };
                 out!("{}", reclaim_text(&r, &within, key));
             }
             for f in &r.failed {
-                eprintln!("muster: couldn't release {f}");
+                errln!("muster: couldn't release {f}");
             }
             Ok(if r.failed.is_empty() { 0 } else { 1 })
         }
@@ -2991,18 +3378,16 @@ fn run_on(
                 &session(a, env),
                 stamp,
             )?;
-            outln!(
-                "asked Q{} on {}. The answer will be delivered to this session.",
-                asked.n,
-                key(id)
-            );
+            let n = asked.n.to_string();
+            outln!("{}", tr("said.asked", &[("n", &n), ("key", &key(id))]));
             if !choices.options.is_empty() {
                 out!("{}", options_text(&choices));
             }
             if !asked.earlier.is_empty() {
-                outln!("\nQuestions on this task so far (check that yours isn't answered here):");
+                outln!("\n{}", tr("said.earlier", &[]));
+                let (yes, open) = (tr("said.answeredTag", &[]), tr("said.openTag", &[]));
                 for (answered, line) in &asked.earlier {
-                    let tag = if *answered { "[answered]" } else { "[open]" };
+                    let tag = if *answered { &yes } else { &open };
                     outln!("  {tag} {line}");
                 }
             }
@@ -3017,16 +3402,14 @@ fn run_on(
                 .ok()
                 .and_then(|t| t.questions.into_iter().find(|q| q.n == Some(n)))
                 .and_then(|q| q.choices);
+            let at = [("n", n.to_string()), ("key", key(id))];
             match choices {
                 Some(c) => out!(
-                    "escalated Q{n} on {}; add it to WAITING-FOR-OWNER.md with its options:\n{}",
-                    key(id),
+                    "{}\n{}",
+                    tr("said.escalatedOptions", &pairs(&at)),
                     options_text(&c)
                 ),
-                None => outln!(
-                    "escalated Q{n} on {}; add it to WAITING-FOR-OWNER.md",
-                    key(id)
-                ),
+                None => outln!("{}", tr("said.escalated", &pairs(&at))),
             }
             Ok(0)
         }
@@ -3048,7 +3431,7 @@ fn run_on(
             if a.json {
                 print_json(&sent)?;
             } else if sent.is_empty() {
-                outln!("nothing to send: no open question on a Shaping or Ready task that isn't blocked is waiting to go to the owner");
+                outln!("{}", tr("said.nothingToSend", &[]));
             } else {
                 let each: Vec<String> = sent
                     .iter()
@@ -3058,18 +3441,17 @@ fn run_on(
                         format!("{} {}", t.key, qs.join(", "))
                     })
                     .collect();
-                outln!(
-                    "sent {} to the owner as one batch ({}); they wait in Waiting for you. Add them to WAITING-FOR-OWNER.md.",
-                    crate::clarify::counted(n, sent.len()),
-                    each.join("; ")
-                );
+                let questions = tr_n("said.questions", n, &[]);
+                let what = tr_n("said.onTasks", sent.len(), &[("questions", &questions)]);
+                let each = each.join("; ");
+                outln!("{}", tr("said.sent", &[("what", &what), ("each", &each)]));
             }
             Ok(0)
         }
         "inbox" => {
             let mail = queue::take_mail(root, &session(a, env), a.keep)?;
             if mail.is_empty() {
-                outln!("no answers waiting");
+                outln!("{}", tr("inbox.empty", &[]));
             } else {
                 outln!("{}", mail.join("\n"));
             }
@@ -3117,10 +3499,10 @@ fn run_on(
             }
             // On stderr, so stdout stays the one line (or the JSON) a script reads.
             if let Some(w) = lens_warning(&key(&f.id), &f.missing_lenses) {
-                eprintln!("{w}");
+                errln!("{w}");
             }
             if let Some(w) = marker_warning(&key(&f.id), &f.markers) {
-                eprintln!("{w}");
+                errln!("{w}");
             }
             Ok(0)
         }
@@ -3130,7 +3512,7 @@ fn run_on(
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let lease = machine_settings(env).lease_minutes;
             let p = backlog::drop_note(root, note, &why, &me(), stamp, lease)?;
-            outln!("dropped {note} ({p})");
+            outln!("{}", tr("said.dropped", &[("note", note), ("path", &p)]));
             Ok(0)
         }
         "restore" => {
@@ -3142,13 +3524,12 @@ fn run_on(
             }
             let back = crate::history::restore(root, &a.pos[1..], a.all, &me())?;
             if back.is_empty() {
-                outln!("nothing to restore: the queue matches its last commit");
+                outln!("{}", tr("said.nothingToRestore", &[]));
             } else {
+                let files = back.join(", ");
                 outln!(
-                    "restored {} file{} from the queue's history: {}",
-                    back.len(),
-                    if back.len() == 1 { "" } else { "s" },
-                    back.join(", ")
+                    "{}",
+                    tr_n("said.restored", back.len(), &[("files", &files)])
                 );
             }
             Ok(0)
@@ -3223,21 +3604,20 @@ fn run_on(
                     })
                     .collect();
                 if !open.is_empty() {
+                    let which = open.join(", ");
                     outln!(
-                        "{}: waits on the owner to verify {}",
-                        key(&t.id),
-                        open.join(", ")
+                        "{}",
+                        tr(
+                            "check.ownerVerifies",
+                            &[("key", &key(&t.id)), ("which", &which)]
+                        )
                     );
                 }
             }
             // And lessons from reviews waiting for the owner's yes (0027).
             let lessons = lessons::waiting(root);
             if lessons > 0 {
-                outln!(
-                    "{lessons} lesson{} from reviews wait{} for the owner's yes (muster lessons)",
-                    if lessons == 1 { "" } else { "s" },
-                    if lessons == 1 { "s" } else { "" }
-                );
+                outln!("{}", tr_n("check.lessons", lessons, &[]));
             }
             let index_line = index_check_line(index::status(root));
             if let Some(l) = &index_line {
@@ -4812,7 +5192,7 @@ mod tests {
         assert_eq!(code(&["block", "0001", "--on", "9:30 standup"]), 1);
         assert!(t("0001").depends.is_empty() && !t("0001").blocked);
         // The help says it all.
-        let help = crate::help::command_text("block").unwrap();
+        let help = crate::help::command_text("block", "en").unwrap();
         for k in [
             "you",
             "permission",
@@ -9239,5 +9619,871 @@ mod tests {
         assert!(crate::history::status(&q).missing.is_empty());
         assert_eq!(code(&["restore", "--all"]), 0);
         assert!(!task.exists(), "restore --all leaves it gone");
+    }
+
+    /// An environment of `vars` only.
+    fn vars_env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let vars: std::collections::HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |k: &str| vars.get(k).cloned()
+    }
+
+    /// The language `argv` prints in, with the environment `vars`.
+    fn lang_of(argv: &[&str], vars: &[(&str, &str)]) -> Result<&'static str, String> {
+        resolve_lang(&parse(&sv(argv)).unwrap(), &vars_env(vars))
+    }
+
+    const SESSION_ID: (&str, &str) = (
+        "CLAUDE_CODE_SESSION_ID",
+        "4d517d9d-1173-481b-80cc-27e72f903f3c",
+    );
+
+    /// mu-152 AC1: `--lang`, else `$MUSTER_LANG`, else English; `LANG` never; inside an agent
+    /// session only `--lang`.
+    #[test]
+    fn the_language_is_lang_then_muster_lang_never_lang_and_english_for_agents() {
+        assert_eq!(lang_of(&["list"], &[]), Ok("en"));
+        assert_eq!(lang_of(&["list", "--lang", "fa"], &[]), Ok("fa"));
+        assert_eq!(lang_of(&["--lang", "fa", "show", "mu-1"], &[]), Ok("fa"));
+        assert_eq!(lang_of(&["list"], &[("MUSTER_LANG", "fa")]), Ok("fa"));
+        assert_eq!(
+            lang_of(&["list", "--lang", "en"], &[("MUSTER_LANG", "fa")]),
+            Ok("en")
+        );
+        // The shell's locale, which agents inherit, is never read.
+        let shell = [
+            ("LANG", "fa_IR.UTF-8"),
+            ("LC_ALL", "fa_IR.UTF-8"),
+            ("LC_MESSAGES", "fa_IR.UTF-8"),
+        ];
+        assert_eq!(lang_of(&["list"], &shell), Ok("en"));
+        // Inside an agent session $MUSTER_LANG doesn't count; --lang (the owner's `! muster`)
+        // does. An empty session id is no session.
+        let fa = ("MUSTER_LANG", "fa");
+        assert_eq!(lang_of(&["list"], &[SESSION_ID, fa]), Ok("en"));
+        assert_eq!(
+            lang_of(&["list", "--lang", "fa"], &[SESSION_ID, fa]),
+            Ok("fa")
+        );
+        assert_eq!(
+            lang_of(&["list"], &[("CLAUDE_CODE_SESSION_ID", ""), fa]),
+            Ok("fa")
+        );
+        // A $MUSTER_LANG muster doesn't speak is English, said nothing of.
+        for odd in ["de", "fa_IR", "FA", " fa", "", "pseudo"] {
+            assert_eq!(
+                lang_of(&["list"], &[("MUSTER_LANG", odd)]),
+                Ok("en"),
+                "{odd:?}"
+            );
+        }
+        // A --lang it doesn't speak is refused, as a usage error.
+        assert_eq!(
+            lang_of(&["list", "--lang", "de"], &[]),
+            Err("--lang takes en or fa, not \"de\" (see `muster help`)".into())
+        );
+        for argv in [
+            &["list", "--lang", "de"][..],
+            &["help", "--lang", "pseudo"],
+            &["help", "--lang", "fa_IR"],
+            &["help", "--lang", ""],
+        ] {
+            assert_eq!(main_with(&sv(argv), &no_env), 2, "{argv:?}");
+        }
+    }
+
+    /// mu-152 AC1, through a whole run: the language is set before the first line is printed
+    /// (help too), and the run's ends with it.
+    #[test]
+    fn a_run_prints_in_its_language_and_puts_it_back() {
+        let langs_of = |argv: &[&str], vars: &[(&str, &str)]| {
+            let (p, code) = capture::output(|| run_with(&sv(argv), &vars_env(vars)));
+            assert_eq!(code, Ok(0), "{argv:?}");
+            assert!(!p.text.is_empty(), "{argv:?}");
+            let mut langs = p.langs;
+            langs.dedup();
+            langs
+        };
+        let fa = ("MUSTER_LANG", "fa");
+        assert_eq!(langs_of(&["help"], &[]), ["en"]);
+        assert_eq!(langs_of(&["help", "--lang", "fa"], &[]), ["fa"]);
+        assert_eq!(langs_of(&["help", "list"], &[fa]), ["fa"]);
+        assert_eq!(langs_of(&["help", "--json"], &[fa]), ["fa"]);
+        assert_eq!(
+            langs_of(&["help"], &[fa, ("LANG", "fa_IR.UTF-8"), SESSION_ID]),
+            ["en"]
+        );
+        assert_eq!(langs_of(&["help", "--lang", "fa"], &[SESSION_ID]), ["fa"]);
+        assert_eq!(langs_of(&["help"], &[("LANG", "fa_IR.UTF-8")]), ["en"]);
+        assert_eq!(lang(), "en", "the run's language ended with it");
+        // A run puts back what was there before it, refused or not.
+        with_lang("fa", || {
+            assert_eq!(langs_of(&["help"], &[]), ["en"]);
+            assert_eq!(lang(), "fa");
+            let nowhere = crate::testkit::tempdir().unwrap();
+            let q = nowhere.path().join("none").to_string_lossy().to_string();
+            assert!(run_with(&sv(&["show", "1", "--queue", &q, "--lang", "en"]), &no_env).is_err());
+            assert_eq!(lang(), "fa");
+        });
+        assert_eq!(lang(), "en");
+    }
+
+    /// A queue with the prefix mu (so keys don't hang on the temp folder's name) for the language
+    /// tests, and a runner that captures what each command prints.
+    fn mu_queue() -> crate::testkit::TestDir {
+        let d = v2_queue();
+        std::fs::write(d.path().join("README.md"), "---\nprefix: mu\n---\nq").unwrap();
+        d
+    }
+
+    /// `args` on queue `q` as `who`, with --lang `l`: what it printed, checked it succeeded.
+    fn said_in(q: &Path, who: &str, l: &str, args: &[&str]) -> String {
+        let mut v = sv(args);
+        let q = q.to_string_lossy().to_string();
+        v.extend(sv(&["--queue", &q, "--as", who, "--lang", l]));
+        let (p, code) = capture::output(|| run_with(&v, &no_env));
+        assert_eq!(code, Ok(0), "{args:?}");
+        p.text
+    }
+
+    /// A stamp as the Persian output shows it.
+    fn fa_day(stamp: &str) -> String {
+        let j = crate::jalali::stamp_in("fa", stamp);
+        assert_ne!(j, stamp, "{stamp} isn't a stamp");
+        j
+    }
+
+    /// The line of `text` that starts with `start` (after its indent).
+    fn line_of<'a>(text: &'a str, start: &str) -> &'a str {
+        text.lines()
+            .find(|l| l.trim_start().starts_with(start))
+            .unwrap_or_else(|| panic!("no line {start:?} in:\n{text}"))
+    }
+
+    /// mu-152 AC3: the write confirmations print Persian lines that start with a Persian word,
+    /// keys, paths and fields Latin, stamps Jalali in Latin digits; English as it was.
+    #[test]
+    fn the_write_confirmations_speak_the_runs_language() {
+        let d = mu_queue();
+        let q = d.path();
+        let project = projects::default_name(q);
+        let root = q.display().to_string();
+        let path = |id: &str| queue::read_task(q, id).unwrap().path;
+        let said = |who: &str, l: &str, args: &[&str]| said_in(q, who, l, args);
+        assert_eq!(
+            said("owner", "fa", &["new", "رفع بورد"]),
+            format!("ساخته شد: mu-1 {}\n", path("0001"))
+        );
+        assert_eq!(
+            said("owner", "en", &["new", "Second"]),
+            format!("mu-2 {}\n", path("0002"))
+        );
+        // claim: where, then the stage.
+        let claimed = said("wt-a", "fa", &["claim", "mu-2"]);
+        assert_eq!(
+            claimed,
+            format!(
+                "برداشته شد: mu-2 در {project} ({root})\nتسک mu-2: در حال ساخت ({})\n",
+                path("0002")
+            )
+        );
+        let hb = |id: &str| queue::read_task(q, id).unwrap().heartbeat;
+        assert_eq!(
+            said("wt-a", "fa", &["heartbeat", "mu-2"]),
+            format!("تسک mu-2: ضربان {}\n", fa_day(&hb("0002")))
+        );
+        assert_eq!(
+            said(
+                "wt-a",
+                "fa",
+                &["checkin", "mu-2", "gate green", "--pct", "60"]
+            ),
+            format!(
+                "تسک mu-2: گزارش وضعیت ثبت شد؛ ضربان {}\n",
+                fa_day(&hb("0002"))
+            )
+        );
+        assert_eq!(
+            said("owner", "fa", &["note", "mu-1", "یک نکته"]),
+            "تسک mu-1: یادداشت شد\n"
+        );
+        assert_eq!(
+            said("owner", "fa", &["set", "mu-1", "priority", "high"]),
+            "تسک mu-1: priority تنظیم شد\n"
+        );
+        assert_eq!(
+            said(
+                "wt-a",
+                "fa",
+                &[
+                    "pass",
+                    "mu-2",
+                    "--from",
+                    "building",
+                    "--gate",
+                    "green",
+                    "--summary",
+                    "Built"
+                ]
+            ),
+            format!("تسک mu-2: در حال تست ({})\n", path("0002"))
+        );
+        assert_eq!(
+            said("owner", "fa", &["inbox", "--session", "aaaa1111"]),
+            "پاسخی در انتظار نیست\n"
+        );
+        // English as it was.
+        assert_eq!(said("owner", "en", &["note", "mu-1", "x"]), "mu-1: noted\n");
+        assert_eq!(
+            said("owner", "en", &["set", "mu-1", "priority", "low"]),
+            "mu-1: priority set\n"
+        );
+        assert_eq!(
+            said("owner", "en", &["inbox", "--session", "aaaa1111"]),
+            "no answers waiting\n"
+        );
+        let stamp = hb("0002");
+        assert_eq!(
+            said("wt-b", "en", &["claim", "mu-1"]).lines().next(),
+            Some(format!("claimed mu-1 in {project} ({root})").as_str())
+        );
+        assert_eq!(
+            said("wt-b", "en", &["heartbeat", "mu-1"]),
+            format!("mu-1: heartbeat {}\n", hb("0001"))
+        );
+        assert!(!stamp.is_empty());
+    }
+
+    /// mu-152 AC3: `list`, `show` and `ready` in Persian: headings, stage words, the bracketed
+    /// pieces and the block (D6: built here from the block's kind and tasks), type, priority and
+    /// keys Latin, stamps Jalali in Latin digits; English as it was.
+    #[test]
+    fn list_show_and_ready_speak_the_runs_language() {
+        let d = mu_queue();
+        let q = d.path();
+        let said = |who: &str, l: &str, args: &[&str]| said_in(q, who, l, args);
+        said(
+            "owner",
+            "en",
+            &[
+                "new",
+                "رفع بورد",
+                "--type",
+                "bug",
+                "--priority",
+                "high",
+                "--tags",
+                "ui",
+                "--time",
+                "2h",
+                "--test-time",
+                "30m",
+                "--tokens",
+                "150k",
+            ],
+        );
+        said("owner", "en", &["new", "Second"]);
+        said("owner", "en", &["new", "Third"]);
+        said("owner", "en", &["new", "Fourth", "--human"]);
+        said("owner", "en", &["new", "Later"]);
+        said("wt-a", "en", &["claim", "mu-2"]);
+        said(
+            "wt-a",
+            "en",
+            &["checkin", "mu-2", "gate green", "--pct", "60"],
+        );
+        said(
+            "wt-a",
+            "en",
+            &["ask", "mu-2", "Which port?", "--session", "aaaa1111"],
+        );
+        said("owner", "en", &["block", "mu-3", "--on", "mu-2"]);
+        said(
+            "owner",
+            "en",
+            &["block", "mu-4", "--on", "you", "set the key"],
+        );
+        said("owner", "en", &["pause", "mu-5", "the design first"]);
+        let t = |id: &str| queue::read_task(q, id).unwrap();
+        let two = t("0002");
+        let c = two.current_checkin().unwrap().clone();
+        let paused = t("0005").paused;
+        let fa = said("owner", "fa", &["list"]);
+        let en = said("owner", "en", &["list"]);
+        assert_eq!(line_of(&fa, "آماده ("), "آماده (4)");
+        assert_eq!(line_of(&fa, "در حال ساخت ("), "در حال ساخت (1)");
+        assert_eq!(
+            line_of(&fa, "mu-1 "),
+            "  mu-1 bug       high    رفع بورد  ~ایجنت 2h · تست 30m · 150k  #ui"
+        );
+        assert_eq!(
+            line_of(&fa, "mu-2 "),
+            format!(
+                "  mu-2 code      normal  Second  [1 پرسش باز]  [در دست: {}]  [گزارش وضعیت 60% · gate green ({})]",
+                two.holder(),
+                fa_day(&c.at)
+            )
+        );
+        assert_eq!(
+            line_of(&fa, "mu-3 "),
+            "  mu-3 code      normal  Third [پس از mu-2]"
+        );
+        assert_eq!(
+            line_of(&fa, "mu-4 "),
+            "  mu-4 code      normal  Fourth  [شما] [اقدام شما: set the key]  [نیاز به شما]"
+        );
+        assert_eq!(
+            line_of(&fa, "mu-5 "),
+            format!(
+                "  mu-5 code      normal  Later  [متوقف‌شده از {}]",
+                fa_day(&paused)
+            )
+        );
+        // The same list in English, as it was.
+        assert_eq!(line_of(&en, "Ready ("), "Ready (4)");
+        assert_eq!(
+            line_of(&en, "mu-1 "),
+            "  mu-1 bug       high    رفع بورد  ~agent 2h · test 30m · 150k  #ui"
+        );
+        assert_eq!(
+            line_of(&en, "mu-3 "),
+            "  mu-3 code      normal  Third [After mu-2]"
+        );
+        assert_eq!(
+            line_of(&en, "mu-4 "),
+            "  mu-4 code      normal  Fourth  [you] [Your action: set the key]  [needs you]"
+        );
+        assert_eq!(
+            line_of(&en, "mu-5 "),
+            format!("  mu-5 code      normal  Later  [paused since {paused}]")
+        );
+        // show's footer.
+        let shown = said("owner", "fa", &["show", "mu-2"]);
+        let footer = shown.rsplit("\n---\n").next().unwrap();
+        assert_eq!(
+            footer,
+            format!(
+                "کلید: mu-2\nدر دست: {} (در حال ساخت، از {})\nآخرین گزارش وضعیت، از {}: 60% · gate green ({})\n",
+                two.holder(),
+                fa_day(&two.stage_since),
+                c.who,
+                fa_day(&c.at)
+            )
+        );
+        let shown = said("owner", "en", &["show", "mu-2"]);
+        assert!(shown.ends_with(&format!(
+            "\n---\nkey: mu-2\non it: {} (Building, since {})\nlatest check-in, by {}: 60% · gate green ({})\n",
+            two.holder(),
+            two.stage_since,
+            c.who,
+            c.at
+        )));
+        // ready.
+        let ready = said("owner", "fa", &["ready"]);
+        assert_eq!(
+            ready,
+            "آماده‌ی شروع (1):\n  mu-1 high    رفع بورد  [بدون touches]\n"
+        );
+        let ready = said("owner", "en", &["ready"]);
+        assert_eq!(
+            ready,
+            "Ready to start (1):\n  mu-1 high    رفع بورد  [no touches]\n"
+        );
+        // A Persian line starts with a Persian word, digits are Latin, no bidi control.
+        for text in [&fa, &said("owner", "fa", &["show", "mu-2"])] {
+            assert!(!text.chars().any(index::is_bidi_control));
+            assert!(
+                !text.chars().any(|c| ('\u{6f0}'..='\u{6f9}').contains(&c)),
+                "{text}"
+            );
+        }
+    }
+
+    /// mu-152 R2: how long a claim was quiet and the lease are said in the run's language;
+    /// English exactly as `ops::quiet_text` and `settings::span_text` write them.
+    #[test]
+    fn spans_are_said_in_the_runs_language() {
+        for m in (0..5000)
+            .step_by(7)
+            .chain([60, 1440, 1441, 1500, 2880, 2939])
+        {
+            assert_eq!(span_words(m), settings::span_text(m), "{m}");
+            let quiet = ops::quiet_text(m);
+            assert_eq!(quiet_said(&quiet), quiet, "{m}");
+        }
+        with_lang("fa", || {
+            assert_eq!(span_words(720), "12 ساعت");
+            assert_eq!(span_words(1500), "1 روز و 1 ساعت");
+            assert_eq!(span_words(1561), "1 روز و 2 ساعت و 1 دقیقه");
+            assert_eq!(span_words(0), "0 دقیقه");
+            assert_eq!(quiet_said("13 h"), "13 ساعت");
+            assert_eq!(quiet_said("5 min"), "5 دقیقه");
+            assert_eq!(quiet_said("soon"), "soon");
+        });
+    }
+
+    /// mu-152 R2, through `reclaim`: the quiet span and the lease in Persian, JSON as it was.
+    #[test]
+    fn reclaim_says_its_spans_in_persian() {
+        let d = mu_queue();
+        let q = d.path();
+        let said = |l: &str, args: &[&str]| said_in(q, "owner", l, args);
+        assert_eq!(
+            said("fa", &["reclaim"]),
+            "چیزی برای رها کردن نیست: از همه‌ی تسک‌های برداشته‌شده در «شکل‌دهی» و «در حال ساخت»، و روی یادداشت‌های بک‌لاگ، در 12 ساعت گذشته خبری رسیده است\n"
+        );
+        assert!(said("en", &["reclaim"]).ends_with(" was heard from within 12 h\n"));
+        said_in(q, "owner", "en", &["new", "Old"]);
+        said_in(q, "wt-a", "en", &["claim", "mu-1"]);
+        let file = q.join(queue::read_task(q, "0001").unwrap().path);
+        let text = std::fs::read_to_string(&file).unwrap();
+        let hb = queue::read_task(q, "0001").unwrap().heartbeat;
+        std::fs::write(
+            &file,
+            text.replace(&format!("heartbeat: {hb}"), "heartbeat: 2026-01-01 10:00"),
+        )
+        .unwrap();
+        let fa = said("fa", &["reclaim"]);
+        let hours = fa
+            .split("(بدون ضربان به مدت ")
+            .nth(1)
+            .and_then(|r| r.split(" ساعت): بازگشت به «آماده» (").next())
+            .unwrap_or_else(|| panic!("{fa}"));
+        assert!(hours.parse::<u64>().is_ok_and(|h| h > 24), "{fa}");
+        assert!(fa.starts_with("رها شد: mu-1 از wt-a "), "{fa}");
+    }
+
+    /// The fa block bracket is built here (D6); in English it's exactly block.rs's sentence, so
+    /// both read the same block the same way, for every kind, short and long.
+    #[test]
+    fn the_block_words_are_block_rs_sentence_in_english() {
+        let d = mu_queue();
+        let q = d.path();
+        let said = |who: &str, args: &[&str]| said_in(q, who, "en", args);
+        for title in ["One", "Two", "Three", "Four", "Five", "Six", "Seven"] {
+            said("owner", &["new", title]);
+        }
+        said("wt-a", &["claim", "mu-1"]);
+        said(
+            "wt-a",
+            &["ask", "mu-2", "Which colour?", "--session", "aaaa1111"],
+        );
+        said("owner", &["block", "mu-3", "--on", "mu-1,mu-2"]);
+        said(
+            "owner",
+            &[
+                "block",
+                "mu-4",
+                "--on",
+                "you",
+                "set the API key, which is long enough to be cut in the short form of the sentence",
+            ],
+        );
+        said(
+            "owner",
+            &["block", "mu-5", "--on", "permission", "write access"],
+        );
+        said("owner", &["block", "mu-6", "--on", "outside", "the vendor"]);
+        said("wt-a", &["block", "mu-2", "--on", "question", "Q1"]);
+        let s = keyed(q, "mu");
+        let mut seen = 0;
+        for t in s.tasks.iter().filter(|t| !t.blocked_kind.is_empty()) {
+            for short in [true, false] {
+                assert_eq!(
+                    block_text(t, short),
+                    crate::block::sentence_of(t, short),
+                    "{} {short}",
+                    t.id
+                );
+            }
+            seen += 1;
+        }
+        assert_eq!(seen, 5);
+        let three = s.tasks.iter().find(|t| t.id == "0003").unwrap();
+        with_lang("fa", || {
+            assert_eq!(block_text(three, true), "پس از mu-1، mu-2");
+            assert_eq!(
+                block_text(three, false),
+                format!(
+                    "پس از mu-1 (در حال ساخت، {})، mu-2 (آماده)",
+                    three.blocked_by[0].holder
+                )
+            );
+            let two = s.tasks.iter().find(|t| t.id == "0002").unwrap();
+            assert_eq!(
+                block_text(two, false),
+                "پرسش: Q1 Which colour?، در انتظار سرپرست"
+            );
+        });
+    }
+
+    /// Every cli.json key cli.rs names as a literal ("said.noted") is in English, as is or with
+    /// its plural forms: a typo would print the key itself.
+    #[test]
+    fn every_key_cli_rs_names_is_in_english() {
+        let en: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/i18n/locales/en/cli.json")).unwrap();
+        let has = |k: &str| {
+            let dig = |k: &str| {
+                k.split('.')
+                    .try_fold(&en, |at, p| at.get(p))
+                    .is_some_and(|v| v.is_string())
+            };
+            dig(k) || dig(&format!("{k}_other"))
+        };
+        let src = include_str!("cli.rs");
+        assert_eq!(
+            literal_keys("x(tr(\n    \"a.b\", &[]) tr_n( \"c.d\" str(\"no\") tr(&k)"),
+            ["a.b", "c.d"]
+        );
+        let mut checked = 0;
+        for key in literal_keys(src) {
+            assert!(has(&key), "{key} isn't in en/cli.json");
+            checked += 1;
+        }
+        assert!(checked >= 80, "only {checked} keys found");
+    }
+
+    /// The keys `src` passes to `tr(` or `tr_n(` as a string literal, whatever white space (a
+    /// line break, as rustfmt makes one) comes before it.
+    fn literal_keys(src: &str) -> Vec<String> {
+        let mut keys = Vec::new();
+        for call in ["tr(", "tr_n("] {
+            for (i, _) in src.match_indices(call) {
+                let before = src[..i].chars().next_back();
+                // Part of a longer name (`str(`), or of a string (this function's own list).
+                if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '"') {
+                    continue;
+                }
+                let rest = src[i + call.len()..].trim_start();
+                let Some(lit) = rest.strip_prefix('"') else {
+                    continue;
+                };
+                if let Some(end) = lit.find('"') {
+                    keys.push(lit[..end].to_string());
+                }
+            }
+        }
+        keys
+    }
+
+    /// mu-152: what muster says on stderr for a person shows bidi controls as `<U+XXXX>` too:
+    /// a warning quoting the task's body, a refusal quoting what was typed.
+    #[test]
+    fn stderr_lines_show_bidi_controls_escaped() {
+        let d = mu_queue();
+        let q = d.path();
+        said_in(q, "owner", "en", &["add", "Board flickers"]);
+        let note = tasks_of(q).backlog[0].file.clone();
+        said_in(q, "shaper", "en", &["shape", &note]);
+        let body = "## Acceptance criteria\\n- [ ] AC1: steady — verify: screenshot\\n[NEEDS CLARIFICATION: pay \u{202e}ecivni]";
+        let qs = q.to_string_lossy().to_string();
+        let argv = sv(&[
+            "file", &note, "Board", "--body", body, "--queue", &qs, "--as", "shaper",
+        ]);
+        let (p, code) = capture::output(|| run_with(&argv, &no_env));
+        assert_eq!(code, Ok(0));
+        assert!(
+            p.err.contains("[NEEDS CLARIFICATION: pay <U+202E>ecivni]"),
+            "{}",
+            p.err
+        );
+        assert!(!p.err.chars().any(index::is_bidi_control), "{:?}", p.err);
+        // A refusal on stderr, through main_with.
+        let (p, code) = capture::output(|| main_with(&sv(&["list", "--\u{202e}x"]), &no_env));
+        assert_eq!(code, 2);
+        assert_eq!(p.err, "muster: unknown option --<U+202E>x\n");
+    }
+
+    /// mu-152 D5, through a whole run: in VS Code's terminal a Persian run says once on stderr
+    /// that it can't show right to left, before anything else; never with --json or in English.
+    #[test]
+    fn the_vs_code_note_reaches_stderr_once_per_run() {
+        let d = mu_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let note = crate::i18n::cli_text("fa", "terminal.vscode", None, &[]);
+        let vscode = [("TERM_PROGRAM", "vscode")];
+        let run = |args: &[&str], vars: &[(&str, &str)]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            let (p, code) = capture::output(|| run_with(&v, &vars_env(vars)));
+            assert_eq!(code, Ok(0), "{args:?}");
+            p
+        };
+        run(&["new", "One"], &[]);
+        run(&["new", "Two"], &[]);
+        for args in [
+            &["list", "--lang", "fa"][..],
+            &["help", "--lang", "fa"],
+            &["show", "mu-1", "--lang", "fa"],
+        ] {
+            let p = run(args, &vscode);
+            assert_eq!(p.err, format!("{note}\n"), "{args:?}");
+            assert!(!p.text.is_empty());
+        }
+        let fa = [("TERM_PROGRAM", "vscode"), ("MUSTER_LANG", "fa")];
+        assert_eq!(run(&["list"], &fa).err, format!("{note}\n"));
+        assert_eq!(run(&["list", "--json"], &fa).err, "");
+        assert_eq!(run(&["list", "--lang", "en"], &vscode).err, "");
+        assert_eq!(
+            run(&["list", "--lang", "fa"], &[("TERM_PROGRAM", "iTerm.app")]).err,
+            ""
+        );
+        assert_eq!(
+            run(
+                &["list"],
+                &[
+                    ("TERM_PROGRAM", "vscode"),
+                    ("MUSTER_LANG", "fa"),
+                    SESSION_ID
+                ]
+            )
+            .err,
+            ""
+        );
+    }
+
+    /// mu-152 AC2: `muster --lang fa help` and `help <command>` print the Persian help; English
+    /// and --json as they were.
+    #[test]
+    fn help_prints_in_the_runs_language() {
+        let printed = |argv: &[&str], vars: &[(&str, &str)]| {
+            let (p, code) = capture::output(|| run_with(&sv(argv), &vars_env(vars)));
+            assert_eq!(code, Ok(0), "{argv:?}");
+            p.text
+        };
+        assert_eq!(
+            printed(&["--lang", "fa", "help"], &[]),
+            crate::help::text("fa")
+        );
+        assert_eq!(
+            printed(&["help", "pass", "--lang", "fa"], &[]),
+            crate::help::command_text("pass", "fa").unwrap()
+        );
+        assert_eq!(
+            printed(&["help", "pass"], &[("MUSTER_LANG", "fa")]),
+            crate::help::command_text("pass", "fa").unwrap()
+        );
+        assert_eq!(printed(&["help"], &[]), crate::help::text("en"));
+        assert_eq!(
+            printed(&["help", "pass", "--lang", "en"], &[]),
+            crate::help::command_text("pass", "en").unwrap()
+        );
+        assert_eq!(
+            printed(&["help", "--json", "--lang", "fa"], &[]),
+            printed(&["help", "--json"], &[])
+        );
+        assert!(printed(&["help", "--lang", "fa"], &[]).starts_with("تسک‌ها برای ایجنت‌ها"));
+    }
+
+    /// mu-152 D5: VS Code's terminal can't lay out right to left; a run in Persian there says so
+    /// once on stderr, never with --json, never in English or another terminal.
+    #[test]
+    fn vs_codes_terminal_gets_a_note_in_persian_only() {
+        let vscode = vars_env(&[("TERM_PROGRAM", "vscode")]);
+        let note = vscode_note("fa", false, &vscode).expect("a note in VS Code");
+        assert_eq!(
+            note,
+            "ترمینال VS Code نمی‌تواند متن راست‌به‌چپ را درست نشان دهد؛ Terminal یا iTerm2 می‌توانند"
+        );
+        assert!(!note.chars().any(index::is_bidi_control));
+        assert_eq!(
+            crate::i18n::cli_text("en", "terminal.vscode", None, &[]),
+            "VS Code's terminal can't show right-to-left text; Terminal or iTerm2 can"
+        );
+        assert_eq!(vscode_note("en", false, &vscode), None);
+        assert_eq!(vscode_note("fa", true, &vscode), None, "--json");
+        for other in ["iTerm.app", "Apple_Terminal", "VSCODE", ""] {
+            let env = vars_env(&[("TERM_PROGRAM", other)]);
+            assert_eq!(vscode_note("fa", false, &env), None, "{other}");
+        }
+        assert_eq!(vscode_note("fa", false, &no_env), None);
+    }
+
+    /// mu-152 AC5: a title's (or body's) bidi controls print as `<U+XXXX>` in what list, show and
+    /// ready print for a person, in both languages, never raw; --json keeps them as written.
+    #[test]
+    fn a_titles_bidi_controls_print_escaped_in_both_languages() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let run = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            capture::output(|| run_with(&v, &no_env))
+        };
+        let title = "Pay \u{202e}ecivni\u{202c} now";
+        let (_, made) = run(&["new", title, "--body", "Line \u{2066}two\u{2069}"]);
+        assert_eq!(made, Ok(0));
+        for l in ["en", "fa"] {
+            for cmd in [&["list"][..], &["show", "1"], &["ready"]] {
+                let mut args = cmd.to_vec();
+                args.extend(["--lang", l]);
+                let (p, code) = run(&args);
+                assert_eq!(code, Ok(0), "{args:?}");
+                assert!(
+                    p.text.contains("Pay <U+202E>ecivni<U+202C> now"),
+                    "{args:?}: {}",
+                    p.text
+                );
+                assert!(
+                    !p.text.chars().any(index::is_bidi_control),
+                    "{args:?}: {:?}",
+                    p.text
+                );
+            }
+            let (p, _) = run(&["show", "1", "--lang", l]);
+            assert!(p.text.contains("Line <U+2066>two<U+2069>"), "{}", p.text);
+        }
+        let (p, _) = run(&["show", "1", "--json"]);
+        assert!(p.text.contains(title), "{}", p.text);
+        // A refusal naming it on stderr: escaped too.
+        assert_eq!(
+            error_line(&format!("no task \"{title}\"")),
+            "muster: no task \"Pay <U+202E>ecivni<U+202C> now\""
+        );
+    }
+
+    /// mu-152 AC4: every read command's --json is the same bytes under --lang fa as under --lang
+    /// en, a title's Persian and its U+202E kept as written.
+    #[test]
+    fn every_read_commands_json_is_the_same_in_every_language() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let home = crate::testkit::tempdir().unwrap();
+        let h = home.path().to_string_lossy().to_string();
+        let env = vars_env(&[("HOME", &h)]);
+        let run = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            capture::output(|| run_with(&v, &env))
+        };
+        let title = "رفع \u{202e}بورد";
+        assert_eq!(run(&["new", title, "--body", "متن \u{2067}x"]).1, Ok(0));
+        assert_eq!(run(&["new", "Second"]).1, Ok(0));
+        let (p, added) = run(&["add", "یادداشت \u{202e}x"]);
+        assert_eq!(added, Ok(0));
+        let note = p.text.trim().to_string();
+        // A Shaping task with an open question, for clarify.
+        assert_eq!(run(&["new", "Shaped"]).1, Ok(0));
+        assert_eq!(run(&["stage", "3", "shaping"]).1, Ok(0));
+        let asked = ["ask", "3", "Which \u{202e}port?", "--session", "aaaa1111"];
+        assert_eq!(run(&asked).1, Ok(0));
+        let (p, _) = run(&["clarify", "--json"]);
+        assert!(p.text.contains("Which \u{202e}port?"), "{}", p.text);
+        // review, verify and gates read a started task: the next test.
+        let reads: [&[&str]; 17] = [
+            &["help"],
+            &["help", "list"],
+            &["team"],
+            &["list"],
+            &["show", "1"],
+            &["ready"],
+            &["ready", "--parallel"],
+            &["projects"],
+            &["history"],
+            &["lessons"],
+            &["accounts"],
+            &["ledger"],
+            &["shape", &note, "--peek"],
+            &["vision", "1"],
+            &["vision", "--all"],
+            &["clarify"],
+            &["ledger", "backfill", "--dry-run"],
+        ];
+        for cmd in reads {
+            same_json_in_both(cmd, &run);
+        }
+        for cmd in [&["list", "--json"][..], &["show", "1", "--json"]] {
+            let (p, _) = run(cmd);
+            assert!(p.text.contains(title), "{cmd:?}: {}", p.text);
+        }
+        let (p, _) = run(&["shape", &note, "--peek", "--json"]);
+        assert!(p.text.contains("یادداشت \u{202e}x"), "{}", p.text);
+    }
+
+    /// What a test's run printed, and how it ended.
+    type Ran = (capture::Printed, Result<i32, String>);
+
+    /// `cmd --json` run by `run` under --lang en and --lang fa: both succeed, print JSON, and
+    /// print the same bytes.
+    fn same_json_in_both(cmd: &[&str], run: &dyn Fn(&[&str]) -> Ran) {
+        let out = |l: &str| {
+            let mut a = cmd.to_vec();
+            a.extend(["--json", "--lang", l]);
+            run(&a)
+        };
+        let (en, en_code) = out("en");
+        let (fa, fa_code) = out("fa");
+        assert_eq!(en_code, Ok(0), "{cmd:?}");
+        assert_eq!(fa_code, Ok(0), "{cmd:?}");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&en.text).is_ok(),
+            "{cmd:?}: {}",
+            en.text
+        );
+        if cmd == ["accounts"] {
+            // accounts reads the wall clock (no test clock reaches it): the two runs can see
+            // different seconds, so its `now` is checked in each and left out of the comparison.
+            let rest = |text: &str| {
+                let mut v: serde_json::Value = serde_json::from_str(text).unwrap();
+                let now = v.as_object_mut().and_then(|o| o.remove("now"));
+                assert!(now.is_some_and(|n| n.is_i64()), "{cmd:?}: {text}");
+                v
+            };
+            assert_eq!(rest(&en.text), rest(&fa.text), "{cmd:?}");
+            return;
+        }
+        assert!(
+            en.text == fa.text,
+            "{cmd:?}:\n{}\n---\n{}",
+            en.text,
+            fa.text
+        );
+    }
+
+    /// mu-152 AC4, for the reads of a task started on its own branch: review, verify and gates.
+    #[test]
+    fn a_started_tasks_reads_print_the_same_json_in_every_language() {
+        let f = crate::parallel::tests::fx();
+        let id = crate::parallel::tests::task(&f.root, "رفع \u{202e}بورد", "cli/");
+        let a = parse(&sv(&["start", &id, "--as", "wt-a"])).unwrap();
+        let started = run_on(
+            &a,
+            "start",
+            &f.root,
+            "pj",
+            "2026-10-13 10:00",
+            &no_env,
+            Some(&f.repo),
+        );
+        assert_eq!(started, Ok(0));
+        let q = f.root.to_string_lossy().to_string();
+        let run = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "qa"]));
+            capture::output(|| run_with(&v, &no_env))
+        };
+        for cmd in [
+            &["review", &id][..],
+            &["gates", &id],
+            &["show", &id],
+            &["list"],
+        ] {
+            same_json_in_both(cmd, &run);
+        }
+        let (p, _) = run(&["show", &id, "--json"]);
+        assert!(p.text.contains("رفع \u{202e}بورد"), "{}", p.text);
+        // verify's read is the ac-verifier's brief, text for an agent: English in both too.
+        let brief = |l: &str| run(&["verify", &id, "--lang", l]);
+        let (en, fa) = (brief("en"), brief("fa"));
+        assert_eq!((&en.1, &fa.1), (&Ok(0), &Ok(0)));
+        assert!(
+            en.0.text.contains("Run the ac-verifier agent"),
+            "{}",
+            en.0.text
+        );
+        assert!(en.0.text == fa.0.text, "{}\n---\n{}", en.0.text, fa.0.text);
     }
 }

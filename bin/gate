@@ -31,7 +31,7 @@ fi
 home=$(mktemp -d "${TMPDIR:-/tmp}/muster-gate-home.XXXXXX") || exit 2
 trap 'rm -rf "$home"' EXIT
 export HOME="$home" XDG_CONFIG_HOME="$home/.config" MUSTER_BASE="$home/playground"
-unset MUSTER_ROOT TASKS_ROOT MUSTER_AGENT
+unset MUSTER_ROOT TASKS_ROOT MUSTER_AGENT MUSTER_LANG
 mkdir -p "$XDG_CONFIG_HOME" "$MUSTER_BASE" || exit 2
 
 # step <name> <program> [args…]: run one check, its output to its log.

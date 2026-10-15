@@ -550,6 +550,10 @@ Languages).
   and store Latin ones; a due date is typed in the calendar shown, with the ISO day it saves
   beside it. Names sort in the language's order, and search folds Persian (ي/ی, ك/ک, ZWNJ,
   Persian digits) so what was meant is found.
+- **The command line is the owner's to switch, never an agent's (mu-152):** `muster --lang fa`
+  or `MUSTER_LANG=fa` prints Persian. `LANG` is never read, and inside an agent session only an
+  explicit `--lang` counts, so agents always get English. The terminal gets Jalali dates with Latin
+  digits, and no bidi marks at all.
 
 ## Right to left (task mu-149)
 

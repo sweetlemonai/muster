@@ -21,6 +21,7 @@ fn muster(root: &Path, args: &[&str]) -> (i32, String) {
         .env_remove("MUSTER_BASE")
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_LANG")
         .env_remove("MUSTER_AS")
         .env_remove("MUSTER_AGENT")
         .env_remove("CLAUDE_CODE_SESSION_ID")

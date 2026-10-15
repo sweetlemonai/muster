@@ -15,6 +15,7 @@ covers: app/src/i18n/locales/en/board.json, app/src/i18n/locales/fa/board.json, 
 - Right to left the layout mirrors (card stripe, table heads); the Timeline and Graph keep their left-to-right drawing. (mu-147)
 - Mac notifications and the app's menus follow the language in effect and change with it; "Muster" stays as it is. (mu-147)
 - A notification's task title stays plain text, cut as before. (mu-147)
+- A value filled into the core's text (`isolate_in`: notifications, menus) loses every bidi control first, so a title can't close or swallow its isolate; the window drops overrides, marks and unbalanced isolates, from the same case list (`fixtures/bidi-controls.json`). (mu-152)
 - Fixed English, on purpose: the core's own words (mu-153) and time stamps' Latin digits (mu-151). (mu-147)
 - Every Persian word follows `docs/i18n/glossary-fa.md`; each area’s words get an independent review. (mu-146)
 - A card's review and vision badges and its worktree title read `board.json` `badge.*` and `branch.*` (they show on the board before the pane's words load). (mu-148)
