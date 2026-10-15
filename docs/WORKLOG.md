@@ -4,6 +4,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Coordinator (Muster_Team_Lead_5): mu-87, 108, 99, 130, 102 merged; lead moves to QA_10 on cc-hg
+**Did:** merged mu-87 (0e4d905), mu-108 (ba6b048), mu-99 (23ecba7), mu-130 (6036641), mu-102
+(f07fc54); the last four by the owner's override after docs-only rebases of approved reviews
+(WORKLOG conflicts resolved by keeping both entries). Committed mu-109's git-clean guard in the
+personal layer (1cbb1ba, not pushed: no access). Ran builders, reviewers and QA as one-task sessions.
+**Decided:** (overrule any time) mu-112: a second slot for one session is blocking, not should;
+mu-101: past round 3 with an owner and a reviewer finding open, the whole task waits for the owner
+(as built); `@block` reads kind words like `--on`; mu-110 R2: merge() records a branch already in
+main with no worktree; mu-110's app Problems list stays CLI-only (backlog note); mu-103 R1: a later
+answer reaches the current holder; mu-150: the font keeps its licence IDs and OFL.txt ships in the
+bundle. Lessons L16, L17 accepted; L15 rejected (too specific).
+**Fixed:** mu-87's merge push failed in the sandbox and left the task in Testing although merged;
+recorded with `muster pass --from testing` once pushed.
+**Open:** the owner is moving Muster to cc-hg (cc-mg nearly out of credit); QA_10 (cc-hg) is lead.
+
 ## 2026-10-15 — Coordinator (Muster_Team_Lead): mu-86, 88, 89, 90, 91, 93, 95, 111 merged; orchestration plan in the pipeline; headless QA
 **Did:** merged mu-86 (b959c01), mu-88 (b7d15a8), mu-90 (306cc32), mu-89 (feca164), mu-95 (9b53b31),
 mu-91 (cfa3268), mu-111 (5b1fd3e), the orchestration research and plan (2aa1c48, 89fef23; Pouya),
