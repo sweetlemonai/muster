@@ -25,6 +25,34 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — Research: visual-QA drivers, capture and walkthroughs per app stack (mu-130)
+**Did (Pouya, then Pouya_2 for review round 1):** `docs/research/2026-10-14-visual-qa-drivers.md`
+answers the six questions and the 19:43 scope (iOS via simctl and XCUITest, the Playwright overlay
+via `addInitScript`/`exposeBinding`, codegen, masks, traces, Mac snapshot tests, keyframes) with
+cited, dated findings, a TCC table, and a recommendation per stack that obeys GATES.md G4: agents
+run headless (Playwright with the IPC or preload mocked; a simulator with no window; Mac snapshot
+tests), capture only windows already open, and open a window only in a walkthrough the owner
+starts. The probes behind every [local] result are in `docs/research/assets/2026-10-14-visual-qa/`.
+**Verified:** probes rerun on macOS 26.5: repeated captures of an on-screen 2× window differ in 0
+of 8,056,320 px by `screencapture` and ScreenCaptureKit (an off-screen 1× window: 1,810 px, at most
+3/255); off-screen SwiftUI snapshots make 0 windows and repeat
+exactly; the injected overlay survives a navigation and its verdicts reach the runner; WebKit video
+is WebM/VP9 at 25 fps; a headless simulator boots, takes a deep link and records H.264. shellcheck
+clean; probes build with no warnings.
+**Fixed (Pouya_3, review round 2):** §6 said a 1× window also captured with 0 px of noise → the
+rerun found 1,810 px at most 3/255 → §6 reports it and narrows "no noise" to the on-screen 2×
+window. §4 recommended granting Screen Recording to the terminal → it now recommends a separately
+signed capture helper that alone holds the grant and captures only the fixture instance's window,
+and names the terminal grant's risk. The Mac capture route gets GATES.md's fixture rule. Probes:
+`sck-probe rec` exits 1 on failure, `capture.sh` survives an unreadable video, `simctl-probe.sh`
+takes a device type and prints its pixel diff, `playwright-probe.mjs` prints codec and frame rate.
+**Decided:** a signed helper, not the terminal, holds Screen Recording, because a terminal grant
+covers every process started from it; the helper being its own responsible process when launched
+as an app rests on Apple DTS's rule and is mu-141's to confirm.
+**Open:** the AX walkthrough driver, XCUITest on the simulator end to end, codegen on WebKit, and
+the renderer-in-Chromium route for choopan aren't prototyped (mu-133, mu-141); off-Space recording
+wasn't reproduced; the round-2 probe additions weren't rerun.
+
 ## 2026-10-14 — mu-99: Muster reads only the allowed personal Claude accounts, never ~/.claude
 **Did:** one allowlist of account labels in Settings (`claudeAccounts`, default mg and hg) and
 `accounts.rs` resolving it. `claude agents` runs only for allowed accounts with
