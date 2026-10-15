@@ -18,6 +18,7 @@ engine and gates and deploy we build afterward. all in one ecosystem".
 | Deploy | to build | release: build, sign, publish, per app |
 
 *Amended by [0015](0015-muster-runs-agents-behind-a-runner-interface.md) (2026-10-14):* Muster runs agents until Drover's runner exists.
+*Amended by [0016](0016-runs-headless-in-a-sandbox-drover-hosts-sessions.md) (2026-10-14):* there's no Drover runner. Runs come from Muster's runner, sandboxed, and Drover hosts the sessions (watch live, open live, hand back).
 
 - **One ecosystem, our own:** every step is a tool the owner owns; they talk through commands and
   files (0006), share one record of outcomes (mu-54), and use Muster's stage names (0006).

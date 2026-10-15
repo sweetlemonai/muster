@@ -46,7 +46,7 @@ can't both hold today. The plan asks for this decision before the runner (mu-117
    `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and an inherited `CLAUDE_CONFIG_DIR` removed),
    then `CLAUDE_CONFIG_DIR` set for the run's account (only the allowlisted personal accounts,
    0012). It never reads, stores or passes a token of its own (0013 rule 1).
-4. **Drover's runner later.** Drover's runner (Drover 0018, Muster's side in mu-127) implements
+4. *Amended by [0016](0016-runs-headless-in-a-sandbox-drover-hosts-sessions.md) (2026-10-14): Drover builds no runner; it hosts the runs (watch, open live, hand back), and this runner stays the only one.* **Drover's runner later.** Drover's runner (Drover 0018, Muster's side in mu-127) implements
    the same interface and replaces Muster's; Muster's stays as the fallback. mu-117's fake-runner
    suite is the contract Drover's runner must pass.
 5. **The Codex adapter turns analytics off.** Codex 0.162.0 enabled analytics by default for

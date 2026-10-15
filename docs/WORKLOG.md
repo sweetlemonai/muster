@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Spike: Muster and Drover as one pipeline, runs sandboxed with full access (decision 0016)
+**Did:** the owner asked how to combine Muster and Drover now that Muster is the whole pipeline,
+with runs sandboxed and worktreed so they can have full access. Spike report
+`docs/research/2026-10-14-session-host-and-sandbox.md`: two web research tracks, Muster's and
+Drover's code read, and a hands-on Seatbelt test on this Mac. Filed mu-175 (per-run sandbox),
+mu-176 (network allowlist proxy), mu-177 (dispatcher merges and pushes), mu-178 (open live and hand
+back), mu-179 (accounts without a login). Reshaped mu-127 into the run-record contract. In Drover's
+queue: dr-32 (bug: deleting an imported lane deletes its branch), dr-33 (runs watchable live),
+dr-34 (open a run live in a lane), dr-35 (sandboxed lanes). Backlog note: Muster's screens move
+into Drover. VISION.md, PIPELINE.md, 0007 and 0015 amended.
+**Decided:** [0016](decisions/0016-runs-headless-in-a-sandbox-drover-hosts-sessions.md), overrule
+any time. One headless runner in Muster's core, every run in its own Seatbelt profile with full
+access inside and never without it. Drover hosts sessions (watch, open live, hand back) instead of
+being a second runner. "Open live" rather than "take over", which already means claim takeover.
+Own SBPL and proxy rather than `srt` (no new dependency).
+**Verified:** under the profile, `claude -p --dangerously-skip-permissions` (cc-mg) wrote only in
+its worktree, through both Bash and the Write tool. Reads of a decoy secret folder, `~/code` and
+another repo were denied. The Keychain login worked, `cargo build` and
+`swift build --disable-sandbox` built, and plain `swift build` failed (nested sandbox).
+`muster check`: no new problems. No code changed, so no gate run.
+**Open:** mu-127 V1 asks the owner to confirm the change from their 2026-10-12 answer ("drover"
+starts the agents). `~/.claude-hg` holds no login (the `cc-hg` launcher injects a token), so cc-hg
+runs fail until it's logged in (mu-179). Network limits, pnpm, Tauri and xcodebuild weren't tried
+under the profile. The `drover/main` checkout is 44 commits behind `origin/main`. Drover 0018 is
+superseded, with a comment, and is left for the owner to close.
+
 ## 2026-10-14 — Vazirmatn review round 1: the licence ships, inputs and code take the font (mu-150)
 **Did (akbar_16, builder):** R1: re-cut with `--name-IDs=0,1,2,3,4,5,6,13,14` so the font keeps
 its licence records (44,844 bytes); `tauri.conf.json` bundles `OFL.txt` as

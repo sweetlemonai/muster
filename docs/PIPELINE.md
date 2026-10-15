@@ -19,7 +19,7 @@ None writes another part's files.
 |---|---|---|---|---|---|
 | **Idea** | GenIdea (`~/playground/germ`) | the *decisions*: what we're building and why | a one-liner | a **sealed ledger**: every decision made, checked by a fresh agent (the probe) that finds nothing left to invent; `handoff.md` | built: interview, ledger, probe, seal, reopen; idea board (directions → pieces → workspaces) experimental. No hand-off out yet (it was planned to chit) |
 | **Task** | Muster | the *work and its rules*: tasks, criteria, stages, claims, questions, the owner's attention, cost | a sealed idea, or a one-liner for small things | tasks in Ready, assignments; state through `muster list --json` | built: stages, claims with leases, check-ins, questions pushed to sessions, vision check, cost, board, manual |
-| **Run** | Drover | the *sessions*: lanes, worktrees, accounts, models, steering | an assignment (Drover 0018) | an agent working the task, which claims, checks in and passes with `muster` | built: lanes and worktrees, gates as commands, Agents view (Needs you / Working / Waiting / Idle), steering, plan pieces. Not built: reading Muster's assignments (0018), Muster's stages (0023) |
+| **Run** | Muster's runner; Drover hosts (decision 0016) | the *runs*: headless `claude -p` in a per-run Seatbelt sandbox (mu-175); Drover shows them live, opens them live and hands them back (dr-33, dr-34) | a run record (mu-127) | an agent working the task, which claims, checks in and passes with `muster` | built: lanes and worktrees, gates as commands, Agents view (Needs you / Working / Waiting / Idle), steering, plan pieces. Not built: reading Muster's assignments (0018), Muster's stages (0023) |
 | **Gate** | shared tools in the personal layer | the *proof*: that the work does what the task said | a branch and the task's criteria | a gate result line with its stamp; a review verdict; one verdict per criterion with its evidence (test, screenshot, diff) | built separately: `/gate` (result line + tree-stamped `last.json`), `/deep-review`, the `/pr` engine (no runs yet), braindump's `ac-verifier` and `visual.mjs`, choopan's `pixelDiff`, MobileBuildMCP screenshots. Not joined up. **Joined up by `docs/GATES.md` (decision 0014, feature mu-129)** |
 
 **Done** isn't a part: it's the owner accepting in Muster's Your check, and the result flowing
@@ -33,7 +33,8 @@ back (the idea shows "built", its decisions marked with the tasks that built the
    asks how it's going with `muster show <feature> --json`.
 2. **Reopen → cost of changing course:** a reopened and resealed idea re-imports; Muster's vision
    check marks the tasks built on superseded decisions and shows what changing course costs.
-3. **Task → Run:** Muster writes an assignment; Drover starts the lane, the agent claims with
+3. **Task → Run:** *(decision 0016: the dispatcher starts the run itself, sandboxed; Drover reads
+   its run record and can open it live.)* Before 0016: Muster writes an assignment; Drover starts the lane, the agent claims with
    `muster claim`. Drover shows Muster's stage and criteria for that lane instead of its own item
    steps.
 4. **Run → Gate → Task:** leaving Building needs the gate line *and* a gate stamp whose tree matches
