@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — run.rs login-shell stand-ins chain their delay with && (mu-163)
+**Fixed (Gholi_25, builder):** a `/bin/sleep` that doesn't run still let both stand-ins finish, so
+the logout test passed and the two-writes test failed only on `took >= 300 ms` → the lines after
+the sleep ran regardless → `/bin/sleep 0.2 && echo bye && touch done` and `/bin/sleep 0.3 && printf
+<mark's last bytes>`: `done` and the found PATH now prove the delay ran; the times stay as a second
+signal. Test-only, `app/src-tauri/src/run.rs`.
+**Verified:** mutant `/bin/sleep` → `sleep` (off the stand-in's PATH): before, the logout test passed;
+now it fails at `done.exists()`, and the two-writes test at the PATH (None after the 20 s wait).
+
 ## 2026-10-14 — Lead moves to cc-hg (QA_10); mu-150, 103, 110, 97, 101, 157 merged
 **Did (QA_10, lead):** the owner made QA_10 the lead ("take over the lead as the orchestrator if
 the mechanical is not yet deployed": mu-116/117/118 still Ready). Muster_Team_Lead_5 finished its

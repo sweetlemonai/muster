@@ -1645,7 +1645,7 @@ mod tests {
             d.path(),
             "shell",
             &format!(
-                "sleep 30 &\necho $! > '{}'\nPATH=/nvm/bin:/usr/bin\nout=$(eval \"$2\")\nprintf '%s' \"${{out%????}}\"\n/bin/sleep 0.3\nprintf '%s\\n' \"${{out#\"${{out%????}}\"}}\"\n",
+                "sleep 30 &\necho $! > '{}'\nPATH=/nvm/bin:/usr/bin\nout=$(eval \"$2\")\nprintf '%s' \"${{out%????}}\"\n/bin/sleep 0.3 && printf '%s\\n' \"${{out#\"${{out%????}}\"}}\"\n",
                 pid.display()
             ),
         );
@@ -1664,7 +1664,8 @@ mod tests {
             Some(OsString::from("/nvm/bin:/usr/bin")),
             "after {took:?}"
         );
-        // The delay ran (on macOS sleep is only at /bin, off the stand-in's PATH).
+        // The mark ends only after the delay (chained with &&), so the PATH above proves it ran;
+        // the time is a second signal. On macOS sleep is only at /bin, off the stand-in's PATH.
         assert!(took >= Duration::from_millis(300), "{took:?}");
         assert!(took < wait / 2, "{took:?}");
     }
@@ -1679,7 +1680,7 @@ mod tests {
             d.path(),
             "shell",
             &format!(
-                "PATH='/نوشته/bin:/usr/bin'\neval \"$2\"\n/bin/sleep 0.2\necho bye\ntouch '{}'\n",
+                "PATH='/نوشته/bin:/usr/bin'\neval \"$2\"\n/bin/sleep 0.2 && echo bye && touch '{}'\n",
                 done.display()
             ),
         );
@@ -1695,7 +1696,11 @@ mod tests {
             "{:?}",
             t.elapsed()
         );
-        assert!(done.exists(), "the logout output ran to its end");
+        // `done` is chained after the delay, so it also proves the delay ran.
+        assert!(
+            done.exists(),
+            "the delay and the logout output ran to their end"
+        );
         // Marked, then failed: the PATH between this call's marks still counts.
         let fails = script(
             d.path(),
