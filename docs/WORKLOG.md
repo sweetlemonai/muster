@@ -4,6 +4,18 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — icon.icns holds every size; the menu bar shows the count beside the head (mu-89)
+**Did (Akbar_7, builder):** `tray.rs` sets the status item's title to the waiting count ("3",
+empty at 0) with the look, tooltip and menu (`shows(n)`, one `Bar::set` per count change);
+`icons/build-icons.sh` builds `icon.icns` with `iconutil` from the owner's iconset renamed to
+`@2x`, so it holds 16 to 512@2x instead of actool's 16 and 128. DESIGN.md, AS_BUILT.md, manual.
+**Decided:** Assets.car isn't recommitted: actool writes a different file on each run, and this
+task doesn't change it. The ten-size check is a Rust test reading the icns chunk table, so it
+needs no `iconutil` and never skips.
+**Verified:** tray tests 12 green (the icon test fails on the old icns); `iconutil -c iconset`
+lists ten images; build-icons.sh run twice gives a byte-identical icon.icns; gate below.
+**Open:** AC3's light and dark menu bar screenshots are Testing's (the release app isn't run here).
+
 ## 2026-10-14 — mu-90 review round 1: takeover refuses a paused claim and a quiet blocked one
 **Fixed:** (R1) `claim --takeover` took a paused claim after 30 quiet minutes → it never checked
 `paused:` → refused for everyone, as every other claim path does; a blocked claim (quiet by

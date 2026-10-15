@@ -233,7 +233,10 @@ Visible doesn't mean loud. Controls are always there but never between the owner
 The owner's robot head with a check, in violet. One drawing everywhere: the app icon (light or
 dark with macOS), the sidebar's logo (light or dark with the theme's mode, never the system's),
 and the menu bar icon, a template macOS tints, plain while nothing waits and with its antenna
-tips filled in when something does: a change of shape, not only of colour. The sources are in
+tips filled in when something does: a change of shape, not only of colour. At menu bar size the
+tips are a few pixels, so while something waits the count stands beside the head too ("3", in
+the menu bar's own font and tint, like Mail's), and nothing does while idle (task 0089). The
+owner's drawing stays as drawn. The sources are in
 `app/src-tauri/icons/original/`; a new drawing replaces them and `icons/build-icons.sh` runs.
 
 ## Checking a design

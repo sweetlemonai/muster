@@ -6,8 +6,9 @@
 //! says the count in words and quits. Only those built-in actions: nothing from a queue runs.
 //! Settings › Notifications turns it off (`settings.json` `menuBar`, on unless turned off). The
 //! images are template images (black and alpha), so macOS tints them for a light or dark menu bar;
-//! the waiting one fills in the antennas' tips, so it isn't told apart by colour alone.
-//! The tooltip and the menu name a count, never a task's text.
+//! the waiting one fills in the antennas' tips, and the status item's title puts the number right
+//! of the head in the menu bar's own font and tint, so waiting isn't told apart by colour alone.
+//! The title, the tooltip and the menu name a count, never a task's text.
 
 use std::sync::Mutex;
 
@@ -55,6 +56,16 @@ pub fn words(n: usize) -> String {
     }
 }
 
+/// The title beside the head: the number while something waits, nothing while nothing does.
+/// Western digits, like the Dock badge.
+pub fn title(n: usize) -> String {
+    if n > 0 {
+        n.to_string()
+    } else {
+        String::new()
+    }
+}
+
 /// The tooltip for `n`, or for no read yet.
 pub fn tooltip(n: Option<usize>) -> String {
     match n {
@@ -65,6 +76,29 @@ pub fn tooltip(n: Option<usize>) -> String {
 
 /// What the menu says before the first read has a count.
 pub const READING: &str = "Reading the queues…";
+
+/// Everything the menu bar shows for one count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shows {
+    pub n: usize,
+    pub look: Look,
+    /// Beside the head (`title`).
+    pub title: String,
+    pub tooltip: String,
+    /// The menu's count, in words.
+    pub menu: String,
+}
+
+/// What the menu bar shows for `n` things waiting.
+pub fn shows(n: usize) -> Shows {
+    Shows {
+        n,
+        look: look(n),
+        title: title(n),
+        tooltip: tooltip(Some(n)),
+        menu: words(n),
+    }
+}
 
 /// The menu bar as Muster drives it; `Tray` is the real one, tests have their own.
 ///
@@ -78,8 +112,9 @@ pub trait Bar {
     fn make(&self) -> bool;
     /// Shows or hides the made icon; true when that took.
     fn show(&self, on: bool) -> bool;
-    /// Shows `n`: the look, the tooltip and the menu's count; true when all of it took.
-    fn set(&self, n: usize) -> bool;
+    /// Shows a count: the look, the title, the tooltip and the menu's count; true when all of
+    /// it took.
+    fn set(&self, s: &Shows) -> bool;
 }
 
 /// The latest count and what the menu bar shows of it.
@@ -131,7 +166,7 @@ impl MenuBar {
         }
         let Some(n) = seen.latest else { return };
         if seen.shown != Some(n) {
-            seen.shown = bar.set(n).then_some(n);
+            seen.shown = bar.set(&shows(n)).then_some(n);
         }
     }
 
@@ -186,19 +221,21 @@ impl Bar for Tray<'_> {
             .is_some_and(|tray| tray.set_visible(on).is_ok())
     }
 
-    fn set(&self, n: usize) -> bool {
+    fn set(&self, s: &Shows) -> bool {
         let Some(tray) = self.0.tray_by_id(ID) else {
             return false;
         };
-        let image = match look(n) {
+        let image = match s.look {
             Look::Idle => IDLE,
             Look::Waiting => WAITING,
         };
-        let Ok(menu) = menu(self.0, &words(n)) else {
+        let Ok(menu) = menu(self.0, &s.menu) else {
             return false;
         };
+        // The title is kept with the icon, so a hidden icon shown again still has it.
         tray.set_icon_with_as_template(Some(image), true).is_ok()
-            && tray.set_tooltip(Some(tooltip(Some(n)))).is_ok()
+            && tray.set_title(Some(&s.title)).is_ok()
+            && tray.set_tooltip(Some(&s.tooltip)).is_ok()
             && tray.set_menu(Some(menu)).is_ok()
     }
 }
@@ -238,6 +275,8 @@ mod tests {
         visible: RefCell<bool>,
         handlers: RefCell<usize>,
         calls: RefCell<Vec<String>>,
+        /// The titles set, in order: what the menu bar shows beside the head.
+        titles: RefCell<Vec<String>>,
         fail_make: RefCell<bool>,
         fail_show: RefCell<bool>,
         fail_set: RefCell<bool>,
@@ -267,8 +306,9 @@ mod tests {
             }
             ok
         }
-        fn set(&self, n: usize) -> bool {
-            self.calls.borrow_mut().push(format!("set {n}"));
+        fn set(&self, s: &Shows) -> bool {
+            self.calls.borrow_mut().push(format!("set {}", s.n));
+            self.titles.borrow_mut().push(s.title.clone());
             !*self.fail_set.borrow()
         }
     }
@@ -285,6 +325,48 @@ mod tests {
         assert_eq!(look(1), Look::Waiting);
         assert_eq!(look(120), Look::Waiting);
         assert_eq!(look(usize::MAX), Look::Waiting);
+    }
+
+    #[test]
+    fn the_title_is_the_number_while_something_waits_and_empty_while_nothing_does() {
+        assert_eq!(title(0), "");
+        assert_eq!(title(1), "1");
+        assert_eq!(title(3), "3");
+        assert_eq!(title(120), "120");
+        assert_eq!(title(usize::MAX), usize::MAX.to_string());
+        // Only ASCII digits: a number Rust formatted, never a task's text or a project's name.
+        for n in [0, 7, 42, 999_999] {
+            assert!(title(n).bytes().all(|b| b.is_ascii_digit()), "{n}");
+        }
+        let s = shows(3);
+        assert_eq!((s.n, s.look, s.title.as_str()), (3, Look::Waiting, "3"));
+        assert_eq!(s.tooltip, "Muster · 3 things wait for you");
+        assert_eq!(s.menu, "3 things wait for you");
+        let s = shows(0);
+        assert_eq!((s.look, s.title.as_str()), (Look::Idle, ""));
+    }
+
+    #[test]
+    fn the_title_is_set_with_each_count_and_only_when_it_changes() {
+        let (m, bar) = (MenuBar::default(), Fake::default());
+        m.sync(true, None, &bar);
+        assert!(bar.titles.borrow().is_empty(), "no title before a read");
+        for n in [0, 0, 3, 3, 3, 1, 0, 0] {
+            m.sync(true, Some(n), &bar);
+        }
+        assert_eq!(*bar.titles.borrow(), ["", "3", "1", ""]);
+        // Hidden: reads go on, the title isn't touched; shown again, it gets the latest count.
+        m.sync(false, Some(5), &bar);
+        assert_eq!(bar.titles.borrow().len(), 4);
+        m.sync(true, None, &bar);
+        assert_eq!(bar.titles.borrow().last().map(String::as_str), Some("5"));
+        // A failed set is tried again with the same title.
+        *bar.fail_set.borrow_mut() = true;
+        m.sync(true, Some(2), &bar);
+        *bar.fail_set.borrow_mut() = false;
+        m.sync(true, Some(2), &bar);
+        m.sync(true, Some(2), &bar);
+        assert_eq!(bar.titles.borrow()[5..], ["2", "2"]);
     }
 
     #[test]
@@ -404,6 +486,32 @@ mod tests {
         assert_eq!(bar.took(), ["show"]);
         assert!(*bar.visible.borrow());
         assert_eq!(*bar.handlers.borrow(), 1);
+    }
+
+    #[test]
+    fn the_bundle_icon_holds_every_size() {
+        // icon.icns is macOS's icon before 26: built by build-icons.sh with iconutil from the
+        // owner's iconset, not actool's fallback with only 16 and 128 (task 0089). Read here
+        // from its chunk table (type, then big-endian length with the header), so no tool runs.
+        let b: &[u8] = include_bytes!("../icons/icon.icns");
+        let u32_at = |i: usize| u32::from_be_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]) as usize;
+        assert_eq!(&b[..4], b"icns");
+        assert_eq!(u32_at(4), b.len());
+        let mut types = Vec::new();
+        let mut i = 8;
+        while i + 8 <= b.len() {
+            let len = u32_at(i + 4);
+            assert!(len >= 8 && i + len <= b.len(), "chunk at {i}: {len}");
+            types.push(String::from_utf8_lossy(&b[i..i + 4]).into_owned());
+            i += len;
+        }
+        assert_eq!(i, b.len(), "the chunks fill the file");
+        // 16, 32, 128, 256, 512 and each at 2x (ic10 is 512@2x, 1024 px).
+        for t in [
+            "ic04", "ic11", "ic05", "ic12", "ic07", "ic13", "ic08", "ic14", "ic09", "ic10",
+        ] {
+            assert!(types.iter().any(|x| x == t), "{t} missing from {types:?}");
+        }
     }
 
     #[test]

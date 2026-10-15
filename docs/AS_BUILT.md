@@ -136,7 +136,7 @@ here):
 | `check_limit.rs` | The limit on Your check per project |
 | `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer |
 | `badge.rs` | The Dock badge's count, set from Rust |
-| `tray.rs` | The menu bar icon: idle or waiting, its tooltip and menu, from the badge's count |
+| `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count |
 | `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude`, restricted to `muster` and reading |
@@ -852,7 +852,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `icons/Muster.icon` (Icon Composer: the robot as a light and a dark layer on the two fills)
   compiled by `actool` into `icons/Assets.car` (Aqua, DarkAqua and tinted renditions), copied
   into the bundle by `bundle.macOS.files` and named by `CFBundleIconName` in `src-tauri/Info.plist`,
-  as Braindump does. `icon.icns` is actool's flat fallback for older macOS; the other PNGs and
+  as Braindump does. `icon.icns`, the flat icon for older macOS, is built by `iconutil` from a
+  copy of `original/Muster.iconset/` renamed to `@2x`, so it holds all ten sizes, 16 to 512@2x
+  (task 0089; actool's own fallback held only 16 and 128, so Finder upscaled it); rebuilt, it's
+  byte for byte the same, and a tray.rs test reads its chunk table for the ten. The other PNGs and
   `icon.ico` come from `tauri icon` on the dark 1024 PNG (dark is the default theme).
   `icons/build-icons.sh` rebuilds them all (Xcode 26); the outputs are committed, so builds don't
   need Xcode 26. Icon Composer's `ictool` preview crashes on this file (an assertion in
@@ -1405,7 +1408,11 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `tray-icon` and `muda` crates were already in the lockfile). The owner's template images
   (`icons/original/png/menubar-{idle,waiting}-template-2x.png`, black and alpha, read at compile
   time) so macOS tints them for the menu bar; the waiting one fills in the antennas' tips, so it
-  isn't told apart by colour alone. Idle at 0, waiting from 1, on `badge::dock_count`, the Dock
+  isn't told apart by colour alone. While something waits, the status item's title shows the
+  number right of the head ("3"; empty at 0) in the menu bar's font and tint (task 0089): `shows(n)`
+  gives the look, title, tooltip and menu words together, set in one `Bar::set`, so the title
+  changes only with the count, and Tauri keeps it while the icon is hidden. It's a Rust-formatted
+  number, never a task's text. Idle at 0, waiting from 1, on `badge::dock_count`, the Dock
   badge's count: each window poll and each hidden read pass it on (`MenuBar::sync`), so it adds
   no reads, and the icon changes only when the count does. Tooltip "Muster · 3 things wait for
   you" ("Muster" before the first read); a click brings the window forward; its menu
