@@ -304,6 +304,26 @@ describe("who's on it, since when, and how far (0030)", () => {
       expect(splitHolder(who)).toEqual({ label: who, parts: [], id: "", account: "" });
     }
   });
+  it("reads a teammate's agent part right after the session, and only there (0090)", () => {
+    expect(splitHolder("asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)")).toEqual({ label: "asghar", parts: ["main"], id: "7b5e8856", agent: "a1b2c3d4", account: "mg" });
+    expect(splitHolder("اصغر (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)")).toEqual({ label: "اصغر", parts: ["main"], id: "7b5e8856", agent: "a1b2c3d4", account: "mg" });
+    expect(splitHolder("asghar (session 7b5e8856 · agent a1b2c3d4)")).toEqual({ label: "asghar", parts: [], id: "7b5e8856", agent: "a1b2c3d4", account: "" });
+    // A lead's stamp has no agent field at all, as before.
+    expect(splitHolder(A)).not.toHaveProperty("agent");
+    for (const who of [
+      "x (main · session 7b5e8856 · cc-mg · agent a1b2c3d4)", // not right after the session
+      "x (main · session 7b5e8856 · agent a1b2c3d4 · agent a1b2c3d5)", // twice
+      "x (session 7b5e8856 · agent A1B2C3D4)", // upper case
+      "x (session 7b5e8856 · agent a1b2c3)", // short
+      "x (session 7b5e8856 · agent a1b2c3d4e5)", // long
+    ]) {
+      expect(splitHolder(who)).toEqual({ label: who, parts: [], id: "", account: "" });
+    }
+    // Before the session, "agent x" is no stamp part (it has a space): all label, as before.
+    expect(splitHolder("x (agent a1b2c3d4 · session 7b5e8856)").id).toBe("");
+    // The card shows a teammate as it shows anyone: name, checkout, session.
+    expect(whoLine(task({ stage: "building", claimedBy: "اصغر (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)" }))).toBe("اصغر · main · 7b5e8856");
+  });
   it("puts who's on it in one short line: name, checkout, short session; you for the owner", () => {
     expect(whoLine(task({ stage: "building", claimedBy: A }))).toBe("wt-a · main-29 · wt-0030 · 7b5e8856");
     expect(whoLine(task({ stage: "building", claimedBy: "muster/wt-0030 (who's on it) (session 7b5e8856)" }))).toBe("muster/wt-0030 · 7b5e8856");

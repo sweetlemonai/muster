@@ -2,7 +2,8 @@
 """Claude Code hook: deliver task-queue mail into the session it's for.
 
 Wire it to PostToolUse, UserPromptSubmit and SessionStart. It reads the hook's JSON from stdin,
-looks in <queue>/mail/<first 8 chars of session_id>/ and, if mail is waiting, returns it as
+looks in <queue>/mail/<first 8 chars of session_id>/ (a teammate's, task 0090: its
+`<session8>/<first 8 chars of agent_id>/` in there) and, if mail is waiting, returns it as
 additionalContext and moves it to delivered/. The queues it looks in: $MUSTER_ROOT's, and the
 session folder's repo's `.muster/` (task 0005: the main checkout's, from any worktree of it),
 each on its own, so a problem with one never loses the other's mail. With nothing waiting it
@@ -115,19 +116,22 @@ def task_front(root: Path, task: str) -> "dict[str, str] | None":
     return None
 
 
-def holds(fm: "dict[str, str]", short: str, field: str) -> bool:
-    return re.search(rf"\bsession {short}\b", fm.get(field, "")) is not None
+def holds(fm: "dict[str, str]", short: str, field: str, agent: str = "") -> bool:
+    """Is `field`'s stamp this session's (task 0090): a teammate's names its agent right after the
+    session (`session <s8> · agent <a8>`), a lead's has no agent part."""
+    tail = rf" · agent {agent}\b" if agent else r"\b(?! · agent )"
+    return re.search(rf"\bsession {short}{tail}", fm.get(field, "")) is not None
 
 
-def still_asked(root: Path, task: str, short: str) -> bool:
+def still_asked(root: Path, task: str, short: str, agent: str = "") -> bool:
     """Is a check-in request for `task` still this session's to answer? Only while the task is in
     Building (where `muster checkin` works) and its claim is this session's. A task file that
     can't be found or read doesn't count."""
     fm = task_front(root, task)
-    return fm is not None and fm["stage"] == "building" and holds(fm, short, "claimed-by")
+    return fm is not None and fm["stage"] == "building" and holds(fm, short, "claimed-by", agent)
 
 
-def still_paused(root: Path, task: str, short: str, paused: bool) -> bool:
+def still_paused(root: Path, task: str, short: str, paused: bool, agent: str = "") -> bool:
     """Does a stop request (`paused`) or a carry-on for `task` still stand for this session? Only
     while the task is paused (or, for a carry-on, isn't) and this session works on it: its claim
     in Building, its `held-by` in Testing."""
@@ -135,20 +139,30 @@ def still_paused(root: Path, task: str, short: str, paused: bool) -> bool:
     if fm is None or bool(fm.get("paused")) != paused:
         return False
     field = {"building": "claimed-by", "testing": "held-by"}.get(fm["stage"])
-    return field is not None and holds(fm, short, field)
+    return field is not None and holds(fm, short, field, agent)
 
 
-def take_mail(root: Path, session: str) -> "list[tuple[int, str]]":
+def agent_part(agent_id: str) -> "str | None":
+    """A teammate's mailbox name (task 0090): the first 8 chars of the hook's `agent_id`,
+    lowercased; "" for the lead (no agent_id), None for one that isn't 8 hex chars."""
+    if not agent_id:
+        return ""
+    short = agent_id.strip().lower()[:8]
+    return short if re.fullmatch(r"[0-9a-f]{8}", short) else None
+
+
+def take_mail(root: Path, session: str, agent: str = "") -> "list[tuple[int, str]]":
     """The mail in this session's mailbox, oldest name first, each moved to delivered/ as it's
     taken and framed. One that another reader moved first is skipped, so mail is handed over
     once. A check-in request for a task that has left Building, or that another session holds
     now, is moved to delivered/ without being handed over: `muster checkin` would refuse it. So is
     a stop request for a task no longer paused, or a carry-on for one paused again, or either one
-    for a task this session no longer works on."""
+    for a task this session no longer works on. A teammate (`agent`, task 0090) reads its own
+    mailbox inside its lead's; the lead takes only files, never a teammate's folder."""
     short = session.strip().lower()[:8]
     if not re.fullmatch(r"[0-9a-f]{8}", short):
         return []
-    box = root / "mail" / short
+    box = root / "mail" / short / agent if agent else root / "mail" / short
     if not box.is_dir():
         return []
     out = []
@@ -164,9 +178,9 @@ def take_mail(root: Path, session: str) -> "list[tuple[int, str]]":
         asked = CHECKIN_NAME.fullmatch(f.name)
         pause = PAUSE_NAME.fullmatch(f.name)
         try:
-            if asked and not still_asked(root, asked.group(1), short):
+            if asked and not still_asked(root, asked.group(1), short, agent):
                 continue
-            if pause and not still_paused(root, pause.group(1), short, pause.group(2) == "pause"):
+            if pause and not still_paused(root, pause.group(1), short, pause.group(2) == "pause", agent):
                 continue
         except (OSError, UnicodeDecodeError):
             continue
@@ -246,7 +260,9 @@ def main() -> int:
             return 0
         session = str(data.get("session_id") or "")
         event = str(data.get("hook_event_name") or "PostToolUse")
-        if not session:
+        # A teammate's agent_id that isn't 8 hex chars gets no mail: the lead's isn't its own.
+        agent = agent_part(str(data.get("agent_id") or ""))
+        if not session or agent is None:
             return 0
         roots = queues(data)
     except Exception:
@@ -255,7 +271,7 @@ def main() -> int:
     for q in roots:
         # Each queue on its own: mail already taken from one is never lost to another's problem.
         try:
-            mail.extend(take_mail(q, session))
+            mail.extend(take_mail(q, session, agent))
         except Exception:
             continue
     if not mail:

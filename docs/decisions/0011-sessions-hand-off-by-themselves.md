@@ -30,7 +30,8 @@ mailbox by session id, so a successor never saw the answers to its predecessor's
 3. **The handoff.** The session writes `/handoff` (every owner request with its status, decisions,
    failed approaches, changes, open questions). Its front matter carries `session:` (the old
    session id) and `generation:`. A builder holding a claim first runs `muster checkin` with
-   what's done and next, and the handoff names the claim and the open question ids. The
+   what's done and next (`--handoff`, since task 0090), and the handoff names the claim and the
+   open question ids. The
    handoff's first Next step is `muster inbox --session <old id>`.
 4. **An automatic successor.** `claude-continue` starts a named background session with the same
    account and permission mode, which runs `/handoff resume`. No human step. It follows the
@@ -65,15 +66,25 @@ mailbox by session id, so a successor never saw the answers to its predecessor's
 a one-line "merged, pushed"). With the cap, a builder's turn costs at most about 150k, a third of
 that, and the lead's at most about 600k (the owner raised it from 300k on 2026-10-14, trading cost per turn for fewer lead handoffs).
 
+## Built since (task 0090, 2026-10-14)
+
+- **The claim carries over.** The handing-off session runs `muster checkin <id> "<what's done,
+  what's next>" --handoff` (logged `check-in 40% · handing off · <text>`). The successor runs
+  `muster claim <id> --takeover --as <the same name>`, which moves the claim to its session under
+  the lock, renews the lease and logs `<new>: took over the claim from <old> (handed off)`. With
+  no handoff after the latest claim or takeover, it's allowed once the claim has had no heartbeat
+  for 30 minutes (`(quiet 42 min)`). The owner can always take over (`(owner's override)`).
+  Another label is refused. The coordinator no longer needs owner overrides to move it.
+- **A task's answers follow its claim.** On a takeover the old mailbox's mail for that task moves
+  to the successor's, and `mail/asks.json` entries for its questions are repointed, so a later
+  `muster answer` reaches the successor. Other tasks' mail stays in the old mailbox.
+- **Builders stay builders.** Every holder in the chain (the claimer and each takeover's two
+  sides) counts as the builder for the tester rule (0047) and the reviewer check.
+
 ## Still open
 
-- **The claim doesn't carry over yet.** A claim is stamped with the session id, so `muster`
-  refuses the successor's check-in, pass and return on the task it inherited, even under the same
-  `--as` name (backlog note 2026-10-14-0707). Until a takeover is built, the coordinator moves the
-  task with owner overrides (`--as owner`), as the work log of 2026-10-14 describes.
 - **Nothing but the handoff tells the successor to read the old mailbox.** The `/handoff` skill,
   the hooks and `claude-continue` don't run `muster inbox`; a handoff written without that first
-  Next step leaves the old answers unread (they're still in the task file).
-- **Routing by claim.** Answers still go to the asking session's mailbox; the successor has to
-  read the old one with `--session`. Routing a task's answers to whoever holds its claim isn't
-  built.
+  Next step leaves the old answers unread (they're still in the task file). A takeover now brings
+  the claimed task's mail along, so this is only about other tasks' answers, and the coordinator's
+  own questions, which have no claim to follow.

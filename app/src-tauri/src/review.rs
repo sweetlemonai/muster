@@ -1025,8 +1025,10 @@ fn check_recorder(id: &str, t: &queue::Task, who: &str) -> Result<(), String> {
         ));
     }
     if !is_owner(who) {
-        if let Some(b) = [&t.built_by, &t.gated_by]
-            .into_iter()
+        if let Some(b) = t
+            .builders
+            .iter()
+            .chain([&t.built_by, &t.gated_by])
             .find(|b| !b.is_empty() && same_holder(b, who))
         {
             return Err(format!(
@@ -2215,6 +2217,79 @@ mod tests {
         );
         assert!(text(d.path(), &id)
             .contains("owner: review: settled R1 as false-positive: the pipe is bounded"));
+    }
+
+    #[test]
+    fn a_record_is_refused_for_a_builder_that_handed_off_to_its_successor() {
+        let d = queue();
+        let old = "wt-a (main · session 1c6af0d9 · cc-mg)";
+        let new = "wt-a (main · session d6419719 · cc-mg)";
+        let id = ops::create_task(
+            d.path(),
+            &NewTask {
+                title: "Cap the gate's output".into(),
+                body: "## Acceptance criteria\n- [x] AC1: capped — verify: command".into(),
+                touches: "app/".into(),
+                ..Default::default()
+            },
+            "owner",
+            T0,
+        )
+        .unwrap()
+        .id;
+        ops::start_task(
+            d.path(),
+            &id,
+            old,
+            T0,
+            "/nowhere/wt",
+            "task/pj-1-cap",
+            false,
+        )
+        .unwrap();
+        ops::checkin_task_with(d.path(), &id, "bye", "", true, old, "2026-10-13 10:30").unwrap();
+        ops::takeover_task(d.path(), &id, new, "2026-10-13 10:31", 0).unwrap();
+        let opts = PassOpts {
+            gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(d.path(), &id, new, "2026-10-13 11:00", &opts).unwrap();
+        let before = text(d.path(), &id);
+        let json = rec(
+            HEAD1,
+            &[finding_json(
+                "Unbounded output",
+                "unbounded-output",
+                "should",
+            )],
+            "",
+        );
+        let e = record(
+            d.path(),
+            &id,
+            &json,
+            old,
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e,
+            format!("{id} was built by {old}; its review is a different session's (the tester's, as Testing is), or the owner's")
+        );
+        assert_eq!(text(d.path(), &id), before, "nothing written");
+        // A session that built none of it records it.
+        record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
     }
 
     #[test]

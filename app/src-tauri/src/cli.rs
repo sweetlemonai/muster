@@ -39,6 +39,10 @@ struct Args {
     dry_run: bool,
     /// `check --fix-pauses` (0059): the old paused blocks become pauses, in every queue.
     fix_pauses: bool,
+    /// `claim --takeover` (0090): take a claim under this label over from another session.
+    takeover: bool,
+    /// `checkin --handoff` (0090): the holder's last check-in; its successor may take over.
+    handoff: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -61,6 +65,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         committed: false,
         dry_run: false,
         fix_pauses: false,
+        takeover: false,
+        handoff: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -88,12 +94,15 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--committed" => a.committed = true,
             "--dry-run" => a.dry_run = true,
             "--fix-pauses" => a.fix_pauses = true,
+            "--takeover" => a.takeover = true,
+            "--handoff" => a.handoff = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
-            | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built" => {
+            | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built"
+            | "--agent" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -519,14 +528,35 @@ fn options_text(c: &crate::choices::Choices) -> String {
     out
 }
 
-/// The session asking or collecting answers: `--session`, else `$CLAUDE_CODE_SESSION_ID`.
+/// The session asking or collecting answers: `--session`, else `$CLAUDE_CODE_SESSION_ID`; with
+/// a teammate's agent id after it (`<session>/<agent>`, 0090), so its mail is its own.
 fn session(a: &Args, env: Env) -> String {
-    a.flags
+    let s = a
+        .flags
         .get("session")
         .filter(|s| !s.is_empty())
         .cloned()
         .or_else(|| env("CLAUDE_CODE_SESSION_ID"))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    match env("MUSTER_AGENT") {
+        Some(agent) if !s.is_empty() => format!("{s}/{agent}"),
+        _ => s,
+    }
+}
+
+/// A teammate's agent id (0090): `--agent`, else `$MUSTER_AGENT` when set, cut to its first 8
+/// characters (`session::agent_id`). Refused when it isn't one; None for a lead.
+fn agent_arg(a: &Args, env: Env) -> Result<Option<String>, String> {
+    let raw = match a.flags.get("agent") {
+        Some(f) => f.clone(),
+        None => match env("MUSTER_AGENT").filter(|v| !v.trim().is_empty()) {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+    };
+    session::agent_id(&raw).map(Some).ok_or_else(|| {
+        "the agent id (--agent or MUSTER_AGENT) must start with 8 hex characters and be only letters, digits and dashes".to_string()
+    })
 }
 
 /// Who's acting, without the session: `--as`, else `$MUSTER_AS`, else the git user name for the
@@ -1466,6 +1496,17 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
         return crate::merge_log::run(&argv[1..]);
     }
     let a = parse(argv)?;
+    // A teammate's agent id (0090): `--agent`, else `$MUSTER_AGENT`, checked once here and read
+    // from then on as `MUSTER_AGENT`, so the stamp and the mailbox see the same one.
+    let agent = agent_arg(&a, env)?;
+    let with_agent = |k: &str| {
+        if k == "MUSTER_AGENT" {
+            agent.clone()
+        } else {
+            env(k)
+        }
+    };
+    let env: Env = &with_agent;
     let cmd = a.pos.first().map(String::as_str).unwrap_or("help");
     let stamp = local_stamp();
     match cmd {
@@ -1963,6 +2004,18 @@ fn run_on(
             }
             Ok(0)
         }
+        "claim" if a.takeover => {
+            let id = need(a, 1, "a task id")?;
+            let t = ops::takeover_task(root, id, &me(), stamp, queue::now_secs())?;
+            println!(
+                "{}: took over the claim from {} ({}); heartbeat {stamp} ({})",
+                key(id),
+                t.from,
+                t.why,
+                t.path
+            );
+            Ok(0)
+        }
         "claim" => {
             let id = need(a, 1, "a task id")?;
             let p = ops::claim_task(root, id, &me(), stamp)?;
@@ -2032,8 +2085,16 @@ fn run_on(
             need(a, 2, "what's done and what's next")?;
             let text = a.pos[2..].join(" ").replace("\\n", " ");
             let pct = a.flags.get("pct").map(String::as_str).unwrap_or("");
-            ops::checkin_task(root, id, &text, pct, &me(), stamp)?;
-            println!("{}: checked in; heartbeat {stamp}", key(id));
+            ops::checkin_task_with(root, id, &text, pct, a.handoff, &me(), stamp)?;
+            if a.handoff {
+                println!(
+                    "{}: checked in, handing off; heartbeat {stamp}. Your successor runs: muster claim {} --takeover",
+                    key(id),
+                    key(id)
+                );
+            } else {
+                println!("{}: checked in; heartbeat {stamp}", key(id));
+            }
             Ok(0)
         }
         "ping" => {
@@ -4562,6 +4623,146 @@ mod tests {
         assert!(queue::read_body(d.path(), "0001")
             .unwrap()
             .contains("**Q1 (Test Person, session 7b5e8856, "));
+    }
+
+    #[test]
+    fn takeover_from_the_command_line_after_checkin_handoff() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let a = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let b = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "d6419719-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        assert_eq!(code_in(&q, &[], &["new", "Handed", "--as", "owner"]), 0);
+        assert_eq!(code_in(&q, &a, &["claim", "0001", "--as", "asghar"]), 0);
+        // Fresh and not handed off: refused, and B can't act on A's claim.
+        assert_eq!(
+            code_in(&q, &b, &["claim", "0001", "--takeover", "--as", "asghar"]),
+            1
+        );
+        assert_eq!(
+            code_in(&q, &b, &["checkin", "0001", "x", "--as", "asghar"]),
+            1
+        );
+        assert_eq!(
+            code_in(
+                &q,
+                &a,
+                &[
+                    "checkin",
+                    "0001",
+                    "parser",
+                    "done",
+                    "--handoff",
+                    "--pct",
+                    "40",
+                    "--as",
+                    "asghar"
+                ]
+            ),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &b, &["claim", "0001", "--takeover", "--as", "asghar"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &b, &["checkin", "0001", "on", "it", "--as", "asghar"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &a, &["checkin", "0001", "me", "too", "--as", "asghar"]),
+            1
+        );
+        let body = queue::read_body(d.path(), "0001").unwrap();
+        // Stamped with the checkout the test runs in too, so only the stamps' ends are pinned.
+        assert!(
+            body.contains("session 1c6af0d9): check-in 40% · handing off · parser done\n"),
+            "{body}"
+        );
+        let took = body
+            .lines()
+            .find(|l| l.contains(": took over the claim from "))
+            .unwrap();
+        assert!(
+            took.contains(" asghar (")
+                && took.contains("session d6419719): took over the claim from asghar (")
+                && took.ends_with("session 1c6af0d9) (handed off)"),
+            "{took}"
+        );
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            session::session_of(&t.claimed_by),
+            Some(("d6419719".into(), String::new()))
+        );
+    }
+
+    #[test]
+    fn a_teammates_commands_are_stamped_with_its_agent_and_a_bad_one_is_refused() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let sid = (
+            "CLAUDE_CODE_SESSION_ID",
+            "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+        );
+        assert_eq!(code_in(&q, &[], &["new", "One", "--as", "owner"]), 0);
+        assert_eq!(code_in(&q, &[], &["new", "Two", "--as", "owner"]), 0);
+        for bad in [vec![sid, ("MUSTER_AGENT", "nothex!!")], vec![sid]] {
+            let mut args = vec!["claim", "0001", "--as", "asghar"];
+            if bad.len() == 1 {
+                args.extend(["--agent", "a1b2/../x"]);
+            }
+            assert_eq!(code_in(&q, &bad, &args), 1, "{bad:?}");
+        }
+        assert_eq!(queue::read_task(d.path(), "0001").unwrap().claimed_by, "");
+        // From the environment, and from the flag.
+        let tm = [sid, ("MUSTER_AGENT", "A1B2C3D4E5F6A7B8C")];
+        assert_eq!(code_in(&q, &tm, &["claim", "0001", "--as", "asghar"]), 0);
+        let held = |id: &str| {
+            let c = queue::read_task(d.path(), id).unwrap().claimed_by;
+            (session::split(&c).0.to_string(), session::session_of(&c))
+        };
+        let pair = |a: &str| Some(("1c6af0d9".to_string(), a.to_string()));
+        assert_eq!(held("0001"), ("asghar".into(), pair("a1b2c3d4")));
+        assert_eq!(
+            code_in(
+                &q,
+                &[sid],
+                &["claim", "0002", "--as", "asghar", "--agent", "0f0f0f0f99"]
+            ),
+            0
+        );
+        assert_eq!(held("0002"), ("asghar".into(), pair("0f0f0f0f")));
+        // Its lead under the same label is another holder.
+        assert_eq!(
+            code_in(&q, &[sid], &["checkin", "0001", "x", "--as", "asghar"]),
+            1
+        );
+        // A teammate's question is answered into its own folder, which only its inbox takes.
+        assert_eq!(
+            code_in(&q, &tm, &["ask", "0001", "Which port?", "--as", "asghar"]),
+            0
+        );
+        assert!(queue::read_body(d.path(), "0001")
+            .unwrap()
+            .contains("**Q1 (asghar, session 1c6af0d9 · agent a1b2c3d4, "));
+        assert_eq!(
+            code_in(&q, &[], &["answer", "0001", "Q1", "5173", "--as", "owner"]),
+            0
+        );
+        let agent_box = d.path().join("mail/1c6af0d9/a1b2c3d4");
+        assert!(agent_box.join("0001-Q1.md").is_file());
+        assert_eq!(code_in(&q, &[sid], &["inbox"]), 0);
+        assert!(
+            agent_box.join("0001-Q1.md").is_file(),
+            "the lead's inbox leaves it"
+        );
+        assert_eq!(code_in(&q, &tm, &["inbox"]), 0);
+        assert!(agent_box.join("delivered/0001-Q1.md").is_file());
     }
 
     #[test]

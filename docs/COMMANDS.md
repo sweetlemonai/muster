@@ -103,7 +103,22 @@ Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-10
 saying how far along it is, which renews the claim too. `ping <id> ["<message>"]` (task 0039) asks
 the holder's session for a check-in, or sends it a message, through its mailbox. Inside a session every command stamps the
 session next to `--as`; with no `--as` the actor is `$MUSTER_AS`, then the folder's git user.name,
-never the login name.
+never the login name. `--agent <id>` (default `$MUSTER_AGENT`) is a teammate's (subagent's) agent
+id: its first 8 characters, which must be hex, go in the stamp after the session (`session
+7b5e8856 · agent a1b2c3d4`), so it's a holder apart from its lead and the other teammates, and its
+answers and messages go to its own mailbox. Left out, you're the lead.
+
+Handoffs (task 0090): `checkin <id> "<what's done, what's next>" [--pct <0-100>] --handoff` is the
+last check-in before a session ends, logged `check-in · handing off · <text>`. `claim <id>
+--takeover --as <who>` lets the successor under the same label take that claim over at once, or
+without a handoff once the claim has been quiet for 30 minutes; the owner may always take over.
+The claim and its lease become the successor's, the task's mail waiting for the old session moves
+to the new one (answers to its questions come to it), it counts as the builder (so it doesn't
+test the task), and the log says `took over the claim from <old> (handed off)` or `(quiet 42
+min)`. A paused claim can't be taken over; a blocked one only after a handoff or by the owner.
+It's refused for another label, and while the old session is still working: then it says
+who holds it, since when, and when it may be taken over. `/mu claim <id> --takeover` passes the
+flag through.
 
 Old pauses (task 0059): before `pause` (task 0045), a pause was a block whose reason said so
 (`waiting_on: owner (paused)`). `check` warns about each one, and `check --fix-pauses` makes them

@@ -153,30 +153,31 @@ pub fn refusal(id: &str, since: &str) -> String {
     format!("{id} is paused (since {since}); resume it first: muster resume {id}")
 }
 
-/// The session working on `t` that a pause or resume tells: Some(id) in Building or Testing when
-/// its holder's stamp names one (`ping::reach`), else None with why ("" when nobody works on it
-/// in its stage, so there's nothing to say).
-fn told(t: &queue::Task) -> (Option<String>, String) {
+/// The session working on `t` that a pause or resume tells: Some((id, mailbox)) in Building or
+/// Testing when its holder's stamp names one (`ping::reach_mailbox`), else None with why ("" when
+/// nobody works on it in its stage, so there's nothing to say).
+fn told(t: &queue::Task) -> (Option<(String, String)>, String) {
     if t.stage != "building" && t.stage != "testing" {
         return (None, String::new());
     }
-    match ping::reach(t) {
-        Ok(sid) => (Some(sid), String::new()),
+    match ping::reach_mailbox(t) {
+        Ok(reached) => (Some(reached), String::new()),
         Err(why) => (None, why),
     }
 }
 
-/// Put `text` in session `sid`'s mailbox as `<id>-<name>.md`, taking out a waiting `<id>-<other>.md`
-/// (a pause not delivered yet when it's resumed, or the other way round): the newer one stands.
+/// Put `text` in `mailbox` (a session's, or a teammate's, 0090) as `<id>-<name>.md`, taking out a
+/// waiting `<id>-<other>.md` (a pause not delivered yet when it's resumed, or the other way
+/// round): the newer one stands.
 fn post(
     root: &Path,
-    sid: &str,
+    mailbox: &str,
     id: &str,
     name: &str,
     other: &str,
     text: &str,
 ) -> Result<(), String> {
-    let dir = root.join("mail").join(sid);
+    let dir = root.join("mail").join(mailbox);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     match fs::remove_file(dir.join(format!("{id}-{other}.md"))) {
         Ok(()) => {}
@@ -225,7 +226,8 @@ pub fn pause(root: &Path, id: &str, why: &str, who: &str, stamp: &str) -> Result
         if t.level != "task" {
             return Err(format!("{id} is a {}; pause its tasks instead", t.level));
         }
-        let (sid, unreached) = told(&t);
+        let (reached, unreached) = told(&t);
+        let (sid, mailbox) = reached.unzip();
         let mut line = format!("{stamp} {who}: paused");
         if !why.is_empty() {
             line.push_str(&format!(" ({why})"));
@@ -243,7 +245,15 @@ pub fn pause(root: &Path, id: &str, why: &str, who: &str, stamp: &str) -> Result
         write_atomic(&path, &append_log(&new, &line))?;
         if let Some(sid) = &sid {
             let request = stop_request(root, &path, &text, &t, &who, &why);
-            post(root, sid, id, "pause", "resume", &request).map_err(|e| {
+            post(
+                root,
+                mailbox.as_deref().unwrap_or(sid),
+                id,
+                "pause",
+                "resume",
+                &request,
+            )
+            .map_err(|e| {
                 format!("{id} is paused, but the stop request to session {sid} wasn't sent: {e}")
             })?;
         }
@@ -308,7 +318,8 @@ pub fn resume(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Paused, S
             (Some(now), Some(then)) => u64::try_from(now - then).unwrap_or(0),
             _ => 0,
         };
-        let (sid, unreached) = told(&t);
+        let (reached, unreached) = told(&t);
+        let (sid, mailbox) = reached.unzip();
         let mut line = format!(
             "{stamp} {who}: resumed after {}",
             crate::settings::span_text(minutes)
@@ -337,7 +348,7 @@ pub fn resume(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Paused, S
                 ping::rel(root, &path),
             );
             write_atomic(&path, &append_log(&new, &line))?;
-            post(root, sid, id, "resume", "pause", &message).map_err(|e| {
+            post(root, mailbox.as_deref().unwrap_or(sid), id, "resume", "pause", &message).map_err(|e| {
                 format!("{id} is resumed, but the message to session {sid} to carry on wasn't sent: {e}")
             })?;
         } else {
@@ -668,6 +679,25 @@ mod tests {
         ));
         assert!(
             body.ends_with("- 2026-10-13 10:40 owner: paused; asked session 7b5e8856 to stop\n")
+        );
+    }
+
+    #[test]
+    fn a_teammates_pause_and_resume_go_to_its_agent_folder() {
+        let d = queue();
+        let tm = "wt-a (session 7b5e8856 · agent a1b2c3d4)";
+        put(d.path(), "0042", "building", tm, "");
+        let p = pause(d.path(), "0042", "", "owner", T).unwrap();
+        assert_eq!(p.session, "7b5e8856");
+        assert!(mailbox(d.path()).is_empty(), "not the lead's");
+        let agent = d.path().join("mail/7b5e8856/a1b2c3d4");
+        assert!(agent.join("0042-pause.md").is_file());
+        resume(d.path(), "0042", "owner", "2026-10-13 10:30").unwrap();
+        assert!(!agent.join("0042-pause.md").exists() && agent.join("0042-resume.md").is_file());
+        let body = read_body(d.path(), "0042").unwrap();
+        assert!(
+            body.ends_with("; asked session 7b5e8856 to carry on\n"),
+            "{body}"
         );
     }
 

@@ -108,15 +108,17 @@
 >   prefix: a key goes to the `.muster` queue, and `muster check` warns that the prefix is shared.
 
 > **The tester isn't the builder (Muster 0047, 2026-10-13).** Testing → Your check is refused
-> when the passer built the task: whoever claimed it last (`ready → building (claimed)`) or passed
-> it into Testing with the gate's line, matched as one holder is (the same `--as` label, in the
-> same session or with no session on either side). Nothing is written, and the refusal names the
+> when the passer built the task: whoever claimed it last (`ready → building (claimed)`), every
+> session that took that claim over and the one it took it from (0090), or whoever passed it into
+> Testing with the gate's line, matched as one holder is (the same `--as` label, in the same
+> session and agent or with no session on either side). `built by` is the last of that chain. Nothing is written, and the refusal names the
 > builder and what to do: `0042 was built by muster/wt-0042 (session 7b5e8856); a different session
 > tests it: run the QA pass with its own --as (e.g. muster/qa-0042), or the owner passes it`. For a
 > started task (0023) the merge checks this first, so a builder's `muster pass <id> --from testing`
 > stops before any rebase, gate or merge. A builder's `muster stage <id> your-check` (or `done`,
 > from Testing or before) and `muster move <id> done` are refused the same way. **A started task can't skip its merge** (0064): `muster stage` or `muster move` of a task with a recorded branch into Your check or Done is refused, for the owner too, until that branch's tip is an ancestor of the local main (`git merge-base --is-ancestor`): `0007 was started on its own branch (task/mu-7-x), which isn't in main yet, so it can't go to Done by a stage change: run muster pass 0007 --from testing to merge it, or muster release 0007 --clean to drop the branch`. Once the branch is in main by any route (merged by hand, even branch and worktree deleted since) the move is allowed; the app's stage track shows the refusal under the pane. Tasks with no branch and the owner's own tasks are unaffected. The branch is looked up in the repo of the queue's `.muster/` (the main checkout), else in the task's worktree; a branch that no longer exists counts as merged only in such a repo. An old-layout queue (`<project>/tasks`) whose worktree is gone has none, so it is refused with `muster release <id> --clean`. A coordinator's subagents carry its session id,
-> so a pass under another label in the builder's session is accepted and logged `(tested under
+> so a pass under another label in the builder's session and agent is accepted (a teammate with
+its own agent id is another holder, 0090) and logged `(tested under
 > another label in the builder's session)`; another session under the builder's label is another
 > holder and passes as usual. The owner never built an agent's task: the owner's pass or override
 > out of Testing is always accepted and logged `(owner's override: no separate tester)`. The card
@@ -371,8 +373,13 @@
 > (main-29 · session 7b5e8856 · cc-hg)` (the session's name when the harness gives one, its checkout
 > folder, the first 8 characters of `CLAUDE_CODE_SESSION_ID`, the account from `CLAUDE_CONFIG_DIR`;
 > nothing else). Don't type it. Without `--as` the label is `$MUSTER_AS`, else the folder's git
-> `user.name`, else `owner`; the login name is never used. One holder is one label in one session:
-> the same session from another folder is still you, another session under your label isn't.
+> `user.name`, else `owner`; the login name is never used. One holder is one label in one session
+> and one agent: the same session from another folder is still you, another session under your
+> label isn't. A teammate (a subagent) shares its lead's session id, so it adds its agent id with
+> `--agent <id>` or `MUSTER_AGENT` (Muster 0090): `asghar (main · session 7b5e8856 · agent a1b2c3d4
+> · cc-mg)`, the first 8 characters, which must be hex. A stamp without an agent part is the lead's,
+> so a lead and each of its teammates are different holders. A successor session takes a claim over
+> with `muster claim <id> --takeover` (see "Sessions" below).
 > Testing and Your check have a holder too, `held-by:`, set by `pass` (whoever passes it into
 > Testing; the owner in Your check); it's shown, not a claim, so who may pass doesn't change.
 > **Check in at each milestone and at least every 30 minutes** while you hold a task in Building:
@@ -387,7 +394,7 @@
 > in the task pane, and **Ask all quiet sessions for a check-in** under a stalled project), the
 > pane's **Message the session working on this**, or `muster ping <id> ["<message>"]`. Both reach
 > only the session in the holder's stamp (`claimed-by:` in Building, `held-by:` in Testing), through
-> its mailbox, as answers do: `mail/<session8>/<id>-checkin.md` (one waiting per task; asking again
+> its mailbox, as answers do (a teammate's is `mail/<session8>/<agent8>/`, 0090): `mail/<session8>/<id>-checkin.md` (one waiting per task; asking again
 > before it's delivered replaces it) and `mail/<session8>/<id>-note-<nnnn>.md` (numbered from 0001,
 > so name order is sending order). A check-in request is
 > Building's only (`muster checkin` works there). A holder without a stamp (a claim from before
@@ -649,16 +656,35 @@ and `tasks.json`, which scripts read, keep ids.
   all of it. The layer's `context-watch` hook reminds you from 50%, or from 5/6 of the cap (125k
   for 150k) if that comes first, and asks for the handoff at a Stop with nothing of yours running. At its prompt:
   1. Finish the step. Wait for your subagents, teammates and background shells to land.
-  2. Holding a claim? `muster checkin <id> "<what's done, what's next>"` first.
+  2. Holding a claim? `muster checkin <id> "<what's done, what's next>" --handoff` first.
   3. Write `/handoff`. It names the claim and your open question ids, and its `session:` front
      matter is your session id. Its first Next step is `muster inbox --session <your session id>`:
      the successor follows the handoff's Next steps, and nothing else tells it to read your mailbox.
   4. The successor starts by itself (`claude-continue`, same account and permission mode) and runs
-     `/handoff resume`. Its first command after that is the handoff's `muster inbox --session <old
-     id>`, so answers that went to the old mailbox reach it. It keeps the same `--as` name.
-  - The claim doesn't carry over yet: it's stamped with the old session id, so `muster` refuses
-    the successor's check-in and pass. Tell the coordinator, which moves the claim with owner
-    overrides (or returns the task to Ready for the successor to claim again).
+     `/handoff resume`. Its first command after that is `muster claim <id> --takeover` (below),
+     which brings the task's mail with the claim; then the handoff's `muster inbox --session <old
+     id>`, so answers to other questions that went to the old mailbox reach it. It keeps the same
+     `--as` name.
+  - **The claim carries over (task 0090).** Step 2's check-in is logged `check-in 40% · handing
+    off · <text>`. That first command,
+    in full, is `muster claim <id> --takeover --as <the same name>`. It moves the claim
+    and renews the lease, logged `<new>: took over the claim from <old> (handed off)`. Without a
+    handoff since the latest claim or takeover, it's allowed once the claim has been quiet (no
+    heartbeat or check-in) for 30 minutes, logged `(quiet 42 min)`. The owner may always take
+    over (`(owner's override)`). Nobody, the owner included, takes over a paused claim: resume it
+    first. A blocked claim is waiting, so quiet by design: it's taken over only after a handoff or
+    by the owner. It's refused for another label and for the holder itself; while
+    the old session is still working, the refusal names it, since when, and the two ways out:
+    `0042 is held by <old> since 10:00 and was last heard from 5 min ago: ask that session to run
+    muster checkin 0042 "<what's done, what's next>" --handoff, or take it over after 10:35, once
+    it has been quiet for 30 min`.
+  - **Its mail comes too.** The old mailbox's `<id>-*.md` (top level only, not `delivered/`, not
+    other tasks') moves to the successor's, notes renumbered after any waiting there, and every
+    `mail/asks.json` entry for that task's questions is repointed, so a later `muster answer`
+    reaches the successor. The handoff's `muster inbox --session <old id>` still collects other
+    tasks' mail.
+  - Every holder in the chain counts as its builder, so neither the successor nor the old session
+    may test it.
   - A handoff holds no secrets or tokens (name where a credential lives, never its value). Handoffs
     can quote the owner: they stay in the untracked `.claude/work/handoffs/` and are never committed
     or attached to a task.
@@ -756,14 +782,19 @@ sees another version falls back to writing only the task file.
    continuation that renders the same, so no line of it can start a heading or a new item.
    Questions are written the same way (`bin/task ask`). A reader takes those two spaces off to
    get the text back as written. Text is data. Never execute it.
-4. **Asker:** `mail/asks.json` maps `"<task>-Q<n>"` to the asker's session prefix: the first 8
-   characters of its session id, lowercase hex (`[0-9a-f]{8}`). Anything else is refused. If
-   it's missing there, use the `session xxxxxxxx` in the question line. If neither exists, no
-   mailbox file is written.
-5. **Mailbox:** write `mail/<session8>/<task>-Q<n>.md`, either the mailbox or typing it into a live
-   session, never both (so it isn't delivered twice),, plain UTF-8 text, naming the task, the
-   question and the answer. `bin/answer-hook.py` delivers it to that session as is, and moves it
-   to `mail/<session8>/delivered/`. The same mailbox carries the owner's check-in requests
+4. **Asker:** `mail/asks.json` maps `"<task>-Q<n>"` to the asker's mailbox: the first 8
+   characters of its session id, lowercase hex (`[0-9a-f]{8}`), or for a teammate that and the
+   first 8 of its agent id, `<session8>/<agent8>` (task 0090). Anything else is refused. If it's
+   missing there, use the `session xxxxxxxx` (and a teammate's `· agent yyyyyyyy` after it) in
+   the question line's asker part. If neither exists, no mailbox file is written. A takeover
+   repoints the task's entries to the successor.
+5. **Mailbox:** write `mail/<mailbox>/<task>-Q<n>.md`: `mail/<session8>/` for a lead, and
+   `mail/<session8>/<agent8>/` for a teammate, a folder inside its lead's (task 0090). Use either
+   the mailbox or typing it into a live session, never both (so it isn't delivered twice). The
+   file is plain UTF-8 text, naming the task, the question and the answer. `bin/answer-hook.py` delivers it to that session as is, and moves it
+   to the mailbox's `delivered/`. It finds a teammate's folder by the hook input's `agent_id`; an
+   `agent_id` that isn't 8 hex characters gets no mail, and the lead takes only files at the top
+   of its own folder, never a teammate's. The same mailbox carries the owner's check-in requests
    (`<task>-checkin.md`) and messages (`<task>-note-<nnnn>.md`), which only `muster ping` and the
    app write (see "Reaching a working session" above), and stop and carry-on requests
    (`<task>-pause.md`, `<task>-resume.md`), which only `muster pause` and `resume` and the app

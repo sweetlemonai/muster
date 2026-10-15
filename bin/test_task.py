@@ -110,7 +110,7 @@ class MusterDirTests(unittest.TestCase):
         home = base / "home"
         home.mkdir()
         self.env = {**outside, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
-        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT"):
             self.env.pop(k, None)
         # "pr" is free only if init sees no other projects: with the outer HOME or MUSTER_BASE leaking
         # in, `proto` holds "pr" and init picks another prefix, so this fails.
@@ -252,7 +252,7 @@ class OtherProjectsTests(unittest.TestCase):
         home = self.base / "home"
         home.mkdir()
         self.env = {**os.environ, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
-        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT"):
             self.env.pop(k, None)
 
     def tearDown(self):
@@ -406,7 +406,7 @@ class TaskTests(unittest.TestCase):
         self.home = tempfile.TemporaryDirectory()
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_BIN": str(MUSTER),
                     "HOME": self.home.name}
-        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
+        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE", "MUSTER_AGENT"):
             self.env.pop(k, None)
 
     def tearDown(self):
@@ -419,12 +419,15 @@ class TaskTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
         return r
 
-    def hook(self, session, event="PostToolUse"):
+    def hook(self, session, event="PostToolUse", agent_id=None):
         # Run in the queue's temp folder: the hook also reads the mail of the .muster/ of the repo
         # it runs in, and these tests never reach this checkout's.
+        data = {"session_id": session, "hook_event_name": event}
+        if agent_id is not None:
+            data["agent_id"] = agent_id  # a teammate's hook (task 0090)
         r = subprocess.run(
             [sys.executable, "-I", str(HOOK)],
-            input=json.dumps({"session_id": session, "hook_event_name": event}),
+            input=json.dumps(data),
             env=self.env, cwd=self.root, capture_output=True, text=True,
         )
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -1261,6 +1264,74 @@ class TaskTests(unittest.TestCase):
             "claimed-by: wt-a (session aaaa1111)", "claimed-by:\nheld-by: qa (session aaaa1111)"))
         self.as_owner("pause", "0042")
         self.assertIn("Pause on task 0042, from owner.", self.hook("aaaa1111"))
+
+    def test_a_teammate_gets_its_own_mail_and_the_lead_only_its_own(self):
+        # 0090: a teammate's mailbox is mail/<session8>/<agent8>/, inside its lead's.
+        lead = self.root / "mail" / "aaaa1111"
+        mate = lead / "a1b2c3d4"
+        mate.mkdir(parents=True)
+        (lead / "0042-note-0001.md").write_text("Message on task 0042, from owner:\n> for the lead\n")
+        (mate / "0042-note-0001.md").write_text("Message on task 0042, from owner:\n> for the teammate\n")
+        # Another teammate of the same lead, and the lead itself, never get the teammate's mail.
+        self.assertEqual(self.hook("aaaa1111", agent_id="a9999999"), "")
+        ctx = json.loads(self.hook("aaaa1111-full-id"))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("> for the lead", ctx)
+        self.assertNotIn("for the teammate", ctx)
+        self.assertTrue((mate / "0042-note-0001.md").is_file())
+        # Claude Code's agent_id is longer than 8 chars and may be upper case: its first 8, lowered.
+        ctx = json.loads(self.hook("aaaa1111", agent_id="A1B2C3D4e5f60718"))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("> for the teammate", ctx)
+        self.assertNotIn("for the lead", ctx)
+        self.assertTrue((mate / "delivered" / "0042-note-0001.md").is_file())
+        self.assertEqual(self.hook("aaaa1111", agent_id="a1b2c3d4e5f60718"), "")  # delivered once
+        self.assertEqual(self.hook("aaaa1111"), "")  # and the lead's once, past its teammate's folder
+
+    def test_a_teammate_id_that_isnt_hex_gets_no_mail_not_the_leads(self):
+        # 0090: a teammate whose agent_id can't name a mailbox could only read its lead's, which
+        # isn't its own: it gets nothing, and the lead's mail waits for the lead.
+        lead = self.root / "mail" / "aaaa1111"
+        lead.mkdir(parents=True)
+        (lead / "0042-note-0001.md").write_text("Message on task 0042, from owner:\n> for the lead\n")
+        for bad in ("zzzzzzzz", "a1b2c3", "../aaaa", 12345678):
+            self.assertEqual(self.hook("aaaa1111", agent_id=bad), "", bad)
+        # An empty agent_id is no agent_id: the lead's hook.
+        self.assertIn("> for the lead", self.hook("aaaa1111", agent_id=""))
+
+    def test_a_check_in_or_pause_reaches_a_teammate_only_while_its_own_stamp_holds(self):
+        # 0090: a teammate's claim stamp names its agent; the lead's has no agent part.
+        task = self.root / "doing" / "0042-something.md"
+        mate_stamp = "claimed-by: asghar (main · session aaaa1111 · agent a1b2c3d4 · cc-mg)"
+        lead, mate = self.root / "mail" / "aaaa1111", self.root / "mail" / "aaaa1111" / "a1b2c3d4"
+        mate.mkdir(parents=True)
+
+        def ask(box):
+            (box / "0042-checkin.md").write_text("Check-in request on task 0042, from owner:\nplease\n")
+
+        task.write_text(TASK_FILE.replace("claimed-by: wt-a (session aaaa1111)", mate_stamp))
+        ask(mate)
+        self.assertIn("Check-in request on task 0042", self.hook("aaaa1111", agent_id="a1b2c3d4ef"))
+        # The lead of that session doesn't hold the teammate's claim.
+        ask(lead)
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertTrue((lead / "delivered" / "0042-checkin.md").is_file())
+        # Nor does another teammate of it, whatever its mailbox holds.
+        other = lead / "b0b0b0b0"
+        other.mkdir()
+        ask(other)
+        self.assertEqual(self.hook("aaaa1111", agent_id="b0b0b0b0"), "")
+        # A lead's own stamp (no agent part) is the lead's, never a teammate's.
+        task.write_text(TASK_FILE)
+        ask(mate)
+        self.assertEqual(self.hook("aaaa1111", agent_id="a1b2c3d4"), "")
+        ask(lead)
+        self.assertIn("Check-in request on task 0042", self.hook("aaaa1111"))
+        # A pause in Testing goes by held-by the same way.
+        task.write_text(TASK_FILE.replace("status: doing", "status: doing\nstage: testing\npaused: 2026-10-14").replace(
+            "claimed-by: wt-a (session aaaa1111)", "claimed-by:\nheld-by: qa (session aaaa1111 · agent a1b2c3d4)"))
+        (lead / "0042-pause.md").write_text("Pause on task 0042, from owner:\nstop\n")
+        (mate / "0042-pause.md").write_text("Pause on task 0042, from owner:\nstop\n")
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertIn("Pause on task 0042, from owner.", self.hook("aaaa1111", agent_id="a1b2c3d4"))
 
     def test_a_claim_without_a_session_stamp_cant_be_pinged(self):
         (self.root / "doing" / "0042-something.md").write_text(

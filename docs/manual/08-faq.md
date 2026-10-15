@@ -36,7 +36,8 @@ To find one task, press ⌘F and type its key or its number: `mu-19` or `19` fin
 The answer is always written into the task, under the question, so it's never lost. Getting it into the session that asked is the part that can fail:
 
 - **The answer hook isn't installed** in that checkout. The session runs `muster inbox` to collect it.
-- **The session changed its id**, after `/clear` or a handoff. The answer waits in the old session's mailbox: `muster inbox --session <the old 8-character id>`.
+- **The session changed its id**, after `/clear` or a handoff. The answer waits in the old session's mailbox: `muster inbox --session <the old 8-character id>`. A successor that took the claim over (`muster claim <id> --takeover`) gets that task's answers in its own mailbox; only other tasks' answers stay behind.
+- **A teammate asked it** without its agent id (`--agent` or `MUSTER_AGENT`). Then it asked as its lead, and the answer goes to the lead.
 - **No session was on record** for the question (it was asked by hand, not with `muster ask`). The app then says "No asking session on record, so it waits there".
 
 ## Where is a session's transcript?

@@ -4,6 +4,40 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — mu-90 review round 1: takeover refuses a paused claim and a quiet blocked one
+**Fixed:** (R1) `claim --takeover` took a paused claim after 30 quiet minutes → it never checked
+`paused:` → refused for everyone, as every other claim path does; a blocked claim (quiet by
+design) is taken only after a handoff or by the owner (lead's call). (R5) a label with `: ` wrote a
+takeover line the log never read back → the line is read back first and refused. (R2) a teammate's
+exported `MUSTER_AGENT` reached the tests → popped in `bin/test_task.py`, `bin/test_commands.py`,
+and unset in `bin/gate`. (R9) PROTOCOL gave two first commands → `claim --takeover` first, then
+`inbox --session <old>`.
+**Did:** tests that can fail for the stale-handoff resets (R3; both resets mutated, each caught)
+and for `check_recorder` refusing a predecessor (R4; mutated, caught). Docs: PROTOCOL, AS_BUILT,
+COMMANDS, manual 02 and 05, help.
+**Verified:** gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati));
+`MUSTER_AGENT=a1b2c3d4` test_task and test_commands OK (were 9 failures, 4 errors).
+**Open:** R6–R8 (nits) are backlog notes `2026-10-14-1925-mu-90-r6/r7/r8-…`.
+
+## 2026-10-14 — mu-90: a successor takes over a handed-off claim and its mail; teammates get an agent stamp
+**Did:** `muster checkin <id> "…" --handoff` logs `check-in · handing off · …`; `muster claim <id>
+--takeover` moves a Building claim to a new session of the same label after that check-in, after
+30 quiet minutes, or always for the owner, logged as `took over the claim from <old> (…)`, with
+the task's mail and asks.json entries moved to the new mailbox. A teammate's stamp carries
+`agent <8 hex>` (from `--agent` or `MUSTER_AGENT`) and its mailbox is `mail/<session>/<agent>/`;
+answer-hook.py delivers it by the hook's `agent_id`; ping and pause reach it there; `lib.ts`
+reads the part. Files: session.rs, ops.rs, queue.rs, cli.rs, ping.rs, pause.rs, review.rs,
+help.rs, bin/answer-hook.py, app/src/lib.ts; docs PROTOCOL, AS_BUILT, COMMANDS, manual, 0008, 0011.
+**Decided:** the agent id comes from `--agent` or `MUSTER_AGENT`, because no harness env var
+carries it (a subagent's shell sees only its lead's session id); a PreToolUse hook could set it,
+none is built (decision 0008 update). Every holder in the claim's chain (claimer, each takeover)
+counts as a builder, so neither a successor nor its predecessor may test or review. A hook call
+with an invalid `agent_id` gets no mail rather than the lead's. Quiet means heartbeat age only,
+so a blocked or paused claim can go quiet too.
+**Verified:** cargo test (lib 763 passed), clippy -D warnings, fmt; test_task.py 63 OK,
+test_commands.py 22 OK; pnpm test 1695 passed; bin/gate green.
+**Open:** AC6 (a real successor takes over and passes) is proved by this task's own handoff.
+
 ## 2026-10-14 — projects.json keeps its bytes when nothing changed; the fold and move paths tested (mu-88)
 **Did (gholi_9, builder):** `projects::Config`'s maps are `BTreeMap`s (`projects.rs`, `labels.rs`,
 `check_limit.rs`, `arrange.rs`), so folding then unfolding a heading leaves projects.json

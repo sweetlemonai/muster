@@ -555,14 +555,15 @@ Who's on a task. A coding session claims a Ready task, keeps the claim alive whi
 
 ### muster claim
 
-Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in.
+Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in. With --takeover, a successor session takes over a claim in Building made under its own label by another session: allowed once that session checked in with --handoff after the claim, or when the claim has been quiet for 30 minutes; the owner may always take over. The claim and its lease become yours, the task's mail waiting for the old session moves to yours (answers to its questions come to you), you count as its builder (so you don't test it), and the log says "took over the claim from \<old\> (handed off)" or "(quiet 42 min)". Refused for another label, while the task is paused, for a blocked task unless its holder handed off (it's waiting, not gone; the owner may still take it over), and while the old session is still working: then it says who holds it, since when, and when you may take it over.
 
 ```
-muster claim <id> [--as <who>]
+muster claim <id> [--takeover] [--as <who>]
 ```
 
 | Option | What it does |
 | --- | --- |
+| `--takeover` | take over a claim under your label from another session (after its checkin --handoff, or 30 quiet minutes) |
 | `--as` | who you are (your branch or worktree); default $MUSTER\_AS, then the folder's git user.name |
 
 Examples:
@@ -573,6 +574,10 @@ muster claim 0007 --as wt-a
 
 ```
 muster claim 0007 --as wt-a --queue drover
+```
+
+```
+muster claim 0007 --takeover --as wt-a
 ```
 
 ### muster next
@@ -617,15 +622,16 @@ muster heartbeat 0007 --as wt-a
 
 ### muster checkin
 
-Say how the work is going: a line in the task's log that its card shows ("60% · gate green, writing tests · 12 min ago"), and the heartbeat with words, so it keeps your claim alive too. Only the holder, only in Building. Check in at each milestone and at least every 30 minutes: a card quiet for longer says "no check-in for 45 min".
+Say how the work is going: a line in the task's log that its card shows ("60% · gate green, writing tests · 12 min ago"), and the heartbeat with words, so it keeps your claim alive too. Only the holder, only in Building. Check in at each milestone and at least every 30 minutes: a card quiet for longer says "no check-in for 45 min". With --handoff it's your last check-in before your session ends, logged as "check-in · handing off · \<text\>": your successor under the same label may then take the claim over at once with muster claim \<id\> --takeover.
 
 ```
-muster checkin <id> "<what's done, what's next>" [--pct <0-100>]
+muster checkin <id> "<what's done, what's next>" [--pct <0-100>] [--handoff]
 ```
 
 | Option | What it does |
 | --- | --- |
 | `--pct` | how far along you think you are, 0 to 100 (your own estimate) |
+| `--handoff` | you're handing off: say what's done and what's next for your successor |
 | `--as` | who you are; must be who holds it |
 
 Examples:
@@ -636,6 +642,10 @@ muster checkin 0007 "gate green, writing tests" --pct 60 --as wt-a
 
 ```
 muster checkin 0007 "found the cause, fixing it" --as wt-a
+```
+
+```
+muster checkin 0007 "parser done; next: the CLI flags" --pct 40 --handoff --as wt-a
 ```
 
 ### muster ping
@@ -1286,6 +1296,7 @@ muster help new
 | `<id>` | a task, by its key (mu-12, MU-12: its project's prefix and number) or its number (12, 0012). A key with another project's prefix runs in that project's queue, wherever you are; with a --queue that names another project it's refused. Keys work in --parent, depends and block --on too, for tasks of the same project |
 | `--queue <name\|folder>` | which queue; default $MUSTER\_ROOT, then the current folder's: its repo's .muster/ (the main checkout's, from any worktree), else the nearest old queue (a queue, or tasks/ beside or above it) |
 | `--as <who>` | who's acting, for the log; default $MUSTER\_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account) |
+| `--agent <id>` | a teammate's (subagent's) agent id, so it's a holder apart from its lead and the other teammates; default $MUSTER\_AGENT. Its first 8 characters, which must be hex, are added to the session in the stamp ("session 7b5e8856 · agent a1b2c3d4"), and its answers and messages go to its own mailbox. Left out, you're the lead |
 
 ## Inside a Claude Code session
 

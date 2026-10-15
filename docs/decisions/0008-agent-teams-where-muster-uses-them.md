@@ -40,6 +40,7 @@ muster-lead's (`session-531266d4`). Evidence for each answer is in mu-40's log.
   using the hook input's `agent_id`, and the tester rule (0047) compares the pair, so a teammate of
   the builder's lead counts as a different tester only if its agent id differs and it didn't build.
   Until then, QA for a task runs in a separate session (not a teammate of the builder's lead).
+  Built in task 0090; see "Built" below.
 - **Where teams are used:** the planning room (mu-41: product, research, UI, tech, skeptic roles
   arguing in rounds) and review lenses in Testing (0027). Not parallel building: that stays one
   worktree per task (0023), each built by one worker.
@@ -49,6 +50,26 @@ muster-lead's (`session-531266d4`). Evidence for each answer is in mu-40's log.
 - **Hooks Muster installs:** later, with the agent id (above): a `TeammateIdle` hook that keeps a
   teammate working while its claimed task is in Building without a gate line. No Task-tool hooks
   until the Task tools are on.
+
+## Built (task 0090, 2026-10-14)
+
+- **The agent id comes from a flag or the environment:** `muster --agent <id>`, else
+  `MUSTER_AGENT`. Its first 8 characters, which must be hex, go into the stamp right after the
+  session: `asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)`. A stamp without an agent
+  part is the lead's. `same_holder` compares label, session and agent, so a lead and each of its
+  teammates are different holders, for claims, check-ins, the tester rule and the reviewer check.
+- **Why a flag and not something automatic:** Claude Code sets no variable a teammate's shell can
+  read. Its shell sees only its lead's `CLAUDE_CODE_SESSION_ID`; the agent id exists only in hook
+  input. So the teammate (or its lead's brief) has to pass it.
+- **A hook could pass it, and none is built.** A `PreToolUse` hook on Bash gets `agent_id` and can
+  rewrite the command through `updatedInput`, prefixing `MUSTER_AGENT=<agent_id>` to commands that
+  start with `muster `. It's an option for later, not installed; rewriting every agent's commands
+  is more than this needed.
+- **Mail by session and agent:** a teammate's mailbox is `mail/<session8>/<agent8>/`, inside its
+  lead's, and `mail/asks.json` names `<session8>/<agent8>` for its questions. `bin/answer-hook.py`
+  delivers that folder to the tool call whose hook input carries that `agent_id`; an `agent_id`
+  that isn't 8 hex characters gets no mail, and the lead's mail is as before. `muster ping` and
+  `pause` to a teammate holder go to its folder.
 
 ## Options considered
 

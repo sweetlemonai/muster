@@ -6,6 +6,10 @@
 //! A holder is its `--as` label plus, when it has one, its session. Two holders are the same when
 //! their labels match and their sessions don't differ, so a claim made before stamps (or by the
 //! owner in a terminal) keeps working, while two sessions under one label stay apart.
+//!
+//! A teammate (a subagent) shares its lead's session id, so its stamp also carries its agent id
+//! (task 0090): `asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)`. A stamp without an
+//! agent part is the lead's, so a lead and each of its teammates are different holders.
 
 use std::path::Path;
 
@@ -25,6 +29,9 @@ pub struct Session {
     pub checkout: String,
     /// The account label from `CLAUDE_CONFIG_DIR` (`~/.claude-hg` → `hg`), or "".
     pub account: String,
+    /// A teammate's agent id, the first 8 characters of `MUSTER_AGENT` (`--agent`), lowercase hex;
+    /// None for the lead.
+    pub agent: Option<String>,
 }
 
 /// A stamp read back from a holder: the name and checkout (in that order, either may be missing),
@@ -33,7 +40,21 @@ pub struct Session {
 pub struct Stamp {
     pub parts: Vec<String>,
     pub id: String,
+    /// The agent id, "" for a lead's stamp.
+    pub agent: String,
     pub account: String,
+}
+
+impl Stamp {
+    /// The holder's mailbox under `mail/` (contract rule 4): `<session8>` for a lead,
+    /// `<session8>/<agent8>` for a teammate.
+    pub fn mailbox(&self) -> String {
+        if self.agent.is_empty() {
+            self.id.clone()
+        } else {
+            format!("{}/{}", self.id, self.agent)
+        }
+    }
 }
 
 impl Session {
@@ -66,11 +87,13 @@ impl Session {
                 .and_then(|d| account(&d))
                 .unwrap_or_default(),
         );
+        let agent = get("MUSTER_AGENT").and_then(|a| agent_id(&a));
         Some(Session {
             id,
             name,
             checkout,
             account,
+            agent,
         })
     }
 }
@@ -100,6 +123,23 @@ pub fn short_id(raw: &str) -> Option<String> {
         && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
         && s.bytes().take(8).all(|b| b.is_ascii_hexdigit());
     ok.then(|| s[..8].to_string())
+}
+
+/// An agent id's short form (0090): its first 8 characters lowercased, when the whole id is
+/// letters, digits and dashes of a sane length and those 8 are hex. None for anything else.
+pub fn agent_id(raw: &str) -> Option<String> {
+    let s = raw.trim().to_ascii_lowercase();
+    let ok = (8..=64).contains(&s.len())
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && s.bytes().take(8).all(|b| b.is_ascii_hexdigit());
+    ok.then(|| s[..8].to_string())
+}
+
+/// Is `s` 8 lowercase hex characters, as a stamp writes a session or agent id?
+pub fn is_hex8(s: &str) -> bool {
+    s.len() == 8
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// A name as one stamp part: letters, digits, `.`, `_` and `-` kept, spaces made `-`, anything
@@ -190,6 +230,9 @@ pub fn stamped(label: &str, session: Option<&Session>) -> String {
         }
     }
     parts.push(format!("session {}", s.id));
+    if let Some(agent) = &s.agent {
+        parts.push(format!("agent {agent}"));
+    }
     if !s.account.is_empty() {
         parts.push(format!("cc-{}", s.account));
     }
@@ -197,23 +240,28 @@ pub fn stamped(label: &str, session: Option<&Session>) -> String {
 }
 
 /// A holder as (label, stamp): the stamp is a last ` (… · session <8 hex> …)` group in exactly
-/// the shape `stamped` writes. Anything else (a hand-typed `(drover/main, session 349bc9c3)`) is
-/// part of the label.
+/// the shape `stamped` writes, an `agent <8 hex>` part right after the session when it has one.
+/// Anything else (a hand-typed `(drover/main, session 349bc9c3)`) is part of the label.
 pub fn split(who: &str) -> (&str, Option<Stamp>) {
     let parsed = || -> Option<(usize, Stamp)> {
         let at = who.rfind(" (")?;
         let inner = who[at + 2..].strip_suffix(')')?;
         let mut stamp = Stamp::default();
+        // Only the part right after the session may be the agent.
+        let mut after_session = false;
         for part in inner.split(" · ") {
+            let next_to_session = std::mem::take(&mut after_session);
             if let Some(id) = part.strip_prefix("session ") {
-                let hex = id.len() == 8
-                    && id
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-                if !stamp.id.is_empty() || !hex {
+                if !stamp.id.is_empty() || !is_hex8(id) {
                     return None;
                 }
                 stamp.id = id.to_string();
+                after_session = true;
+            } else if let Some(agent) = part.strip_prefix("agent ").filter(|_| next_to_session) {
+                if !is_hex8(agent) {
+                    return None;
+                }
+                stamp.agent = agent.to_string();
             } else if stamp.id.is_empty() {
                 if !is_token(part) || stamp.parts.len() == 2 {
                     return None;
@@ -241,7 +289,8 @@ pub fn split(who: &str) -> (&str, Option<Stamp>) {
 }
 
 /// Is `a` the same holder as `b`? The same text; or the same label, with sessions that don't
-/// differ (one without a session matches any, as every claim did before stamps).
+/// differ (one without a session matches any, as every claim did before stamps) and the same
+/// agent (none on both is the lead; a teammate is never its lead, nor another teammate).
 pub fn same_holder(a: &str, b: &str) -> bool {
     if a == b {
         return true;
@@ -249,9 +298,15 @@ pub fn same_holder(a: &str, b: &str) -> bool {
     let ((la, sa), (lb, sb)) = (split(a), split(b));
     la == lb
         && match (sa, sb) {
-            (Some(x), Some(y)) => x.id == y.id,
+            (Some(x), Some(y)) => x.id == y.id && x.agent == y.agent,
             _ => true,
         }
+}
+
+/// The session and agent of a holder's stamp, for telling two holders' sessions apart whatever
+/// their labels; None without a stamp.
+pub fn session_of(who: &str) -> Option<(String, String)> {
+    split(who).1.map(|s| (s.id, s.agent))
 }
 
 /// Is this holder the owner (`owner`, with or without a session)?
@@ -306,6 +361,7 @@ mod tests {
             name: String::new(),
             checkout: String::new(),
             account: String::new(),
+            agent: None,
         };
         assert_eq!(stamped("", Some(&s)), "");
         assert_eq!(stamped(" \t", Some(&s)), " \t");
@@ -378,6 +434,7 @@ mod tests {
                 name: "main-29".into(),
                 checkout: "wt-0030".into(),
                 account: "hg".into(),
+                agent: None,
             }
         );
         assert_eq!(
@@ -479,6 +536,7 @@ mod tests {
             Stamp {
                 parts: vec!["main-29".into()],
                 id: "7b5e8856".into(),
+                agent: String::new(),
                 account: "hg".into()
             }
         );
@@ -544,5 +602,127 @@ mod tests {
         assert!(!same_holder("", "wt-a"));
         assert!(is_owner("owner") && is_owner("owner (session 7b5e8856)"));
         assert!(!is_owner("owner-ish") && !is_owner("wt-a"));
+    }
+
+    // Task 0090: a teammate's stamp carries its agent id.
+
+    fn teammate(agent: Option<&str>) -> Session {
+        Session {
+            id: "7b5e8856".into(),
+            checkout: "main".into(),
+            account: "mg".into(),
+            agent: agent.map(String::from),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_agent_id_is_its_first_8_hex_characters_or_nothing() {
+        assert_eq!(agent_id("a1B2c3D4e5f6a7b8c").as_deref(), Some("a1b2c3d4"));
+        assert_eq!(agent_id("  a1b2c3d4  ").as_deref(), Some("a1b2c3d4"));
+        for bad in [
+            "",
+            "a1b2c3d",
+            "g1b2c3d4",
+            "a1b2c3d4; rm -rf x",
+            "a1b2c3d4 x",
+            "a1b2c3d4\nsession 00000000",
+            "../a1b2c3",
+            "a1b2c3d4/../x",
+            &"a".repeat(65),
+        ] {
+            assert_eq!(agent_id(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_teammate_is_stamped_with_its_agent_from_muster_agent() {
+        let e = env(&[
+            ("CLAUDE_CODE_SESSION_ID", ID),
+            ("MUSTER_AGENT", "A1B2C3D4E5F6A7B8C"),
+            ("CLAUDE_CONFIG_DIR", "/x/.claude-mg"),
+        ]);
+        let s = Session::from_env(&e, None).unwrap();
+        assert_eq!(s.agent.as_deref(), Some("a1b2c3d4"));
+        assert_eq!(
+            stamped("asghar", Some(&s)),
+            "asghar (session 7b5e8856 · agent a1b2c3d4 · cc-mg)"
+        );
+        // An id that isn't one is no agent (the CLI refuses it before it gets here).
+        let e = env(&[("CLAUDE_CODE_SESSION_ID", ID), ("MUSTER_AGENT", "nope")]);
+        assert_eq!(Session::from_env(&e, None).unwrap().agent, None);
+    }
+
+    #[test]
+    fn a_stamp_with_an_agent_round_trips_under_a_persian_label() {
+        let who = stamped("اصغر", Some(&teammate(Some("a1b2c3d4"))));
+        assert_eq!(
+            who,
+            "اصغر (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)"
+        );
+        let (label, stamp) = split(&who);
+        assert_eq!(label, "اصغر");
+        let stamp = stamp.unwrap();
+        assert_eq!(
+            stamp,
+            Stamp {
+                parts: vec!["main".into()],
+                id: "7b5e8856".into(),
+                agent: "a1b2c3d4".into(),
+                account: "mg".into(),
+            }
+        );
+        assert_eq!(stamp.mailbox(), "7b5e8856/a1b2c3d4");
+        assert_eq!(stamped(&who, Some(&teammate(Some("a1b2c3d4")))), who);
+        // The lead's stamp, as before: no agent part, the session's own mailbox.
+        let (_, lead) = split("اصغر (main · session 7b5e8856 · cc-mg)");
+        assert_eq!(lead.unwrap().mailbox(), "7b5e8856");
+        // The agent part only right after the session, once, as 8 lowercase hex.
+        for who in [
+            "x (agent a1b2c3d4 · session 7b5e8856)",
+            "x (session 7b5e8856 · cc-mg · agent a1b2c3d4)",
+            "x (session 7b5e8856 · agent a1b2c3d4 · agent a1b2c3d4)",
+            "x (session 7b5e8856 · agent A1B2C3D4)",
+            "x (session 7b5e8856 · agent a1b2c3)",
+            "x (session 7b5e8856 · agent ../../ab)",
+            "x (agent a1b2c3d4)",
+        ] {
+            assert_eq!(split(who), (who, None), "{who}");
+        }
+    }
+
+    #[test]
+    fn same_holder_tells_a_lead_and_its_teammates_apart() {
+        let lead = stamped("asghar", Some(&teammate(None)));
+        let one = stamped("asghar", Some(&teammate(Some("a1b2c3d4"))));
+        let two = stamped("asghar", Some(&teammate(Some("0f0f0f0f"))));
+        assert!(same_holder(&one, &one));
+        assert!(
+            same_holder(&one, "asghar (wt-0090 · session 7b5e8856 · agent a1b2c3d4)"),
+            "the same teammate in another folder"
+        );
+        assert!(!same_holder(&lead, &one), "a lead isn't its teammate");
+        assert!(!same_holder(&one, &lead), "nor the other way round");
+        assert!(!same_holder(&one, &two), "two teammates of one lead");
+        assert!(
+            !same_holder(&one, "asghar (session 11111111 · agent a1b2c3d4)"),
+            "the same agent id under another session"
+        );
+        assert!(
+            same_holder(&one, "asghar") && same_holder("asghar", &one),
+            "unstamped matches any"
+        );
+        assert!(!same_holder(
+            &one,
+            "gholi (session 7b5e8856 · agent a1b2c3d4)"
+        ));
+    }
+
+    #[test]
+    fn same_holder_reads_old_stamps_as_before() {
+        let old = "wt-a (main · session 7b5e8856 · cc-hg)";
+        assert!(same_holder(old, "wt-a (session 7b5e8856)"));
+        assert!(!same_holder(old, "wt-a (session 11111111)"));
+        assert_eq!(split(old).1.unwrap().agent, "");
     }
 }

@@ -35,6 +35,12 @@ pub struct Pinged {
 /// Testing has someone working on it, the owner isn't reached through a mailbox, and only a
 /// holder whose stamp names a session can be.
 pub fn reach(t: &queue::Task) -> Result<String, String> {
+    reach_mailbox(t).map(|(sid, _)| sid)
+}
+
+/// `reach`, with the holder's mailbox under `mail/`: `<session8>`, or `<session8>/<agent8>` for a
+/// teammate (0090), whose stamp names its agent.
+pub fn reach_mailbox(t: &queue::Task) -> Result<(String, String), String> {
     if t.stage != "building" && t.stage != "testing" {
         return Err(format!(
             "{} is in {}; only a task in Building or Testing has a session working on it",
@@ -50,7 +56,7 @@ pub fn reach(t: &queue::Task) -> Result<String, String> {
         return Err(format!("you hold {} yourself", t.id));
     }
     match session::split(holder).1 {
-        Some(stamp) => Ok(stamp.id),
+        Some(stamp) => Ok((stamp.id.clone(), stamp.mailbox())),
         None => Err(NO_SESSION.to_string()),
     }
 }
@@ -170,7 +176,7 @@ pub fn ask_checkin(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Ping
                 "{id} is in Testing, and check-ins are for Building; send its session a message instead"
             ));
         }
-        let sid = reach(&t)?;
+        let (sid, mailbox) = reach_mailbox(&t)?;
         let line = format!("{stamp} {who}{ASKED}{sid})");
         let request = format!(
             "Check-in request on task {id} ({}), from {}:\n{} asks for a check-in on {id}: run `muster checkin {id} \"<what's done, what's next>\" --pct <0-100>{}` now, before anything else, and every 30 minutes while you hold it.\n(Logged in {} in the task queue.)\n",
@@ -180,7 +186,7 @@ pub fn ask_checkin(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Ping
             as_option(t.holder()),
             rel(root, &path),
         );
-        let dir = root.join("mail").join(&sid);
+        let dir = root.join("mail").join(&mailbox);
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         write_atomic(&dir.join(format!("{id}-checkin.md")), &request)?;
         write_atomic(&path, &append_log(&text, &line))?;
@@ -193,7 +199,7 @@ pub fn ask_checkin(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Ping
 
 /// The next free message number for task `id` in mailbox `dir`: one past any `<id>-note-<nnnn>.md`
 /// waiting or delivered, so a message never replaces another.
-fn next_note(dir: &Path, id: &str) -> u32 {
+pub(crate) fn next_note(dir: &Path, id: &str) -> u32 {
     let prefix = format!("{id}-note-");
     let highest = [dir.to_path_buf(), dir.join("delivered")]
         .iter()
@@ -227,7 +233,7 @@ pub fn message(
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     with_lock(root, || {
         let (path, file, t) = holder_task(root, id)?;
-        let sid = reach(&t)?;
+        let (sid, mailbox) = reach_mailbox(&t)?;
         let line = free_text_line(
             format!("{stamp} {who}: messaged session {sid}: {flat}"),
             "the message",
@@ -240,7 +246,7 @@ pub fn message(
             session::split(&who).0,
             rel(root, &path),
         );
-        let dir = root.join("mail").join(&sid);
+        let dir = root.join("mail").join(&mailbox);
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let n = next_note(&dir, id);
         // Zero-padded, so name order (how the hook and `muster inbox` take mail) is sending order.
@@ -291,6 +297,33 @@ mod tests {
             .unwrap_or_default();
         names.sort();
         names
+    }
+
+    #[test]
+    fn a_teammate_is_pinged_in_its_agent_folder_and_the_log_names_the_session() {
+        let d = queue();
+        put(
+            d.path(),
+            "0022",
+            "building",
+            "wt-a (session 7b5e8856 · agent a1b2c3d4)",
+            "",
+        );
+        let p = ask_checkin(d.path(), "0022", "owner", T).unwrap();
+        assert_eq!(p.session, "7b5e8856");
+        assert!(
+            mailbox(d.path()) == ["a1b2c3d4"],
+            "only its folder in the lead's mailbox"
+        );
+        let agent = d.path().join("mail/7b5e8856/a1b2c3d4");
+        assert!(agent.join("0022-checkin.md").is_file());
+        let t = read_task(d.path(), "0022").unwrap();
+        assert_eq!(t.checkin_asked, T, "the request line still reads as one");
+        message(d.path(), "0022", "look at AC2", "owner", T).unwrap();
+        message(d.path(), "0022", "and AC3", "owner", T).unwrap();
+        assert!(
+            agent.join("0022-note-0001.md").is_file() && agent.join("0022-note-0002.md").is_file()
+        );
     }
 
     #[test]

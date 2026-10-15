@@ -168,6 +168,30 @@ pub fn checkin_line(line: &str) -> Option<Checkin> {
     })
 }
 
+/// The log's words for a takeover (0090): `- <at> <new holder>: took over the claim from <old
+/// holder> (handed off)`, or `(quiet 42 min)`, or `(owner's override)`.
+pub const TOOK_OVER: &str = ": took over the claim from ";
+
+/// A tool-written takeover line from the log (0090): (at, new holder, old holder). A stage line
+/// or a check-in never is one, and neither is a line whose who has `: ` in it (free text that
+/// quotes one: a message, a note).
+pub fn takeover_line(line: &str) -> Option<(String, String, String)> {
+    if stage_line(line).is_some() || checkin_line(line).is_some() {
+        return None;
+    }
+    let rest = line.strip_prefix("- ")?;
+    let at = rest.get(..16).filter(|at| stamp_shaped(at))?;
+    let (who, tail) = rest.get(16..)?.strip_prefix(' ')?.split_once(TOOK_OVER)?;
+    let open = tail.rfind(" (")?;
+    let why = tail[open + 2..].strip_suffix(')')?;
+    let known = why == "handed off" || why == "owner's override" || why.starts_with("quiet ");
+    let from = &tail[..open];
+    if !known || who.trim().is_empty() || who.contains(": ") || from.trim().is_empty() {
+        return None;
+    }
+    Some((at.to_string(), who.to_string(), from.to_string()))
+}
+
 /// A tool-written stage line from the log, with its detail (the text in the closing brackets).
 /// Anything else, a hand-typed "moved todo → doing" included, is not stage history.
 pub fn stage_line(line: &str) -> Option<(StageStep, &str)> {
@@ -195,6 +219,32 @@ pub fn stage_line(line: &str) -> Option<(StageStep, &str)> {
         },
         detail,
     ))
+}
+
+/// Who built the task in `body` (0047, 0090): from its last `ready → building (claimed)` line on,
+/// its claimer, then for each takeover after it the holder it was taken from and the one that
+/// took it, oldest first and each once. The last is the builder now. Empty when nobody claimed it.
+pub fn builder_chain(body: &str) -> Vec<String> {
+    let Some(log) = log_section(body) else {
+        return Vec::new();
+    };
+    let mut chain: Vec<String> = Vec::new();
+    for line in log.lines() {
+        if let Some((s, detail)) = stage_line(line) {
+            if s.from == "ready" && s.to == "building" && detail == "claimed" {
+                chain = vec![s.who];
+            }
+        } else if let Some((_, new, old)) = takeover_line(line) {
+            if chain.is_empty() {
+                continue;
+            }
+            for h in [old, new] {
+                chain.retain(|c| *c != h);
+                chain.push(h);
+            }
+        }
+    }
+    chain
 }
 
 /// Stage lines of a task's Log section, oldest first.
@@ -476,8 +526,13 @@ pub struct Task {
     /// Who holds it in Testing or Your check (`held-by:`, set by `pass`), as Building has
     /// `claimed_by`.
     pub held_by: String,
-    /// Who built it (0047): the last `ready → building (claimed)` stage line's who, or "".
+    /// Who built it (0047): the last `ready → building (claimed)` stage line's who, or the holder
+    /// that took the claim over after it (0090, `takeover_line`), or "".
     pub built_by: String,
+    /// Every holder that built it since that claim (0090): the claimer, and each session that
+    /// took the claim over and the one it took it from. A successor isn't a new tester.
+    #[serde(skip)]
+    pub builders: Vec<String>,
     /// Who passed it Building → Testing with the gate's line most recently (0047): a builder too,
     /// unlike an override into Testing. "" when nobody has.
     pub gated_by: String,
@@ -1215,12 +1270,8 @@ pub fn parse_task(
     let stage_set_by_owner = steps
         .last()
         .is_some_and(|(_, detail)| *detail == "set" || detail.starts_with("set; "));
-    let built_by = steps
-        .iter()
-        .rev()
-        .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
-        .map(|(s, _)| s.who.clone())
-        .unwrap_or_default();
+    let builders = builder_chain(body);
+    let built_by = builders.last().cloned().unwrap_or_default();
     let gated_by = steps
         .iter()
         .rev()
@@ -1274,6 +1325,7 @@ pub fn parse_task(
         claimed_by: get("claimed-by"),
         held_by: get("held-by"),
         built_by,
+        builders,
         gated_by,
         sent_back,
         behind: String::new(),
@@ -2245,9 +2297,13 @@ pub fn actor(who: &str) -> Result<String, String> {
     if crate::session::split(&t).0.chars().count() > 100 {
         return Err("who (--as) is longer than 100 characters".into());
     }
-    if t.contains(": stage ") || t.contains(" → ") || t.contains(": check-in ") {
+    if t.contains(": stage ")
+        || t.contains(" → ")
+        || t.contains(": check-in ")
+        || t.contains(TOOK_OVER)
+    {
         return Err(format!(
-            "who (--as) can't contain \": stage \", \" → \" or \": check-in \" (that's what the tool logs): {t:?}"
+            "who (--as) can't contain \": stage \", \" → \", \": check-in \" or \"{TOOK_OVER}\" (that's what the tool logs): {t:?}"
         ));
     }
     Ok(t)
@@ -2312,6 +2368,31 @@ pub fn session8(session: &str) -> Result<String, String> {
             "session id must start with 8 hex characters (a Claude Code or Codex session id), got {:?}",
             session.chars().take(20).collect::<String>()
         ))
+    }
+}
+
+/// Contract rule 4 with teammates (0090): a mailbox under `mail/`, `<session8>` for a lead, or
+/// `<session8>/<agent8>` for a teammate when `session` is `<session id>/<agent id>`.
+pub fn mailbox(session: &str) -> Result<String, String> {
+    match session.split_once('/') {
+        None => session8(session),
+        Some((s, agent)) => {
+            let sid = session8(s)?;
+            let agent = crate::session::agent_id(agent).ok_or(
+                "the agent id must start with 8 hex characters and be only letters, digits and dashes",
+            )?;
+            Ok(format!("{sid}/{agent}"))
+        }
+    }
+}
+
+/// Is `s` a mailbox as asks.json names one: `<8 hex>` or `<8 hex>/<8 hex>`, nothing else (no
+/// `..`, no other separators)?
+pub fn is_mailbox(s: &str) -> bool {
+    use crate::session::is_hex8;
+    match s.split_once('/') {
+        None => is_hex8(s),
+        Some((a, b)) => is_hex8(a) && is_hex8(b),
     }
 }
 
@@ -2407,7 +2488,12 @@ pub fn ask_with(
         options if options.is_empty() => question.clone(),
         options => format!("{question}\n{options}"),
     };
-    let sid = session8(session)?;
+    let sid = mailbox(session)?;
+    // A teammate's question says its agent next to the session: `session 7b5e8856 · agent a1b2c3d4`.
+    let from = match sid.split_once('/') {
+        Some((s, agent)) => format!("session {s} · agent {agent}"),
+        None => format!("session {sid}"),
+    };
     let mail = root.join("mail");
     with_lock(root, || {
         let path = find_task(root, id)?;
@@ -2432,7 +2518,7 @@ pub fn ask_with(
         }
         let n = next_question(&items)?;
         let item = format!(
-            "- [ ] **Q{n} ({who}, session {sid}, {stamp}):** {}\n",
+            "- [ ] **Q{n} ({who}, {from}, {stamp}):** {}\n",
             indent_text(&written)
         );
         let kept = sect.trim_end_matches('\n');
@@ -2591,11 +2677,12 @@ pub fn escalate(root: &Path, id: &str, n: u32, who: &str, stamp: &str) -> Result
     })
 }
 
-/// The answers waiting in `session`'s mailbox (contract rule 5), oldest name first. Each is
-/// moved to `delivered/` as it's taken, unless `keep`; one another reader moved first is skipped,
-/// so an answer is handed over once.
+/// The answers waiting in `session`'s mailbox (contract rule 5, `mailbox`), oldest name first.
+/// Each is moved to `delivered/` as it's taken, unless `keep`; one another reader moved first is
+/// skipped, so an answer is handed over once. Only files at the top of the mailbox: a lead never
+/// takes its teammates' mail from their folders in it.
 pub fn take_mail(root: &Path, session: &str, keep: bool) -> Result<Vec<String>, String> {
-    let dir = root.join("mail").join(session8(session)?);
+    let dir = root.join("mail").join(mailbox(session)?);
     let entries = match fs::read_dir(&dir) {
         Ok(rd) => rd,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -2746,6 +2833,75 @@ fn answer_with(
     })
 }
 
+/// Move task `id`'s mail from mailbox `from` to mailbox `to` (0090, a takeover; the caller holds
+/// the lock): every `<id>-*.md` at the top of `from` (never `delivered/`, never other tasks'),
+/// a note renumbered to the next free number in `to` (`ping::next_note`), any other name already
+/// waiting in `to` left where it is; and every `mail/asks.json` entry `<id>-Q<n>` naming `from`
+/// made to name `to`, so a later answer reaches the new holder.
+pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<(), String> {
+    if !is_mailbox(from) || !is_mailbox(to) {
+        return Err(format!("not a mailbox: {from:?} or {to:?}"));
+    }
+    if from == to {
+        return Ok(());
+    }
+    let mail = root.join("mail");
+    let src = mail.join(from);
+    let dst = mail.join(to);
+    let prefix = format!("{id}-");
+    let mut names: Vec<String> = match fs::read_dir(&src) {
+        Ok(rd) => rd
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with(&prefix) && n.ends_with(".md"))
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(format!("mail/{from}: {e}")),
+    };
+    names.sort();
+    if !names.is_empty() {
+        fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+    }
+    let note = format!("{id}-note-");
+    for name in names {
+        let is_note = name
+            .strip_prefix(&note)
+            .and_then(|r| r.strip_suffix(".md"))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+        let dest = if is_note {
+            format!("{note}{:04}.md", crate::ping::next_note(&dst, id))
+        } else if dst.join(&name).exists() {
+            continue;
+        } else {
+            name.clone()
+        };
+        match fs::rename(src.join(&name), dst.join(&dest)) {
+            Ok(()) => {}
+            // The hook delivered it meanwhile.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("mail/{from}/{name}: {e}")),
+        }
+    }
+    let mut asks = read_asks(&mail)?;
+    let mut changed = false;
+    let q = format!("{id}-Q");
+    for (k, v) in asks.iter_mut() {
+        let ours = k
+            .strip_prefix(&q)
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+        if ours && v.as_str() == Some(from) {
+            *v = serde_json::Value::String(to.to_string());
+            changed = true;
+        }
+    }
+    if changed {
+        let reg = serde_json::to_string_pretty(&asks).map_err(|e| e.to_string())?;
+        write_atomic(&mail.join("asks.json"), &format!("{reg}\n"))?;
+    }
+    Ok(())
+}
+
 /// Run `f` holding the queue's lock (an exclusive flock on `mail/.lock`, file contract rule 1),
 /// then, still holding it, bring INDEX.md up to date (task 0018). Every write muster makes to a
 /// queue goes through here, so this is the one place the master list follows the files. A queue
@@ -2781,19 +2937,16 @@ pub(crate) fn hold_lock<T>(
     result
 }
 
-/// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` in the question line's asker part
-/// (`**Q3 (<who>, session <id>, <stamp>):**`). Only there: the question's own text is anyone's,
-/// so a session it names never gets the answer, and a question with none there gets no mailbox.
+/// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` (and a teammate's `· agent
+/// yyyyyyyy` after it) in the question line's asker part (`**Q3 (<who>, session <id>, <stamp>):**`).
+/// Only there: the question's own text is anyone's, so a session it names never gets the answer,
+/// and a question with none there gets no mailbox. The mailbox is `<session8>` or
+/// `<session8>/<agent8>` (`is_mailbox`), never any other path.
 fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
-    let valid = |s: &str| {
-        s.len() == 8
-            && s.bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    };
     if let Ok(text) = fs::read_to_string(mail.join("asks.json")) {
         if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&text) {
             if let Some(s) = map.get(&format!("{id}-Q{n}")) {
-                if valid(s) {
+                if is_mailbox(s) {
                     return Some(s.clone());
                 }
             }
@@ -2802,7 +2955,19 @@ fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
     let asker = parse_question(item).asker;
     let i = asker.find("session ")? + 8;
     let s: String = asker[i..].chars().take(8).collect();
-    valid(&s).then_some(s)
+    if !crate::session::is_hex8(&s) {
+        return None;
+    }
+    let agent: String = asker[i..]
+        .strip_prefix(s.as_str())
+        .and_then(|r| r.strip_prefix(" · agent "))
+        .map(|r| r.chars().take(8).collect())
+        .unwrap_or_default();
+    Some(if crate::session::is_hex8(&agent) {
+        format!("{s}/{agent}")
+    } else {
+        s
+    })
 }
 
 pub fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
@@ -3684,6 +3849,87 @@ mod tests {
     }
     fn body_of(d: &Path, id: &str) -> String {
         read_body(d, id).unwrap()
+    }
+
+    #[test]
+    fn a_teammates_mailbox_is_its_agent_folder_in_its_leads() {
+        assert_eq!(mailbox("aaaa1111-full").unwrap(), "aaaa1111");
+        assert_eq!(
+            mailbox("AAAA1111-full/A1B2C3D4E5").unwrap(),
+            "aaaa1111/a1b2c3d4"
+        );
+        for bad in [
+            "aaaa1111/../x",
+            "aaaa1111/a1b2",
+            "aaaa1111/a1b2c3d4/x",
+            "../aaaa1111/a1b2c3d4",
+            "aaaa1111/",
+        ] {
+            assert!(mailbox(bad).is_err(), "{bad:?}");
+        }
+        assert!(is_mailbox("aaaa1111") && is_mailbox("aaaa1111/a1b2c3d4"));
+        for bad in [
+            "aaaa111",
+            "aaaa1111/..",
+            "../x",
+            "aaaa1111/a1b2c3d4/x",
+            "AAAA1111",
+            "aaaa1111\\a1b2c3d4",
+        ] {
+            assert!(!is_mailbox(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_teammates_question_is_answered_in_its_own_mailbox_by_asks_json_or_the_line() {
+        let d = queue();
+        let asked = ask(
+            d.path(),
+            "0042",
+            "Which colour?",
+            "wt-a",
+            "cccc3333-x/a1b2c3d4",
+            "2026-10-12 09:00",
+        )
+        .unwrap();
+        let body = read_body(d.path(), "0042").unwrap();
+        assert!(body.contains(&format!("**Q{} (wt-a, session cccc3333 · agent a1b2c3d4, 2026-10-12 09:00):** Which colour?", asked.n)), "{body}");
+        let asks: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(d.path().join("mail/asks.json")).unwrap())
+                .unwrap();
+        assert_eq!(asks[format!("0042-Q{}", asked.n)], "cccc3333/a1b2c3d4");
+        // Without asks.json, the question line says where it goes.
+        fs::remove_file(d.path().join("mail/asks.json")).unwrap();
+        let asker = answer(
+            d.path(),
+            "0042",
+            asked.n,
+            "blue",
+            "owner",
+            "2026-10-12 09:30",
+        )
+        .unwrap();
+        assert_eq!(asker.as_deref(), Some("cccc3333/a1b2c3d4"));
+        assert!(d
+            .path()
+            .join(format!("mail/cccc3333/a1b2c3d4/0042-Q{}.md", asked.n))
+            .is_file());
+        // The lead's inbox doesn't take it; the teammate's does.
+        assert!(take_mail(d.path(), "cccc3333", false).unwrap().is_empty());
+        let mine = take_mail(d.path(), "cccc3333/a1b2c3d4", false).unwrap();
+        assert!(mine.len() == 1 && mine[0].contains("Answer: blue"));
+        // A forged asks.json entry with a path in it is never followed.
+        fs::write(
+            d.path().join("mail/asks.json"),
+            r#"{"0042-Q1": "aaaa1111/../../x"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            answer(d.path(), "0042", 1, "5173", "owner", "2026-10-12 09:40")
+                .unwrap()
+                .as_deref(),
+            Some("aaaa1111")
+        );
     }
 
     #[test]

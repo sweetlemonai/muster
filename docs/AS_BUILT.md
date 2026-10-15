@@ -75,7 +75,7 @@ tool and the change logged in the task.
      tasks/ backlog/    notified.json, helper/
      mail/ reviews/
      INDEX.md
-          │ mail/<session8>/…
+          │ mail/<session8>/… (a teammate's: mail/<session8>/<agent8>/…)
           ▼
    bin/answer-hook.py  (run by the layer's hooks/muster-answer)
           → the asking session's context, after its next tool call
@@ -126,7 +126,7 @@ here):
 | `ping.rs` | Asking a working session for a check-in, or sending it a message, through its mailbox |
 | `parallel.rs` | Parallel sessions: which Ready tasks are safe together, `muster start`'s worktree, the merge, `release`, what's left behind |
 | `merge_log.rs` | Git's merge driver for `docs/WORKLOG.md` (`muster merge-log`), and setting it in a repo's config |
-| `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`) and when two holders are the same |
+| `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`, a teammate's with `· agent a1b2c3d4` after the session), its mailbox, and when two holders are the same (label, session and agent) |
 | `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name |
 | `transcripts.rs` | The one reader of Claude Code transcripts on this Mac (`~/.claude*/projects/…`), sums only |
 | `agents.rs` | Claude Code's own session states (`claude agents --json`), off the main thread, at most every 15 s |
@@ -246,8 +246,8 @@ status folders and `inbox/` for the backlog):
 | `backlog/*.md`, `backlog/dropped/` | Backlog notes, and dropped ones with the reason | `muster add`, the app's quick add, anyone dropping a file in | the core |
 | `attachments/NNNN/` | A task's files (screenshots, mockups), and the note a task was filed from | `muster attach`, the app, `muster file` | the app, agents |
 | `mail/.lock` | The queue's one lock (`flock`) | every write | every write |
-| `mail/asks.json` | Which session asked which question | `muster ask` | `muster answer` |
-| `mail/<session8>/` | A session's mailbox: answers, check-in, pause and resume requests, messages; `delivered/` once handed over | `muster answer`, `ping`, `pause`, `resume`, the app | `bin/answer-hook.py`, `muster inbox` |
+| `mail/asks.json` | Which mailbox asked which question: `<session8>`, or `<session8>/<agent8>` for a teammate | `muster ask`; a takeover repoints the task's entries | `muster answer` |
+| `mail/<session8>/` | A session's mailbox: answers, check-in, pause and resume requests, messages; `delivered/` once handed over. A teammate's is `<agent8>/` inside it, which the lead never takes | `muster answer`, `ping`, `pause`, `resume`, the app; a takeover moves the task's mail to the successor's | `bin/answer-hook.py` (a teammate's by the hook input's `agent_id`), `muster inbox` |
 | `reviews/<id>.json` | The review of record's rounds and findings (the truth) | `muster review --record`, `--fixed`, `--dispute`, `--settle` | the core, the task's `## Review` section |
 | `reviews/lessons.json`, `lessons.md` | Lessons from reviews (truth, and rendered) | the core, under the lock; `muster lessons` | `muster start`'s brief, the review brief, the app |
 | `INDEX.md` | The master list, generated | the core after every write; `muster index` | the owner, `muster check`, `manifest.py --check` |
@@ -317,6 +317,7 @@ is in section 6.
 | Work log merge driver | Built, tested | mu-67, mu-71 |
 | Pick-one questions | Built, tested | mu-49 |
 | Ping a session (check-in, message) | Built, tested; the auto-nudge isn't built | mu-39 |
+| Claim takeover after a handoff or 30 quiet minutes, mail following the claim; a teammate is its own holder (agent id) with its own mailbox | Built, tested; on its branch, not on main. No hook passes the agent id: `--agent` or `MUSTER_AGENT` | mu-90 |
 | Claude Code's session states | Built, tested (a research-preview format) | mu-48 |
 | Who worked on a task and what it cost | Built, tested; a session counts in full on every task it names | mu-25 |
 | The app: board, Table, Timeline, Graph, task pane, Waiting for you, Recently finished | Built, tested | mu-1, mu-13, mu-19, mu-21, mu-31, mu-51 |
@@ -519,9 +520,12 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
   PROTOCOL.md (decision 0011) has the writer put `muster inbox --session <old>` first in its Next
   steps, which the successor follows. Not covered: nothing in the `/handoff` skill, the hooks or
   `claude-continue` runs or checks that step, so a handoff without it leaves the answers unread
-  (they're still in the task file); answers are routed by the asking session, not by the task's
-  claim; and a claim stamped with the old session refuses the successor's check-in and pass until
-  the coordinator moves it.
+  (they're still in the task file). A takeover (task 0090) moves the claim and brings that task's
+  mail and answers along; other tasks' answers, and a coordinator's own, still wait in the old
+  mailbox.
+- **A teammate is told apart only when it says who it is:** `--agent <id>` or `MUSTER_AGENT`. Its
+  shell sees only the lead's session id, and no hook adds the agent id yet, so a teammate that
+  leaves it out is stamped, and matched, as its lead.
 - **The hook reaches a session only where the layer is linked**, and a ping or pause reaches a
   session only through the hook: a session without it sees a check-in request, message or stop
   only when it runs `muster inbox`, and a claim with no session stamp can't be reached at all.
@@ -684,7 +688,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   agent's task the owner doesn't hold) beside **Message the session working on this** (one line,
   500 characters), and **Ask all quiet sessions for a check-in (n)** under a stalled project in
   the sidebar. Each goes through the core to the holder's session mailbox
-  (`mail/<session8>/<id>-checkin.md`, `<id>-note-<nnnn>.md`) and is logged on the task; the answer
+  (`mail/<session8>/<id>-checkin.md`, `<id>-note-<nnnn>.md`; a teammate's `mail/<session8>/<agent8>/`) and is logged on the task; the answer
   hook hands it over after that session's next tool call, check-in requests first, messages
   quoted as the owner's note. The card shows "asked 2 min ago" in the check-in's place until a
   check-in of that Building stage comes (`checkinAsked`, from the log's ask line). A holder
@@ -992,10 +996,11 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **The tester isn't the builder** (task 0047): `pass_change` (so `pass`, the merge's
   `check_merge_pass` before any rebase or gate, and `pass_merged`), `set_stage` and `move_task`
   (past Testing) refuse the builder of an agent's task, matched by `session::same_holder` against
-  whoever last claimed it (`ready → building (claimed)`) and whoever last passed it into Testing
-  with a gate line. The refusal names the builder and suggests a QA label (`muster/qa-0042`). The
+  whoever last claimed it (`ready → building (claimed)`), every holder a takeover moved the claim
+  from or to since (0090, `queue::builder_chain`; `builtBy` is the last), and whoever last passed
+  it into Testing with a gate line. The reviewer check (`review.rs`) refuses the same chain. The refusal names the builder and suggests a QA label (`muster/qa-0042`). The
   owner is always let through, logged `(owner's override: no separate tester)`; another label in
-  a builder's session is let through, logged `(tested under another label in the builder's
+  a builder's session and agent is let through, logged `(tested under another label in the builder's
   session)`. The task carries `builtBy`, `gatedBy` and `testedBy` (the last pass into Your check),
   and the app counts builders as the core does. A Testing card says "needs a tester" on a line of
   its own while a builder holds it; the Your-check card says "built by … · tested by …", wrapped,
@@ -1487,6 +1492,17 @@ per holder (`--as`), and says which queue it claimed in. A claim made in a queue
 claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions, renew it, and
 `muster reclaim` (or **Release** on a stale card) returns a claim quiet past the lease to Ready:
 12 h, or this Mac's lease from Settings (0036).
+**Takeover** (task 0090, `ops.rs` `takeover_task`): `muster claim <id> --takeover --as <label>`
+moves a Building claim under the same label from another session (or agent) to this one, under
+the lock, and renews the lease. Allowed when the holder logged `muster checkin <id> "…" --handoff`
+(`check-in 40% · handing off · …`) after the latest claim or takeover, or after 30 minutes with no
+heartbeat (`TAKEOVER_QUIET`); the owner always. A paused claim is refused for everyone; a blocked
+one (waiting, quiet by design) only after a handoff or for the owner. The log line is read back
+before it's written, so a label with `: ` is refused. Logged `<new>: took over the claim from <old>
+(handed off | quiet 42 min | owner's override)`. The task's top-level mail in the old mailbox moves
+to the new one (`queue::move_mail`, notes renumbered) and its `asks.json` entries are repointed.
+A refusal says who holds it, since when, and the two ways out. A note or check-in that would read
+as a takeover or a handoff line is refused.
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
 **Pick-one questions** (task 0049): `muster ask <id> "<question>" --option "<text>"…

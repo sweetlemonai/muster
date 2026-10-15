@@ -86,19 +86,28 @@ export function heldByOther(t: Pick<Task, "stage" | "claimedBy">): string {
 }
 
 /** A holder as the core stamps it (session.rs `stamped`): `label (main-29 · wt-0030 · session
- *  7b5e8856 · cc-hg)`, the name and checkout first, the account last. Anything else is all label. */
-export type HolderParts = { label: string; parts: string[]; id: string; account: string };
+ *  7b5e8856 · cc-hg)`, the name and checkout first, the account last; a teammate's (0090) names its
+ *  agent right after the session (`session 7b5e8856 · agent a1b2c3d4`). Anything else is all label. */
+export type HolderParts = { label: string; parts: string[]; id: string; agent?: string; account: string };
 const STAMP_PART = /^[A-Za-z0-9._-]{1,40}$/;
 export function splitHolder(who: string): HolderParts {
   const none = { label: who, parts: [], id: "", account: "" };
   const at = who.lastIndexOf(" (");
   if (at <= 0 || !who.endsWith(")")) return none;
   const out: HolderParts = { label: who.slice(0, at), parts: [], id: "", account: "" };
+  let afterSession = false;
   for (const part of who.slice(at + 2, -1).split(" · ")) {
+    const justAfterSession = afterSession;
+    afterSession = false;
     if (part.startsWith("session ")) {
       const id = /^session ([0-9a-f]{8})$/.exec(part)?.[1];
       if (out.id || !id) return none;
       out.id = id;
+      afterSession = true;
+    } else if (part.startsWith("agent ") && out.id) {
+      const agent = /^agent ([0-9a-f]{8})$/.exec(part)?.[1];
+      if (!justAfterSession || !agent) return none;
+      out.agent = agent;
     } else if (!out.id) {
       if (!STAMP_PART.test(part) || out.parts.length === 2) return none;
       out.parts.push(part);

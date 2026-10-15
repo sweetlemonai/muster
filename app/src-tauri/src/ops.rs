@@ -1113,8 +1113,12 @@ struct Current {
     /// they hold Building back.
     review_open: usize,
     review_ids: Vec<String>,
-    /// Who passed it Ready → Building most recently (the builder), if anyone.
+    /// Who passed it Ready → Building most recently (the builder), or took that claim over since
+    /// (0090), if anyone.
     builder: Option<String>,
+    /// Every holder that built it since that claim (`queue::builder_chain`): the claimer and the
+    /// sessions that took it over.
+    builders: Vec<String>,
     /// Who passed it Building → Testing most recently (Testing's holder), if anyone.
     tester: Option<String>,
     /// Who passed it Building → Testing with the gate's line most recently (a builder, 0047),
@@ -1180,6 +1184,11 @@ fn reads_as_stage(line: &str) -> bool {
     queue::stage_line(&format!("- {line}")).is_some()
 }
 
+/// Would this log line read as a takeover (`queue::takeover_line`, 0090)?
+fn reads_as_takeover(line: &str) -> bool {
+    queue::takeover_line(&format!("- {line}")).is_some()
+}
+
 /// Would this log line read as a holder's check-in (`queue::checkin_line`)?
 fn reads_as_checkin(line: &str) -> bool {
     queue::checkin_line(&format!("- {line}")).is_some()
@@ -1209,6 +1218,11 @@ pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String>
     if crate::pause::reads_as_pause(&line) {
         return Err(format!(
             "{what} would read as a pause or resume in the log (\"<who>: paused …\"); only muster pause and resume write those"
+        ));
+    }
+    if reads_as_takeover(&line) {
+        return Err(format!(
+            "{what} would read as a takeover in the log (\"<who>: took over the claim from …\"); only muster claim --takeover writes those"
         ));
     }
     Ok(line)
@@ -1295,6 +1309,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         claimed_by: t.claimed_by,
         held_by: t.held_by,
         builder,
+        builders: t.builders,
         tester,
         gated_by,
         heartbeat: t.heartbeat,
@@ -2000,17 +2015,19 @@ fn merge_rule(id: &str, root: &Path, t: &Current, to: &str) -> Result<(), String
 }
 
 /// The tester isn't the builder (0047). Moving an agent's task from Testing (or before it) to Your
-/// check or Done is refused when `who` built it: claimed it (Ready → Building) or passed it into
-/// Testing with the gate's line, as `session::same_holder` matches holders. Otherwise, what the
-/// stage line adds: the owner's override (the owner never built an agent's task), or a tester
-/// under another label in a builder's session (a coordinator's subagents share its session id),
-/// so the owner sees it. Nothing for the owner's own task, or one nobody built.
+/// check or Done is refused when `who` built it: claimed it (Ready → Building), took that claim
+/// over (0090: a successor isn't a new tester), or passed it into Testing with the gate's line, as
+/// `session::same_holder` matches holders (session and agent). Otherwise, what the stage line
+/// adds: the owner's override (the owner never built an agent's task), or a tester under another
+/// label in a builder's session and agent (0090: a teammate with its own agent id is apart), so
+/// the owner sees it. Nothing for the owner's own task, or one nobody built.
 fn tester_rule(id: &str, t: &Current, who: &str, to: &str) -> Result<Option<&'static str>, String> {
     let past_testing =
         stage_index(&t.stage) <= stage_index("testing") && stage_index(to) > stage_index("testing");
-    let builders: Vec<&str> = [&t.builder, &t.gated_by]
-        .into_iter()
-        .flatten()
+    let builders: Vec<&str> = t
+        .builders
+        .iter()
+        .chain([&t.builder, &t.gated_by].into_iter().flatten())
         .map(String::as_str)
         .collect();
     if t.human || !past_testing || builders.is_empty() {
@@ -2022,9 +2039,11 @@ fn tester_rule(id: &str, t: &Current, who: &str, to: &str) -> Result<Option<&'st
     if let Some(b) = builders.iter().find(|b| same_holder(b, who)) {
         return Err(built_it(id, b));
     }
-    let session = |h: &str| crate::session::split(h).1.map(|s| s.id);
-    let mine = session(who);
-    let shared = mine.is_some() && builders.iter().any(|b| session(b) == mine);
+    let mine = crate::session::session_of(who);
+    let shared = mine.is_some()
+        && builders
+            .iter()
+            .any(|b| crate::session::session_of(b) == mine);
     Ok(shared.then_some("tested under another label in the builder's session"))
 }
 
@@ -2033,6 +2052,7 @@ fn tester_rule(id: &str, t: &Current, who: &str, to: &str) -> Result<Option<&'st
 fn built_it(id: &str, builder: &str) -> String {
     let (label, stamp) = crate::session::split(builder);
     let named = match stamp {
+        Some(s) if !s.agent.is_empty() => format!("{label} (session {} · agent {})", s.id, s.agent),
         Some(s) => format!("{label} (session {})", s.id),
         None => label.to_string(),
     };
@@ -2444,8 +2464,31 @@ pub fn checkin_task(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    checkin_task_with(root, id, text, pct, false, who, stamp)
+}
+
+/// The words a handing-off check-in starts with (0090): `<who>: check-in 40% · handing off · <text>`.
+pub const HANDING_OFF: &str = "handing off · ";
+
+/// `checkin_task`, or with `handoff` the holder's last check-in before its session ends (0090),
+/// logged as `<who>: check-in · handing off · <text>`: after it, a session under the same label may
+/// take the claim over at once (`takeover_task`).
+pub fn checkin_task_with(
+    root: &Path,
+    id: &str,
+    text: &str,
+    pct: &str,
+    handoff: bool,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
     let who = actor(who)?;
     let text = one_line(text, MAX_CHECKIN, "the check-in")?;
+    let text = if handoff {
+        format!("{HANDING_OFF}{text}")
+    } else {
+        text
+    };
     let pct = clean_pct(pct)?;
     let line = match pct {
         Some(n) => format!("{stamp} {who}: check-in {n}% · {text}"),
@@ -2459,6 +2502,11 @@ pub fn checkin_task(
     if crate::pause::pause_shaped(&format!("- {line}")).is_some() {
         return Err(
             "the check-in would read as a pause or resume in the log (\"…: paused\", \"…: resumed\"); say it another way".into(),
+        );
+    }
+    if !handoff && text.starts_with(HANDING_OFF) {
+        return Err(
+            "the check-in would read as handing off; to hand off, add --handoff, else say it another way".into(),
         );
     }
     // What the log's reader takes from the line is exactly this check-in.
@@ -2713,6 +2761,171 @@ pub fn reclaim_task(
         change_locked(root, id, &who, stamp, |t| {
             release_change(id, t, lease, &who, stamp, now_secs)
         })
+    })
+}
+
+/// How long a claim must be quiet (no heartbeat, no check-in) before a session under the same
+/// label may take it over without a handoff (0090), in minutes. The 12 h lease and `reclaim` are
+/// apart from it.
+pub const TAKEOVER_QUIET: u64 = 30;
+
+/// A claim `takeover_task` moved: the task's path, who held it, and why it could be taken
+/// ("handed off", "quiet 42 min" or "owner's override").
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TakenOver {
+    pub path: String,
+    pub from: String,
+    pub why: String,
+}
+
+/// When the claim in `body` was made or last taken over: the last stage line into Building or
+/// takeover line, by its stamp; and whether its holder (`claimed_by`) checked in handing off
+/// after it.
+fn claim_state(body: &str, claimed_by: &str) -> (String, bool) {
+    let mut since = String::new();
+    let mut handed = false;
+    for line in queue::log_section(body).unwrap_or("").lines() {
+        if let Some((s, _)) = queue::stage_line(line) {
+            if s.to == "building" {
+                since = s.at;
+                handed = false;
+            }
+        } else if let Some((at, _, _)) = queue::takeover_line(line) {
+            since = at;
+            handed = false;
+        } else if let Some(c) = queue::checkin_line(line) {
+            if c.text.starts_with(HANDING_OFF) && same_holder(&c.who, claimed_by) {
+                handed = true;
+            }
+        }
+    }
+    (since, handed)
+}
+
+/// A minute count from `stamp_minutes` as the time of day, `HH:MM`.
+fn clock(minutes: i64) -> String {
+    let m = minutes.rem_euclid(1440);
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+/// Take over the claim on task `id` for `who` (0090): a session under the claim's label, other
+/// than the one holding it, after that one checked in handing off (`checkin_task_with`) or went
+/// quiet for `TAKEOVER_QUIET` minutes; a blocked claim (waiting, so quiet by design) only after a
+/// handoff. The owner may always take over, but nobody takes a paused claim. Under the queue's lock, the
+/// claim (`claimed-by:`) is restamped for `who`, its lease renewed and the takeover logged as
+/// `<who>: took over the claim from <old> (handed off | quiet 42 min | owner's override)`; the
+/// mail waiting for the old holder on this task moves to `who`'s mailbox (`queue::move_mail`).
+/// One claim per holder, as for any claim. `stamp` and `now_secs` are the same moment.
+pub fn takeover_task(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    now_secs: u64,
+) -> Result<TakenOver, String> {
+    let who = actor(who)?;
+    with_lock(root, || {
+        let owner = is_owner(&who);
+        if !owner {
+            if let Some(held) = holding(&tasks_now(root), &who, id) {
+                return Err(already_holds(&held));
+            }
+        }
+        let mut out = None;
+        let path = edit_locked(root, id, |path, text| {
+            let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
+                .ok_or("the task has no front matter")?;
+            if t.stage != "building" {
+                return Err(format!(
+                    "{id} is in {}, not Building; only a claim in Building can be taken over",
+                    stage_label(&t.stage)
+                ));
+            }
+            // A paused claim stays its holder's, for anyone, the owner included (0045).
+            if !t.paused.is_empty() {
+                return Err(crate::pause::refusal(id, &t.paused));
+            }
+            let old = t.claimed_by.clone();
+            if old.is_empty() {
+                return Err(format!(
+                    "nobody holds {id}; claim it instead: muster claim {id}"
+                ));
+            }
+            if t.is_human() {
+                return Err(format!(
+                    "{id} is the owner's to do; every session of the owner holds it already"
+                ));
+            }
+            if same_holder(&old, &who) {
+                return Err(format!(
+                    "you already hold {id}; there's nothing to take over"
+                ));
+            }
+            let label = crate::session::split(&who).0;
+            if !owner && crate::session::split(&old).0 != label {
+                return Err(format!(
+                    "{id} is held by {old}, under another label than {label}; only a session under the same label may take it over, so ask its holder to pass, return or block it"
+                ));
+            }
+            let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
+            let (since, handed) = claim_state(body, &old);
+            let modified = fs::metadata(path)
+                .map(|m| queue::mtime_secs(&m))
+                .unwrap_or(0);
+            let quiet = quiet_minutes(&t.heartbeat, modified, stamp, now_secs);
+            let why = if handed {
+                "handed off".to_string()
+            } else if t.blocked && !owner {
+                // A blocked task goes quiet by design, waiting: it isn't left (as for reclaim).
+                return Err(format!(
+                    "{id} is blocked, so its holder {old} is waiting, not gone: ask that session to run muster checkin {id} \"<what's done, what's next>\" --handoff, or ask the owner to take it over"
+                ));
+            } else if quiet >= TAKEOVER_QUIET {
+                format!("quiet {}", quiet_text(quiet))
+            } else if owner {
+                "owner's override".to_string()
+            } else {
+                let since = if since.is_empty() {
+                    String::new()
+                } else {
+                    format!(" since {since}")
+                };
+                let after = match stamp_minutes(stamp) {
+                    Some(now) => format!(
+                        "after {}",
+                        clock(now + i64::try_from(TAKEOVER_QUIET - quiet).unwrap_or(0))
+                    ),
+                    None => format!("in {}", quiet_text(TAKEOVER_QUIET - quiet)),
+                };
+                return Err(format!(
+                    "{id} is held by {old}{since} and was last heard from {} ago: ask that session to run muster checkin {id} \"<what's done, what's next>\" --handoff, or take it over {after}, once it has been quiet for {}",
+                    quiet_text(quiet),
+                    quiet_text(TAKEOVER_QUIET)
+                ));
+            };
+            let line = format!("{stamp} {who}{}{old} ({why})", queue::TOOK_OVER);
+            // Read back as the log reads it, so the chain of builders never misses this one.
+            if queue::takeover_line(&format!("- {line}")).is_none() {
+                return Err(format!(
+                    "{id} can't be taken over by {who}: its label wouldn't read back from the log; use a label without \": \""
+                ));
+            }
+            let new = set_front(&text, "claimed-by", &who)?;
+            let new = set_front(&new, "heartbeat", stamp)?;
+            out = Some((old, why));
+            Ok((append_log(&new, &line), None))
+        })?;
+        let (from, why) = out.ok_or("the takeover wasn't written")?;
+        // The mail follows the claim, under the same lock. The claim is moved either way, so a
+        // failure here says so rather than undoing it.
+        let mailbox = |h: &str| crate::session::split(h).1.map(|s| s.mailbox());
+        if let (Some(old_box), Some(new_box)) = (mailbox(&from), mailbox(&who)) {
+            queue::move_mail(root, id, &old_box, &new_box).map_err(|e| {
+                format!("{id} is taken over, but its mail in mail/{old_box} wasn't moved: {e}")
+            })?;
+        }
+        Ok(TakenOver { path, from, why })
     })
 }
 
@@ -7188,6 +7401,596 @@ mod tests {
             text.ends_with(&format!("- {T} owner: stage testing → your-check\n")),
             "{text}"
         );
+    }
+    // Task 0090: a successor takes over its predecessor's claim and mail; teammates are apart.
+
+    const OLD: &str = "asghar (main · session 1c6af0d9 · cc-mg)";
+    const NEW: &str = "asghar (main · session d6419719 · cc-mg)";
+    const OLD_ID: &str = "1c6af0d9-aaaa-bbbb-cccc-0123456789ab";
+
+    /// Task 0001 claimed by `OLD` at 10:00 (its heartbeat then too).
+    fn claimed_by_old(d: &Path) {
+        put(
+            d,
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        claim_task(d, "0001", OLD, "2026-10-14 10:00").unwrap();
+    }
+    fn file_0001(d: &Path) -> String {
+        fs::read_to_string(find_task(d, "0001").unwrap()).unwrap()
+    }
+
+    #[test]
+    fn takeover_after_a_handoff_moves_the_claim_and_the_successor_checks_in_passes_and_returns() {
+        let d = queue();
+        claimed_by_old(d.path());
+        checkin_task_with(
+            d.path(),
+            "0001",
+            "parser done; next the CLI",
+            "40",
+            true,
+            OLD,
+            "2026-10-14 10:05",
+        )
+        .unwrap();
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        assert_eq!(
+            t,
+            TakenOver {
+                path: "doing/0001-t.md".into(),
+                from: OLD.into(),
+                why: "handed off".into(),
+            }
+        );
+        let text = file_0001(d.path());
+        assert!(
+            text.ends_with(&format!(
+                "- 2026-10-14 10:05 {OLD}: check-in 40% · handing off · parser done; next the CLI\n- 2026-10-14 10:06 {NEW}: took over the claim from {OLD} (handed off)\n"
+            )),
+            "{text}"
+        );
+        let task = only(d.path());
+        assert_eq!(
+            (
+                task.claimed_by.as_str(),
+                task.heartbeat.as_str(),
+                task.built_by.as_str()
+            ),
+            (NEW, "2026-10-14 10:06", NEW)
+        );
+        assert_eq!(task.builders, vec![OLD.to_string(), NEW.to_string()]);
+        // The handing-off check-in is a check-in on the card.
+        assert_eq!(task.checkins.len(), 1);
+        assert_eq!(
+            task.checkins[0].text,
+            "handing off · parser done; next the CLI"
+        );
+        // The old session holds nothing now; the new one checks in.
+        let e =
+            checkin_task(d.path(), "0001", "still here", "", OLD, "2026-10-14 10:07").unwrap_err();
+        assert_eq!(e, format!("0001 is held by {NEW}, not {OLD}"));
+        checkin_task(d.path(), "0001", "on it", "50", NEW, "2026-10-14 10:08").unwrap();
+        // It passes into Testing, is sent back to its builder (the successor), and passes again.
+        pass_task(d.path(), "0001", NEW, "2026-10-14 11:00", &gate()).unwrap();
+        return_task(
+            d.path(),
+            "0001",
+            "AC2 fails",
+            None,
+            "qa",
+            "2026-10-14 11:30",
+        )
+        .unwrap();
+        // Back to its builder's label (no other session under it holds a task), as any return.
+        let back = only(d.path());
+        assert_eq!(
+            (back.stage.as_str(), back.claimed_by.as_str()),
+            ("building", "asghar")
+        );
+        assert_eq!(back.built_by, NEW);
+        // And returns it to Ready, as any holder can.
+        return_task(
+            d.path(),
+            "0001",
+            "can't finish",
+            None,
+            NEW,
+            "2026-10-14 11:40",
+        )
+        .unwrap();
+        let ready = only(d.path());
+        assert_eq!(
+            (ready.stage.as_str(), ready.claimed_by.as_str()),
+            ("ready", "")
+        );
+    }
+
+    #[test]
+    fn takeover_is_refused_while_the_claim_is_fresh_and_not_handed_off() {
+        let d = queue();
+        claimed_by_old(d.path());
+        // A plain check-in isn't a handoff: it only keeps the claim fresh.
+        checkin_task(
+            d.path(),
+            "0001",
+            "handing it on soon",
+            "",
+            OLD,
+            "2026-10-14 10:05",
+        )
+        .unwrap();
+        let before = file_0001(d.path());
+        let e = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:10", 0).unwrap_err();
+        assert_eq!(
+            e,
+            format!("0001 is held by {OLD} since 2026-10-14 10:00 and was last heard from 5 min ago: ask that session to run muster checkin 0001 \"<what's done, what's next>\" --handoff, or take it over after 10:35, once it has been quiet for 30 min")
+        );
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+        // "handing off ·" typed into a plain check-in is refused: only --handoff writes it.
+        let e = checkin_task(
+            d.path(),
+            "0001",
+            "handing off · bye",
+            "",
+            OLD,
+            "2026-10-14 10:11",
+        )
+        .unwrap_err();
+        assert!(e.contains("add --handoff"), "{e}");
+    }
+
+    #[test]
+    fn takeover_counts_only_a_handoff_after_the_latest_claim_or_takeover() {
+        let d = queue();
+        claimed_by_old(d.path());
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        // The old session's handoff was before NEW took over: a third session can't use it.
+        let third = "asghar (main · session 33333333 · cc-mg)";
+        let e = takeover_task(d.path(), "0001", third, "2026-10-14 10:10", 0).unwrap_err();
+        assert!(
+            e.starts_with(&format!(
+                "0001 is held by {NEW} since 2026-10-14 10:06 and was last heard from 4 min ago:"
+            )),
+            "{e}"
+        );
+        // Nor can the old one take it back, until NEW hands off.
+        assert!(takeover_task(d.path(), "0001", OLD, "2026-10-14 10:10", 0).is_err());
+        checkin_task_with(
+            d.path(),
+            "0001",
+            "over to you",
+            "",
+            true,
+            NEW,
+            "2026-10-14 10:20",
+        )
+        .unwrap();
+        let t = takeover_task(d.path(), "0001", third, "2026-10-14 10:21", 0).unwrap();
+        assert_eq!((t.from.as_str(), t.why.as_str()), (NEW, "handed off"));
+        let task = only(d.path());
+        assert_eq!(
+            task.builders,
+            vec![OLD.to_string(), NEW.to_string(), third.to_string()]
+        );
+        assert_eq!(task.built_by, third);
+    }
+
+    #[test]
+    fn takeover_is_refused_for_another_label_even_when_quiet() {
+        let d = queue();
+        claimed_by_old(d.path());
+        let before = file_0001(d.path());
+        let gholi = "gholi (main · session d6419719 · cc-mg)";
+        let e = takeover_task(d.path(), "0001", gholi, "2026-10-14 13:00", 0).unwrap_err();
+        assert_eq!(
+            e,
+            format!("0001 is held by {OLD}, under another label than gholi; only a session under the same label may take it over, so ask its holder to pass, return or block it")
+        );
+        assert_eq!(file_0001(d.path()), before);
+    }
+
+    #[test]
+    fn takeover_is_allowed_after_30_quiet_minutes() {
+        let d = queue();
+        claimed_by_old(d.path());
+        let e = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:29", 0).unwrap_err();
+        assert!(
+            e.contains("last heard from 29 min ago") && e.contains("after 10:30"),
+            "{e}"
+        );
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:30", 0).unwrap();
+        assert_eq!((t.from.as_str(), t.why.as_str()), (OLD, "quiet 30 min"));
+        assert!(file_0001(d.path()).ends_with(&format!(
+            "- 2026-10-14 10:30 {NEW}: took over the claim from {OLD} (quiet 30 min)\n"
+        )));
+        // Quiet for hours reads in hours, as reclaim's lines do.
+        let d = queue();
+        claimed_by_old(d.path());
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 13:10", 0).unwrap();
+        assert_eq!(t.why, "quiet 3 h");
+    }
+
+    #[test]
+    fn takeover_refuses_a_paused_claim_for_anyone_even_quiet_or_handed_off() {
+        let d = queue();
+        claimed_by_old(d.path());
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        crate::pause::pause(d.path(), "0001", "hold on", "owner", "2026-10-14 10:06").unwrap();
+        let before = file_0001(d.path());
+        let owner = "owner (main · session e235163f · cc-mg)";
+        for who in [NEW, owner] {
+            let e = takeover_task(d.path(), "0001", who, "2026-10-14 11:00", 0).unwrap_err();
+            assert_eq!(
+                e,
+                "0001 is paused (since 2026-10-14 10:06); resume it first: muster resume 0001"
+            );
+        }
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+        assert_eq!(only(d.path()).claimed_by, OLD);
+    }
+
+    #[test]
+    fn takeover_of_a_blocked_claim_needs_a_handoff_or_the_owner() {
+        let d = queue();
+        claimed_by_old(d.path());
+        block_task(
+            d.path(),
+            "0001",
+            "owner: which colour?",
+            OLD,
+            "2026-10-14 10:05",
+        )
+        .unwrap();
+        assert_eq!(only(d.path()).claimed_by, OLD, "blocking keeps the claim");
+        let before = file_0001(d.path());
+        // Quiet for hours, but waiting on the owner: not left.
+        let e = takeover_task(d.path(), "0001", NEW, "2026-10-14 13:00", 0).unwrap_err();
+        assert_eq!(
+            e,
+            format!("0001 is blocked, so its holder {OLD} is waiting, not gone: ask that session to run muster checkin 0001 \"<what's done, what's next>\" --handoff, or ask the owner to take it over")
+        );
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+        // A handoff opens it.
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 13:01").unwrap();
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 13:02", 0).unwrap();
+        assert_eq!(t.why, "handed off");
+        // And the owner may always take it over.
+        let d = queue();
+        claimed_by_old(d.path());
+        block_task(
+            d.path(),
+            "0001",
+            "owner: which colour?",
+            OLD,
+            "2026-10-14 10:05",
+        )
+        .unwrap();
+        let owner = "owner (main · session e235163f · cc-mg)";
+        let t = takeover_task(d.path(), "0001", owner, "2026-10-14 10:10", 0).unwrap();
+        assert_eq!(t.why, "owner's override");
+    }
+
+    #[test]
+    fn a_handoff_before_the_holder_claimed_again_doesnt_open_a_takeover() {
+        let d = queue();
+        claimed_by_old(d.path());
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        return_task(d.path(), "0001", "not now", None, OLD, "2026-10-14 10:06").unwrap();
+        claim_task(d.path(), "0001", OLD, "2026-10-14 10:07").unwrap();
+        let before = file_0001(d.path());
+        let e = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:08", 0).unwrap_err();
+        assert!(
+            e.starts_with(&format!("0001 is held by {OLD} since 2026-10-14 10:07 and")),
+            "{e}"
+        );
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+    }
+
+    #[test]
+    fn a_handoff_before_a_takeover_back_doesnt_open_a_third_takeover() {
+        // OLD hands off, NEW takes over, OLD takes it back after 30 quiet min: OLD's earlier
+        // handoff is before that takeover, so a third session finds a fresh claim.
+        let d = queue();
+        claimed_by_old(d.path());
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        let back = takeover_task(d.path(), "0001", OLD, "2026-10-14 10:40", 0).unwrap();
+        assert_eq!(back.why, "quiet 34 min");
+        let third = "asghar (main · session 33333333 · cc-mg)";
+        let before = file_0001(d.path());
+        let e = takeover_task(d.path(), "0001", third, "2026-10-14 10:41", 0).unwrap_err();
+        assert!(
+            e.starts_with(&format!("0001 is held by {OLD} since 2026-10-14 10:40 and")),
+            "{e}"
+        );
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+    }
+
+    #[test]
+    fn takeover_by_a_label_that_wouldnt_read_back_is_refused() {
+        let d = queue();
+        let old = "team: asghar (main · session 1c6af0d9 · cc-mg)";
+        let new = "team: asghar (main · session d6419719 · cc-mg)";
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        claim_task(d.path(), "0001", old, "2026-10-14 10:00").unwrap();
+        let before = file_0001(d.path());
+        let e = takeover_task(d.path(), "0001", new, "2026-10-14 11:00", 0).unwrap_err();
+        assert!(e.contains("use a label without \": \""), "{e}");
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+    }
+
+    #[test]
+    fn takeover_by_the_owner_is_always_allowed() {
+        let d = queue();
+        claimed_by_old(d.path());
+        let owner = "owner (main · session e235163f · cc-mg)";
+        let t = takeover_task(d.path(), "0001", owner, "2026-10-14 10:01", 0).unwrap();
+        assert_eq!((t.from.as_str(), t.why.as_str()), (OLD, "owner's override"));
+        let task = only(d.path());
+        assert_eq!(task.claimed_by, owner);
+        assert!(file_0001(d.path()).ends_with(&format!(
+            "- 2026-10-14 10:01 {owner}: took over the claim from {OLD} (owner's override)\n"
+        )));
+    }
+
+    #[test]
+    fn takeover_refusals_outside_a_live_claim_and_for_a_holder_with_a_claim() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        assert_eq!(
+            takeover_task(d.path(), "0001", NEW, T, 0).unwrap_err(),
+            "0001 is in Ready, not Building; only a claim in Building can be taken over"
+        );
+        claim_task(d.path(), "0001", OLD, "2026-10-14 10:00").unwrap();
+        assert_eq!(
+            takeover_task(d.path(), "0001", OLD, "2026-10-14 11:00", 0).unwrap_err(),
+            "you already hold 0001; there's nothing to take over"
+        );
+        // One claim per holder: a session holding another task can't take this one over.
+        put_task(
+            d.path(),
+            "doing",
+            "0002",
+            &format!("priority: normal\nstage: building\nstatus: doing\nclaimed-by: {NEW}\nheartbeat: 2026-10-14 10:00\nwaiting_on:"),
+        );
+        assert_eq!(
+            takeover_task(d.path(), "0001", NEW, "2026-10-14 11:00", 0).unwrap_err(),
+            "you already hold 0002; pass, return or block it first"
+        );
+    }
+
+    #[test]
+    fn takeover_lines_are_the_tools_alone() {
+        let line = format!("- 2026-10-14 10:06 {NEW}: took over the claim from {OLD} (handed off)");
+        assert_eq!(
+            crate::queue::takeover_line(&line),
+            Some(("2026-10-14 10:06".into(), NEW.into(), OLD.into()))
+        );
+        for forged in [
+            format!("- 2026-10-14 10:06 owner: messaged session 1c6af0d9: x: took over the claim from {OLD} (handed off)"),
+            format!("- 2026-10-14 10:06 {NEW}: check-in · took over the claim from {OLD} (handed off)"),
+            format!("- 2026-10-14 10:06 {NEW}: took over the claim from {OLD} (because)"),
+            format!("- 2026-10-14 {NEW}: took over the claim from {OLD} (handed off)"),
+        ] {
+            assert_eq!(crate::queue::takeover_line(&forged), None, "{forged}");
+        }
+        assert!(free_text_line(
+            format!("{T} owner{}y (handed off)", crate::queue::TOOK_OVER),
+            "the note"
+        )
+        .is_err());
+        assert!(actor(&format!("wt-a{}b", crate::queue::TOOK_OVER)).is_err());
+    }
+
+    #[test]
+    fn tester_rule_refuses_a_successor_and_its_predecessor() {
+        let d = queue();
+        claimed_by_old(d.path());
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        pass_task(d.path(), "0001", NEW, "2026-10-14 11:00", &gate()).unwrap();
+        let before = file_0001(d.path());
+        for who in [NEW, OLD] {
+            let e = pass_task(d.path(), "0001", who, T, &from_testing()).unwrap_err();
+            assert!(e.contains("was built by asghar (session"), "{who}: {e}");
+            assert_eq!(file_0001(d.path()), before);
+        }
+        pass_task(
+            d.path(),
+            "0001",
+            "qa-0001 (session 99999999)",
+            T,
+            &from_testing(),
+        )
+        .unwrap();
+        assert_eq!(only(d.path()).stage, "your-check");
+    }
+
+    #[test]
+    fn tester_rule_lets_a_teammate_with_another_agent_test_and_refuses_the_builder() {
+        let builder = "asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)";
+        let d = queue();
+        built_with(d.path(), builder, TICKED);
+        let before = testing_file(d.path());
+        let why = "0001 was built by asghar (session 7b5e8856 · agent a1b2c3d4); a different session tests it: run the QA pass with its own --as (e.g. qa-0001), or the owner passes it";
+        for who in [
+            builder,
+            "asghar (wt-0090 · session 7b5e8856 · agent a1b2c3d4)",
+        ] {
+            assert_eq!(
+                pass_task(d.path(), "0001", who, T, &from_testing()).unwrap_err(),
+                why
+            );
+            assert_eq!(testing_file(d.path()), before);
+        }
+        // Another teammate of the same lead didn't build it: it tests, and no note, as its session
+        // and agent aren't the builder's.
+        let other = "qa (main · session 7b5e8856 · agent 0f0f0f0f · cc-mg)";
+        pass_task(d.path(), "0001", other, T, &from_testing()).unwrap();
+        let text = testing_file(d.path());
+        assert!(
+            text.ends_with(&format!("- {T} {other}: stage testing → your-check\n")),
+            "{text}"
+        );
+        // The lead isn't its teammate either: under the builder's label it tests.
+        let d = queue();
+        built_with(d.path(), builder, TICKED);
+        pass_task(
+            d.path(),
+            "0001",
+            "asghar (main · session 7b5e8856 · cc-mg)",
+            T,
+            &from_testing(),
+        )
+        .unwrap();
+        assert_eq!(only(d.path()).stage, "your-check");
+        // Another label in the builder's own session and agent: accepted, and the log says so.
+        let d = queue();
+        built_with(d.path(), builder, TICKED);
+        let sub = "qa (session 7b5e8856 · agent a1b2c3d4)";
+        pass_task(d.path(), "0001", sub, T, &from_testing()).unwrap();
+        assert!(testing_file(d.path())
+            .ends_with("(tested under another label in the builder's session)\n"));
+    }
+
+    #[test]
+    fn takeover_mail_moves_the_tasks_mail_and_a_later_answer_reaches_the_successor() {
+        let d = queue();
+        claimed_by_old(d.path());
+        put(
+            d.path(),
+            "todo/0002-u.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", "")
+                .replace("id: 0001", "id: 0002"),
+        );
+        crate::queue::ask(
+            d.path(),
+            "0001",
+            "Which port?",
+            "asghar",
+            OLD_ID,
+            "2026-10-14 10:02",
+        )
+        .unwrap();
+        crate::queue::ask(
+            d.path(),
+            "0002",
+            "Other task?",
+            "asghar",
+            OLD_ID,
+            "2026-10-14 10:03",
+        )
+        .unwrap();
+        let mail = d.path().join("mail");
+        let old = mail.join("1c6af0d9");
+        let new = mail.join("d6419719");
+        fs::create_dir_all(old.join("delivered")).unwrap();
+        fs::create_dir_all(&new).unwrap();
+        for (dir, name, text) in [
+            (&old, "0001-note-0001.md", "note for 0001"),
+            (&old, "0001-checkin.md", "old check-in request"),
+            (&old, "0002-note-0001.md", "note for 0002"),
+            (&old, "delivered/0001-note-0003.md", "delivered before"),
+            (&new, "0001-note-0001.md", "the successor's own note"),
+            (&new, "0001-checkin.md", "newer check-in request"),
+        ] {
+            fs::write(dir.join(name), text).unwrap();
+        }
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        let read = |p: PathBuf| fs::read_to_string(p).unwrap_or_default();
+        // The note is renumbered after the successor's own; a name already there stays put.
+        assert_eq!(read(new.join("0001-note-0002.md")), "note for 0001");
+        assert_eq!(
+            read(new.join("0001-note-0001.md")),
+            "the successor's own note"
+        );
+        assert_eq!(read(new.join("0001-checkin.md")), "newer check-in request");
+        assert_eq!(read(old.join("0001-checkin.md")), "old check-in request");
+        assert!(!old.join("0001-note-0001.md").exists());
+        // The other task's mail and delivered mail stay.
+        assert_eq!(read(old.join("0002-note-0001.md")), "note for 0002");
+        assert_eq!(
+            read(old.join("delivered/0001-note-0003.md")),
+            "delivered before"
+        );
+        let asks: serde_json::Value = serde_json::from_str(&read(mail.join("asks.json"))).unwrap();
+        assert_eq!(asks["0001-Q1"], "d6419719");
+        assert_eq!(asks["0002-Q1"], "1c6af0d9");
+        // The old session's question, answered after the takeover, reaches the successor.
+        let asker =
+            crate::queue::answer(d.path(), "0001", 1, "5173", "owner", "2026-10-14 10:10").unwrap();
+        assert_eq!(asker.as_deref(), Some("d6419719"));
+        assert!(read(new.join("0001-Q1.md")).contains("Answer: 5173"));
+        assert!(!old.join("0001-Q1.md").exists());
+        let other =
+            crate::queue::answer(d.path(), "0002", 1, "yes", "owner", "2026-10-14 10:11").unwrap();
+        assert_eq!(other.as_deref(), Some("1c6af0d9"));
+        assert!(old.join("0002-Q1.md").exists());
+    }
+
+    #[test]
+    fn takeover_mail_from_a_teammate_leaves_its_folder_and_the_leads_mail() {
+        let d = queue();
+        let tm = "asghar (main · session 1c6af0d9 · agent a1b2c3d4 · cc-mg)";
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        claim_task(d.path(), "0001", tm, "2026-10-14 10:00").unwrap();
+        crate::queue::ask(
+            d.path(),
+            "0001",
+            "Which port?",
+            "asghar",
+            &format!("{OLD_ID}/A1B2C3D4E5"),
+            "2026-10-14 10:02",
+        )
+        .unwrap();
+        let text = file_0001(d.path());
+        assert!(
+            text.contains(
+                "**Q1 (asghar, session 1c6af0d9 · agent a1b2c3d4, 2026-10-14 10:02):** Which port?"
+            ),
+            "{text}"
+        );
+        let mail = d.path().join("mail");
+        fs::create_dir_all(mail.join("1c6af0d9/a1b2c3d4")).unwrap();
+        fs::write(
+            mail.join("1c6af0d9/a1b2c3d4/0001-note-0001.md"),
+            "for the teammate",
+        )
+        .unwrap();
+        fs::write(mail.join("1c6af0d9/0001-note-0001.md"), "for the lead").unwrap();
+        // The lead's inbox doesn't take its teammate's mail.
+        let lead = crate::queue::take_mail(d.path(), OLD_ID, true).unwrap();
+        assert_eq!(lead, vec!["for the lead".to_string()]);
+        // Its question (at 10:02) kept the claim alive: quiet since then.
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:40", 0).unwrap();
+        assert_eq!(t.why, "quiet 38 min");
+        assert_eq!(
+            fs::read_to_string(mail.join("d6419719/0001-note-0001.md")).unwrap(),
+            "for the teammate"
+        );
+        assert_eq!(
+            fs::read_to_string(mail.join("1c6af0d9/0001-note-0001.md")).unwrap(),
+            "for the lead"
+        );
+        let asker =
+            crate::queue::answer(d.path(), "0001", 1, "5173", "owner", "2026-10-14 10:41").unwrap();
+        assert_eq!(asker.as_deref(), Some("d6419719"));
     }
 }
 
