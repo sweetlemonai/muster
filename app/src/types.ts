@@ -385,6 +385,23 @@ export type Project = {
   groupName?: string;
 };
 
+/** A local queue's history (0109), the core's `history::Status`: its own git in the repo's git
+ *  folder, committed after every write. */
+export type HistoryState = {
+  /** The queue keeps one (a local `.muster` queue in a main checkout). */
+  kept: boolean;
+  /** It has its first commit. */
+  started: boolean;
+  /** When the last commit was made, seconds since 1970. */
+  lastCommit: number | null;
+  /** Writes git couldn't commit, and its words for the last. */
+  pending: number;
+  pendingError: string;
+  /** Files gone since the last commit, and files changed or added outside muster. */
+  missing: string[];
+  changed: string[];
+};
+
 /** A lesson from reviews (0027): a kind of mistake that recurred, as a rule for builders, or one
  *  that kept proving false, as something reviewers don't flag. The core's `lessons::Lesson`. */
 export type Lesson = {

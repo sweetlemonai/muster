@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
-import type { LessonListing, Project, Role, RoleField, RunView, State, Work } from "./types";
+import type { HistoryState, LessonListing, Project, Role, RoleField, RunView, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
@@ -18,6 +18,14 @@ export const api = {
   answerPick: (queue: string, id: string, n: number, pick: string, extra: string, stamp: string) =>
     invoke<string | null>("answer_pick", { queue, id, n, pick, extra, stamp }),
   projects: () => invoke<Project[]>("projects"),
+  // Each local queue's history (0109) by project key, for Settings › Projects; only the projects
+  // whose queue keeps one.
+  projectHistories: () => invoke<{ key: string; history: HistoryState }[]>("project_histories"),
+  // Its fixes, by the owner: `muster restore --all`, `muster history commit` and `muster history
+  // removed --all`; each returns how many files it restored, committed or recorded as removed.
+  restoreHistory: (key: string) => invoke<number>("restore_history", { key }),
+  commitHistory: (key: string) => invoke<number>("commit_history", { key }),
+  recordRemoved: (key: string) => invoke<number>("record_removed", { key }),
   // Both open the core's folder picker; null when cancelled.
   addProject: () => invoke<string | null>("add_project"),
   createProject: () => invoke<string | null>("create_project"),

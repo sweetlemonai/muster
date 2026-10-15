@@ -144,6 +144,9 @@ pub fn migrate(
         });
         let _ = fs::remove_dir_all(&staging);
         result?;
+        // A local queue's history (0109) starts with everything copied; failing here, it starts
+        // on the first write.
+        let _ = crate::history::start(&q, &format!("{} (migrated)", crate::history::STARTS));
         Ok(Report {
             lines: summary(&plan, &old, &q, opts, false),
             queue: q.clone(),
@@ -929,6 +932,14 @@ mod tests {
             fs::read_to_string(q.join(".gitignore")).unwrap(),
             layout::gitignore_text(true)
         );
+        // A local queue's history (0109) starts with everything copied, the lists left out.
+        let h = crate::history::of(&q).expect("a local queue keeps a history");
+        assert!(crate::history::started(&h));
+        let s = crate::history::status(&q);
+        assert!(s.missing.is_empty() && s.changed.is_empty(), "{s:?}");
+        let log = crate::history::log(&q, 5).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].1, "muster: history starts (migrated)");
         let readme = fs::read_to_string(q.join("README.md")).unwrap();
         assert!(
             readme.starts_with("---\nowner: x\n---\n# proj — task queue"),

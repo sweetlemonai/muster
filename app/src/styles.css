@@ -347,6 +347,9 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .projects-table tbody tr:not(.gate-row) td { border-bottom: none; }
 .projects-table .gate-row td { padding-top: 0; font-size: 12px; }
 .gate-label { margin-right: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+/* A local queue's history line (0109) when a write isn't committed or a file is missing: the
+   warning colour (--warn, 4.5:1), and the words start with "warning:" so colour isn't the only cue. */
+.history-warn { color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
 .projects-table .gate-row code { font-size: 12px; overflow-wrap: anywhere; }
 .projects-table .actions { white-space: nowrap; text-align: right; }
 .projects-table .actions button { margin-left: 4px; }

@@ -1230,7 +1230,7 @@ muster set 0018 depends 0014,0016
 
 ## Projects and the queue
 
-Find the queues Muster knows, start one for a project (in its repo's `.muster/`), move an old `<project>/tasks` queue into it, check a queue for problems, and rebuild its master list.
+Find the queues Muster knows, start one for a project (in its repo's `.muster/`), move an old `<project>/tasks` queue into it, check a queue for problems, rebuild its master list, and bring a local queue's files back from its history.
 
 ### muster projects
 
@@ -1328,7 +1328,7 @@ muster migrate ~/playground/muster/tasks ~/playground/muster/main
 
 ### muster check
 
-Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), a pause from before muster pause (a block whose reason says paused: make it a pause with --fix-pauses), an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), and a repo whose .gitattributes uses merge=muster-log without the work log's merge driver in its git config (with the two git config lines that set it), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, lessons from reviews waiting for the owner's yes, Shaping tasks with no vision check yet, a now page (docs/now/) over 60 lines or 4 KB, without covers:, with the same covers: as another, or that's a symlink (warnings: they never fail the check or stop a command), and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it; and a task whose stage lags its code: in Building or Testing (not paused), its task/ branch already in main (merged by hand) with a commit the branch made itself (a fast-forward or rebase onto main with nothing built doesn't count), with the pass that catches it up (muster pass \<id\> --from building --gate "\<the gate's line\>" --summary "\<what was built\>", then --from testing; in Testing only the second; with its worktree gone, the pass from Testing, run in the project's repo, records the merge main already has, with no rebase, gate or push, keeping origin's copy of the branch until origin's main has it). With --fix-pauses, in every queue Muster knows (or the one --queue names): lists each block from before muster pause whose reason says paused ("paused", "owner (paused)") with its stage, since when and the reason it keeps, then makes each a pause with that reason and time: paused-why is what the reason says besides owner and paused, paused the time of the line that blocked it (else the latest line about the pause, else the last line), and the block is cleared as muster unblock clears it, the stage kept (an old blocked file with no stage is Ready, and goes back to todo/). No session is told. A block that says anything else is never touched, and running it again changes nothing. Exit 1 if one couldn't be converted (it's left as it was).
+Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine), and in a local queue files missing since its history's last commit (muster restore --all, or muster history removed when they were deleted on purpose) or writes the history couldn't commit (muster history commit). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), a pause from before muster pause (a block whose reason says paused: make it a pause with --fix-pauses), an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), and a repo whose .gitattributes uses merge=muster-log without the work log's merge driver in its git config (with the two git config lines that set it), and files changed outside muster since a local queue's history's last commit (muster history commit), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, lessons from reviews waiting for the owner's yes, Shaping tasks with no vision check yet, a now page (docs/now/) over 60 lines or 4 KB, without covers:, with the same covers: as another, or that's a symlink (warnings: they never fail the check or stop a command), and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it; and a task whose stage lags its code: in Building or Testing (not paused), its task/ branch already in main (merged by hand) with a commit the branch made itself (a fast-forward or rebase onto main with nothing built doesn't count), with the pass that catches it up (muster pass \<id\> --from building --gate "\<the gate's line\>" --summary "\<what was built\>", then --from testing; in Testing only the second; with its worktree gone, the pass from Testing, run in the project's repo, records the merge main already has, with no rebase, gate or push, keeping origin's copy of the branch until origin's main has it). With --fix-pauses, in every queue Muster knows (or the one --queue names): lists each block from before muster pause whose reason says paused ("paused", "owner (paused)") with its stage, since when and the reason it keeps, then makes each a pause with that reason and time: paused-why is what the reason says besides owner and paused, paused the time of the line that blocked it (else the latest line about the pause, else the last line), and the block is cleared as muster unblock clears it, the stage kept (an old blocked file with no stage is Ready, and goes back to todo/). No session is told. A block that says anything else is never touched, and running it again changes nothing. Exit 1 if one couldn't be converted (it's left as it was).
 
 ```
 muster check [--fix-pauses [--dry-run]]
@@ -1383,6 +1383,65 @@ muster index --check --queue drover
 
 ```
 muster index --as-built docs/AS_BUILT.md
+```
+
+### muster restore
+
+Put back the last committed copy of queue files from a local queue's history (0109). A local queue (local = true) keeps a git of its own in the repo's git folder (.git/muster/history.git), which muster commits to after every write it makes, so a git clean -fdx, a deleted folder or a bad hand edit costs nothing: --all brings back every file missing since the last commit, and a new task made in the meantime never takes one of their ids; a path (from the queue's folder, or absolute inside it) brings back that file, missing or changed, or every such file under a folder. A file changed since is put back only when it's named, and files added since are left alone. A file recorded as removed (muster history removed) comes back only when it or a folder holding it is named (--all leaves it gone), from the commit before its last removal, and is in the history again; a removed task file whose id another task holds now is refused, naming that task, and nothing is put back. It runs under the queue's lock, rebuilds INDEX.md, and the history logs it as a commit of its own ("muster: restored 3 files (who)"). Mail, INDEX.md and tasks.json aren't in the history. muster check says when there's something to restore. A committed queue (local = false) is in the repo's own history: use git there.
+
+```
+muster restore <path>… | --all [--as <who>]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--all` | every file missing since the last commit |
+| `--as` | who restores, for the history's log; default $MUSTER\_AS, then the folder's git user.name |
+
+Examples:
+
+```
+muster restore --all
+```
+
+```
+muster restore tasks/0042-fix-login.md
+```
+
+```
+muster restore attachments/0042
+```
+
+### muster history
+
+A local queue's history (0109): whether every file is committed, what isn't (writes git couldn't commit, files missing since the last commit, files changed outside muster), and the last 10 commits, each named by its task's key and the log line its write added (a write of several files, such as a review or an attachment, by its task's). commit commits what the history doesn't have yet: files changed or added outside muster (a hand edit, Drover's answers) and writes that couldn't be committed, and starts a history that has no commit. It never commits a missing file as gone: muster restore brings it back. removed records files deleted on purpose as removed (the paths, files or folders from the queue's folder, or --all for every file missing since the last commit), so muster check stops asking to restore them and restore --all leaves them gone; only a file that's gone and in the last commit can be. Older commits keep a removed file: muster restore \<path\> brings it back. A removed task's id is never given to a new task. The history is packed by git gc --auto once it has enough loose objects. Never pushed; the history has no remote.
+
+```
+muster history [commit | removed <path>… | removed --all] [--json] [--as <who>]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--all` | with removed: every file missing since the last commit |
+| `--json` | the state as JSON (kept, started, lastCommit, pending, pendingError, missing, changed) |
+| `--as` | who records a removal, for the history's log; default $MUSTER\_AS, then the folder's git user.name |
+
+Examples:
+
+```
+muster history
+```
+
+```
+muster history commit
+```
+
+```
+muster history removed attachments/0042/screenshot.png
+```
+
+```
+muster history --json
 ```
 
 ### muster help

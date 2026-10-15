@@ -5,6 +5,8 @@ covers: app/src-tauri/src/queue.rs, app/src-tauri/src/ops.rs, app/src-tauri/src/
 
 - A repo's queue is its `.muster/`, and every worktree uses the main checkout's. (PROTOCOL.md "Where tasks live")
 - A local queue, the default, keeps all but `config.toml` out of git. (PROTOCOL.md "Where tasks live")
+- A local queue keeps a history of every write in `.git/muster/history.git`; `muster restore` puts files back. (mu-109)
+- A file deleted on purpose is recorded with `muster history removed`; a removed task's id is never given again. (mu-109)
 - The queue lives in local files, not GitHub Issues. (decision 0010)
 - A task file never moves; `stage:` in it is the only truth. (decision 0003)
 - Stages: Backlog, Shaping, Ready, Building, Testing, Your check, Done. (decision 0003)

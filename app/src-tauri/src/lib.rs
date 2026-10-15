@@ -16,6 +16,7 @@ pub mod fields;
 pub mod help;
 pub mod helper;
 mod helper_cmds;
+pub mod history;
 pub mod index;
 pub mod key;
 pub mod labels;
@@ -1131,6 +1132,79 @@ async fn projects(app: tauri::State<'_, AppState>) -> Result<Vec<projects::Proje
     blocking(move || Ok(projects::list(&base(), &projects::load(&file)))).await
 }
 
+/// A local queue's history (0109) for Settings › Projects, by project key: only the projects
+/// whose queue keeps one. Off the window's thread: each reads its history's git.
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectHistory {
+    key: String,
+    history: history::Status,
+}
+
+#[tauri::command]
+async fn project_histories(app: tauri::State<'_, AppState>) -> Result<Vec<ProjectHistory>, String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        Ok(projects::list(&base(), &projects::load(&file))
+            .into_iter()
+            .filter_map(|p| {
+                let history = history::status(std::path::Path::new(&p.path));
+                history.kept.then_some(ProjectHistory {
+                    key: p.key,
+                    history,
+                })
+            })
+            .collect())
+    })
+    .await
+}
+
+/// The queue folder of the project Muster lists under `key`; the window never names a folder
+/// itself.
+fn project_queue(file: &std::path::Path, key: &str) -> Result<PathBuf, String> {
+    projects::list(&base(), &projects::load(file))
+        .into_iter()
+        .find(|p| p.key == key)
+        .map(|p| PathBuf::from(p.path))
+        .ok_or_else(|| "that project isn't one Muster lists".to_string())
+}
+
+/// Settings › Projects' Restore (0109): `muster restore --all` for the project `key`, by the
+/// owner. Returns how many files came back.
+#[tauri::command]
+async fn restore_history(app: tauri::State<'_, AppState>, key: String) -> Result<usize, String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        let root = project_queue(&file, &key)?;
+        history::restore(&root, &[], true, "owner").map(|v| v.len())
+    })
+    .await
+}
+
+/// Settings › Projects' Commit (0109): `muster history commit` for the project `key`. Returns
+/// how many files it committed.
+#[tauri::command]
+async fn commit_history(app: tauri::State<'_, AppState>, key: String) -> Result<usize, String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        let root = project_queue(&file, &key)?;
+        history::commit_outside(&root).map(|v| v.len())
+    })
+    .await
+}
+
+/// Settings › Projects' Keep deleted (0109): `muster history removed --all` for the project
+/// `key`, by the owner: files deleted on purpose are recorded as removed. Returns how many.
+#[tauri::command]
+async fn record_removed(app: tauri::State<'_, AppState>, key: String) -> Result<usize, String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        let root = project_queue(&file, &key)?;
+        history::removed(&root, &[], true, "owner").map(|v| v.len())
+    })
+    .await
+}
+
 /// What Settings shows (0036): this machine's settings with their bounds, and for About the
 /// version, the config folder and the folders the app reads.
 #[derive(serde::Serialize, Debug)]
@@ -1598,6 +1672,10 @@ pub fn run() {
             answer,
             answer_pick,
             projects,
+            project_histories,
+            restore_history,
+            commit_history,
+            record_removed,
             settings_info,
             set_setting,
             roles_info,

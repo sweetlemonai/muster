@@ -821,6 +821,9 @@ pub fn init(
         let _ = fs::remove_dir_all(&q);
         return Err(e);
     }
+    // A local queue's history (0109). One that can't start now starts on the first write, and
+    // `muster check` says so until then.
+    let _ = crate::history::start(&q, crate::history::STARTS);
     Ok((q, prefix))
 }
 
@@ -881,7 +884,10 @@ fn muster_readme(project: &str, prefix: &str) -> String {
          `muster drop <note-file> \"<why>\"` sets it aside in `backlog/dropped/`; either ends the claim, and\n  \
          `muster release <note-file>` lets it go. One note at a time.\n\
          - Files go in `attachments/NNNN/`; `INDEX.md` and `tasks.json` are rebuilt by the tools, never edited.\n\
-         - `config.toml`: `local = true` keeps the queue on this Mac (only `config.toml` is committed).\n"
+         - `config.toml`: `local = true` keeps the queue on this Mac (only `config.toml` is committed).\n  \
+         Its history is in `.git/muster/history.git`, a commit per muster write: never run `git clean -x`\n  \
+         or `-X` in the main checkout (`git clean -fd` is safe once config.toml is committed); `muster restore\n  \
+         --all` brings files back.\n"
     )
 }
 

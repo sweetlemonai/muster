@@ -26,6 +26,7 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - A missing or bad setting reads as its default, field by field. (mu-36)
 - Settings are per Mac, in `settings.json` and `projects.json`. (AS_BUILT "Settings")
 - Projects shows each gate and run command read-only; `muster projects set` sets them. (mu-77)
+- Projects shows each local queue's history under its gate, with Restore, Keep deleted or Commit when something's off. (mu-109)
 - A prefix is set in Projects and refused when bad or another project's. (mu-33)
 - The Your check limit is set per project in Projects: 5, 1 to 50, or Off. (mu-50)
 - Labels, categories, Hide and Remove never touch the queue's files. (AS_BUILT "Projects")

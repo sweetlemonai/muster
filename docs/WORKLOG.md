@@ -4,6 +4,94 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Local queues keep a history; muster restore; git clean -x refused (mu-109)
+**Did (asghar_13, builder):** new `history.rs`: a local `.muster/` queue gets a bare git at
+`<git common dir>/muster/history.git` with `.muster/` as its work tree, started by `muster init`
+and `migrate` (`projects.rs`, `migrate.rs`) or, for a queue without one, by its first write.
+`queue::with_lock` snapshots the queue's files before each write and commits the ones whose size,
+time or inode changed, as `muster`, `<key>: <the task's last log line>` (notes and attachments by
+name); `mail/`, `INDEX.md`, `tasks.json`, `.claude/` and temp files never go in. A commit that
+fails is kept in the history's `muster-pending` and retried by the next write. `muster check` fails
+on missing files (`muster restore --all`) and uncommitted writes (`muster history commit`), warns
+on files changed outside muster. New commands `muster restore <path>…|--all` (under the lock,
+logged as an empty commit) and `muster history [commit] [--json]` (`cli.rs`, `help.rs`, the
+manual's Commands page). Settings › Projects shows a History line under Run, with Restore or
+Commit when there's something to fix (`Projects.tsx`, three Tauri commands in `lib.rs`). The
+personal layer's `hooks/guard-bash.mjs` refuses `git clean` with `-x`/`-X` in a main checkout
+with `.muster/`, for every role, reading the command's words (`cd`, `-C`, `--work-tree`).
+PROTOCOL.md, the manual (concepts, the app, for agents), the queue README and AS_BUILT.md say it.
+**Decided:** files are found by a stat snapshot around the write rather than by threading paths
+through every write function: one place, no write path can be missed, and a hand edit of another
+file stays out of the write's commit. git runs with every `GIT_*` dropped, no global or system
+config, hooks off and signing off, so the owner's git setup never reaches these commits.
+`muster history commit` (not `--commit`: that's a value flag already) takes in changes made outside
+muster but never records a missing file as deleted; `restore` brings it back instead. From a
+review pass: a pending write is retried only for files that are there (or that the write itself
+removed), so a clean between the failure and the retry can't commit the queue as deleted;
+`restore --all` puts back missing files only (a changed one only when named); a new task's id
+counts the ids in the history's last commit, so a task made between a clean and the restore can't
+reuse one; a queue cleaned before its `config.toml` was committed still finds its history; git gets
+absolute paths (`--queue .muster`); the guard lets a dry run (`-n` without `-f`) through. The
+commit is plumbing (`update-index`, `write-tree`, `commit-tree`, `update-ref` from the commit it
+was made on), not `git commit`, which walked the work tree for its status: 150 to 340 ms a write
+on Muster's queue with its 51 MB of attachments; the last commit's tree is noted in the history's
+folder so a write needs no `rev-parse`.
+**Verified:** 14 `history::tests` (init, first write, one commit per write with only its paths,
+refused writes, two-task messages, pending writes retried, `git clean -fdx` then `restore --all`
+byte for byte, path restores and refusals, the message, kept paths, and one per review fix), a CLI test of `check`'s exit
+codes around a clean, the migrate test's history, 5 vitest cases for the History line, and the
+guard's node test (refused forms, allowed forms, words about it). Write time on a copy of Muster's
+queue (370 files, 51 MB), release build, 60 `muster add` writes alternating between a copy with
+the history and one without, on a loaded machine (load average 14 to 17): without 53 ms p50, with
+82 ms p50, added 31 ms p50 (51 ms p90) paired. The history's start (the first write, hashing all
+51 MB) took 35 s under that load and 4 s on a quieter run.
+**Fixed (Asghar_22, review round 1, R1-R8):** the history was never packed (only plumbing ran) →
+`history::pack` runs `git gc --auto` after each commit, outside the queue's lock, and only when
+objects/17 holds 2 or more loose objects (below that git does nothing, so most writes skip the
+spawn). A review record or an attachment got the subject of its first sorted path → task files'
+lines lead the message. A file deleted on purpose kept `check` failing → new `muster history
+removed <path>…|--all` (Settings: Keep deleted, `record_removed`) commits the removal; a named
+`muster restore` brings a removed file back from the commit before its removal. `restore --all`
+undid a removal a pending write had made → files a pending write accounts for are neither
+"missing" nor "changed". The Settings line was read once → re-read every 30 s, newest reply kept
+(`newestOnly`). The Restore/Commit click mapping was untested → `runFix` and a click test over the
+cell's elements. Restore said "restored" at 0 → `fixDone` words it from the count. git's reason was
+dropped on exit 1 and its whole path shown → `git_error` keeps it and names the folders
+`history.git` and `.muster`. Found in the live sandboxed run: a session whose sandbox allows
+`main/.muster` but not `main/.git` (the layer's `allowWrite`) writes the queue, but the commit and
+the pending record both failed, so the write showed only as a warning → the pending record falls
+back to `.muster/mail/history-pending`, and `check` fails with "1 write not committed" until a
+write that can reach the history commits it. `muster history` said "every file committed" for a
+history not started → says it's not started.
+**Verified (round 1 fixes):** 31 `history::tests` (6 new: packing, multi-file subjects with a real
+review record and attachment, removals, pending removals, the mail fallback, git's reason), the
+CLI test's `history removed` exit codes, 4 new vitest cases. Live: the branch's release build,
+`sandbox-exec` denying writes under `main/.git`, `muster checkin mu-109` on Muster's own queue →
+checked in, `muster history` → "1 write not committed (fatal: cannot mkdir history.git: Operation
+not permitted)"; the pending file removed afterwards, so the queue's history still isn't started.
+Write time, 60 paired `muster add` on copies of Muster's queue (release build, a committed copy as
+the baseline), load average 21 to 26: without 68 ms p50, with 112 ms p50, added 45 ms p50 (214 ms
+p90). `gc --auto` alone: 8 ms.
+**Open:** the guard change is in `~/playground/.claude`, committed there as 1cbb1ba (guard-bash,
+AC5), not on this branch. That repo's test file has one other failure, in its
+`link-personal-layer` test (a sandbox entry for the main checkout's `.muster/`), which this change
+doesn't touch. The layer's `allowWrite` lists `~/playground/muster/main/.muster` but not
+`~/playground/muster/main/.git/muster`: a session sandboxed that way leaves its writes pending
+until an unsandboxed or worktree session writes (worktree sessions of the repo can write its
+`.git`). Adding that entry lets them commit at once; it's a layer change, not on this branch.
+**Fixed (Asghar_26, review round 2, R9-R10):** after `muster history removed` the next task took
+a removed task's id, and restoring the removed file by name left two tasks with one key →
+`last_id` also counts task ids in the history's removal commits (`removals`: `git log
+--grep=^muster: removed --diff-filter=D`, 15 ms on 5,000 commits), and `restore` refuses a task
+file whose id a task file there holds now (by its name or its written id), or that another restored
+file brings back, naming that task and file; nothing is put back then (`taken_ids`). `restore
+<folder>` (and `tasks`, `.`) brought back nothing removed when the folder still held a committed
+file → a folder also takes the files under it that `history removed` took out and are still gone,
+each from before its last removal; one a write deleted after that (a dropped note) stays gone.
+**Verified (round 2):** 2 new `history::tests` (id never reused and the refusal by path, `tasks`
+and `.`; partial-folder and whole-queue folder restores, a note removed, restored, then dropped
+stays gone; it fails with the last-removal check taken out). Rebased on main (`drop_note` takes a
+lease now). bin/gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati)).
 ## 2026-10-14 — Two more notes shaped (mu-185, mu-186)
 **Did (shapour):** the 2317 note (a claim keeps its old account after a session moves cc-mg→cc-hg)
 became mu-185, high, after mu-184: a holder's act re-stamps `claimed-by:`/`held-by:` when its session

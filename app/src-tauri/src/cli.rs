@@ -1256,6 +1256,63 @@ fn index_check_line(status: index::Status) -> Option<String> {
     }
 }
 
+/// `muster history [commit]` (0109): the local queue's history now and its last commits, or
+/// commit what it doesn't have yet.
+fn run_history(a: &Args, root: &Path, me: &dyn Fn() -> String) -> Result<i32, String> {
+    match a.pos.get(1).map(String::as_str) {
+        None => {}
+        Some("commit") => {
+            let done = crate::history::commit_outside(root)?;
+            if done.is_empty() {
+                println!("nothing to commit: the history has every file");
+            } else {
+                println!("committed {}", done.join(", "));
+            }
+            return Ok(0);
+        }
+        Some("removed") => {
+            let done = crate::history::removed(root, &a.pos[2..], a.all, &me())?;
+            if done.is_empty() {
+                println!("nothing to record: no file is missing since the last commit");
+            } else {
+                println!(
+                    "recorded as removed: {} (older commits keep them: muster restore <path> brings one back)",
+                    done.join(", ")
+                );
+            }
+            return Ok(0);
+        }
+        Some(other) => {
+            let help = "see `muster help history`";
+            return Err(format!(
+                "history takes nothing, commit or removed, not {other:?} ({help})"
+            ));
+        }
+    }
+    let s = crate::history::status(root);
+    if a.json {
+        print_json(&s)?;
+        return Ok(0);
+    }
+    if !s.kept {
+        println!("this queue keeps no history of its own: only a local .muster queue (local = true) in a repo's main checkout has one");
+        return Ok(0);
+    }
+    let problems = crate::history::problems("q", root);
+    if !s.started && problems.is_empty() {
+        println!("history: not started yet: the queue's next write starts it");
+    } else if problems.is_empty() {
+        println!("history: every file committed");
+    }
+    for p in &problems {
+        println!("{}", p.trim_start_matches("q: "));
+    }
+    for (at, what) in crate::history::log(root, 10)? {
+        println!("{at}  {what}");
+    }
+    Ok(0)
+}
+
 /// `--body`: the text, `-` for stdin (up to 1 MB), or None when not given. A one-line command can
 /// carry line breaks as `\n` (the helper writes them so, because a permission rule only matches a
 /// command on one line).
@@ -2659,6 +2716,27 @@ fn run_on(
             println!("dropped {note} ({p})");
             Ok(0)
         }
+        "restore" => {
+            if a.all == (a.pos.len() > 1) {
+                return Err(
+                    "restore takes the files or folders to put back, or --all (see `muster help restore`)"
+                        .into(),
+                );
+            }
+            let back = crate::history::restore(root, &a.pos[1..], a.all, &me())?;
+            if back.is_empty() {
+                println!("nothing to restore: the queue matches its last commit");
+            } else {
+                println!(
+                    "restored {} file{} from the queue's history: {}",
+                    back.len(),
+                    if back.len() == 1 { "" } else { "s" },
+                    back.join(", ")
+                );
+            }
+            Ok(0)
+        }
+        "history" => run_history(a, root, &me),
         "vision" => run_vision(a, root, prefix, &me, stamp),
         "review" => run_review(a, root, prefix, &me, stamp, cwd),
         "lessons" => run_lessons(a, root, &me, stamp),
@@ -2732,6 +2810,12 @@ fn run_on(
             if let Some(l) = &index_line {
                 println!("{l}");
             }
+            // A local queue's history (0109): files missing since its last commit and writes it
+            // couldn't commit fail the check; the rest are warnings.
+            let history = crate::history::problems("q", root);
+            for l in &history {
+                println!("{l}");
+            }
             // A prefix another project has too (0005: an old queue not retired yet after a
             // migrate), and where its keys go: a warning, the exit code ignores it.
             if let Some(l) = crate::key::shared_prefix(&crate::key::known(), root, prefix) {
@@ -2746,6 +2830,7 @@ fn run_on(
                 .problems
                 .iter()
                 .chain(&index_line)
+                .chain(&history)
                 .any(|p| !queue::is_warning(p));
             Ok(if failed { 1 } else { 0 })
         }
@@ -7920,5 +8005,68 @@ mod tests {
         assert_eq!(code_in(&qb, &owner, &["stage", "0001", "your-check"]), 0);
         let two = task(&b, "0002");
         assert_eq!((two.stage.as_str(), two.claimed_by.as_str()), ("ready", ""));
+    }
+
+    #[test]
+    fn restore_and_history_put_a_cleaned_queue_back_and_check_fails_until_then() {
+        let base = tempfile::tempdir().unwrap();
+        let main_repo = crate::layout::resolve::repo(base.path(), "proj");
+        let q = crate::projects::init(&main_repo, true, Some("pq"), &[])
+            .unwrap()
+            .0;
+        crate::layout::resolve::git(&main_repo, &["add", ".muster"]);
+        crate::layout::resolve::git(&main_repo, &["commit", "-q", "-m", "muster"]);
+        let qs = q.to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &qs, "--as", "owner"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        assert_eq!(code(&["new", "Kept"]), 0);
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(code(&["history"]), 0);
+        assert_eq!(code(&["history", "--json"]), 0);
+        let task = std::fs::read_dir(q.join("tasks"))
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap()
+            .path();
+        let text = std::fs::read(&task).unwrap();
+        crate::layout::resolve::git(&main_repo, &["clean", "-fdx"]);
+        assert!(!task.exists());
+        // Missing files fail the check until they're restored.
+        assert_eq!(code(&["check"]), 1);
+        // restore takes paths or --all, not both, not neither.
+        assert_eq!(code(&["restore"]), 1);
+        assert_eq!(code(&["restore", "tasks", "--all"]), 1);
+        assert_eq!(code(&["restore", "--all"]), 0);
+        assert_eq!(std::fs::read(&task).unwrap(), text);
+        assert_eq!(code(&["check"]), 0);
+        // A hand edit is a warning; history commit takes it in.
+        let mut edited = text.clone();
+        edited.extend_from_slice(b"\nedited by hand\n");
+        std::fs::write(&task, edited).unwrap();
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(code(&["history", "commit"]), 0);
+        assert!(crate::history::status(&q).changed.is_empty());
+        assert_eq!(code(&["history", "nonsense"]), 1);
+        assert_eq!(code(&["restore", "tasks/0042-none.md"]), 1);
+        // A file deleted on purpose: check fails until it's restored or recorded as removed.
+        std::fs::remove_file(&task).unwrap();
+        assert_eq!(code(&["check"]), 1);
+        assert_eq!(code(&["history", "removed"]), 1, "names files or --all");
+        assert_eq!(code(&["history", "removed", "tasks", "--all"]), 1);
+        assert_eq!(code(&["history", "removed", "tasks"]), 0);
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(
+            code(&["history", "removed", "--all"]),
+            0,
+            "nothing left to record"
+        );
+        assert!(crate::history::status(&q).missing.is_empty());
+        assert_eq!(code(&["restore", "--all"]), 0);
+        assert!(!task.exists(), "restore --all leaves it gone");
     }
 }

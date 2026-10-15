@@ -126,7 +126,23 @@
 >   default its keys had) into `config.toml`, so no task key changes.
 > - **Local, the default** (`local = true` in `config.toml`, what `muster init` and
 >   `muster migrate` write): `.muster/.gitignore` keeps everything but `config.toml` out of git,
->   so the queue stays on this Mac. **Committed** (`--committed`) leaves out only `/mail/`,
+>   so the queue stays on this Mac. **It keeps a history of its own** (mu-109): a git at
+>   `<git common dir>/muster/history.git` (`.git/muster/history.git` in the main checkout) whose
+>   work tree is `.muster/`, started by `init` and `migrate` (a queue without one gets it on its
+>   first write, "muster: history starts"). After every write muster makes, still under the
+>   queue's lock, it commits the files that write changed, as `muster`, with the message
+>   `<key>: <the log line it wrote>`; never `mail/`, the lock, `INDEX.md` or `tasks.json`, and
+>   never pushed. A write of several files (a review, an attachment) is named by its task's line.
+>   `muster check` fails on files missing since the last commit (`muster restore --all`, or
+>   `muster history removed <path>…` when they were deleted on purpose) and on writes the history
+>   couldn't commit (`muster history commit`), and warns about files changed outside muster
+>   (`muster history commit` takes them in). `muster restore <path>…|--all` puts the last
+>   committed copy back under the lock and logs the restore as a commit of its own; a removed
+>   file stays in older commits and comes back only when named. `muster history` shows the state
+>   and the last commits. git packs the history (`gc --auto`) once it has enough loose objects. **Agents never run
+>   `git clean -x` or `-X` in a main checkout:** the queue is ignored by git, so it deletes it.
+>   `git clean -fd` (without x) is safe; the layer's Bash guard refuses the rest, and `muster
+>   restore --all` brings a cleaned queue back. **Committed** (`--committed`) leaves out only `/mail/`,
 >   `/INDEX.md` and `/tasks.json`, but for now every claim and pass rewrites tracked files in the
 >   main checkout (a merge passes over `.muster/` when it checks main is clean), until the live
 >   state moves to `.git/muster/`.

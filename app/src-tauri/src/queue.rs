@@ -3094,16 +3094,28 @@ pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<(), Stri
 /// then, still holding it, bring INDEX.md up to date (task 0018). Every write muster makes to a
 /// queue goes through here, so this is the one place the master list follows the files. A queue
 /// with no stored prefix gets its default stored first (0033, `key::pin_prefix`), so its keys
-/// don't move when another project comes along.
+/// don't move when another project comes along. A local queue's history (0109) commits the files
+/// the write changed, still under the lock.
 pub fn with_lock<T>(root: &Path, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    hold_lock(root, || {
+    let mut committed = None;
+    let result = hold_lock(root, || {
+        let before = crate::history::begin(root);
         crate::key::pin_prefix(root);
         let result = f();
         // The change is made (or refused) either way, so a list that can't be written never
         // turns it into an error: `muster check` reports the stale list instead.
         let _ = crate::index::refresh_locked(root);
+        // Nor does a commit that fails: the history remembers it for `muster check`.
+        if let Some(before) = before {
+            committed = crate::history::finish(root, before);
+        }
         result
-    })
+    });
+    // Packing the history, when it's due, needs no lock: other writers go on meanwhile.
+    if let Some(h) = committed {
+        crate::history::pack(&h, root);
+    }
+    result
 }
 
 /// The queue's lock alone, without bringing INDEX.md up to date: for `index::rebuild`.

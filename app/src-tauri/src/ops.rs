@@ -346,7 +346,10 @@ pub fn next_id(root: &Path) -> Result<String, String> {
                 .or_else(|| p.file_name()?.to_str()?.get(..4)?.parse::<u32>().ok())
         })
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        // A local queue's history (0109) remembers ids whose files are gone (a `git clean -x`
+        // before `muster restore`), so a new task never takes one of them.
+        .max(crate::history::last_id(root));
     if max >= 9999 {
         return Err("the queue is out of four-digit ids".into());
     }

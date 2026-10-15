@@ -8,6 +8,8 @@ Only `muster` changes a task's stage, its claim, its holder and its times. A ses
 
 Why: the board is only useful if it's true. A hand edit can say a task was tested when it wasn't, and two sessions editing the same file can both think they claimed it.
 
+And never run `git clean -x` or `git clean -X` in a main checkout: a local queue is ignored by git, so it deletes the whole queue. `git clean -fd` (without x) is safe. The personal layer's Bash guard refuses the rest. If a queue was cleaned anyway, `muster restore --all` brings it back from its history, and `muster check` says so until it's done.
+
 ## A coding session, step by step
 
 1. **Read the queue's rules:** `.muster/README.md` in the repo's main checkout (one queue for every worktree), or `../tasks/README.md` from the repo where the queue hasn't moved into the repo yet.

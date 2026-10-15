@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { orderProjects, projectRows } from "./activity";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lastLabel, orderProjects, projectRows } from "./activity";
 import { api } from "./api";
 import { LimitCell } from "./CheckLimit";
 import { HomePath } from "./HomePath";
@@ -9,7 +9,7 @@ import { queueTotal } from "./lib";
 import { type Layout, layoutOf, type Pending, placeSteps, settle, shownLayout, sidebarGroups } from "./projectOrder";
 import { Swatches } from "./ProjectSwatches";
 import { RunControls } from "./Run";
-import type { Project, QueueInfo } from "./types";
+import type { HistoryState, Project, QueueInfo } from "./types";
 import { Button } from "./ui";
 
 /** Settings' Projects group (0036): every project with its label and category (0044), its colour
@@ -17,27 +17,46 @@ import { Button } from "./ui";
  *  queue and Add existing; the shown ones in that order. A folder under `home` shows as `~/…`. */
 export default function Projects({ queues, home, onChanged }: { queues: QueueInfo[]; home: string; onChanged: () => void }) {
   const [list, setList] = useState<Project[] | null>(null);
+  // Each local queue's history (0109), by key: read after the list, so the table never waits on it.
+  const [histories, setHistories] = useState<Record<string, HistoryState>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // The project whose prefix is being set, what's typed, and why the core refused it.
   const [prefixOf, setPrefixOf] = useState<string | null>(null);
   const [prefix, setPrefix] = useState("");
   const [prefixError, setPrefixError] = useState("");
 
+  // The histories are read again while the pane is open, so the line keeps up with agents'
+  // writes; a reply that comes after a newer one is dropped.
+  const historyReplies = useRef(newestOnly());
+  const loadHistories = useCallback(() => {
+    const n = historyReplies.current.ask();
+    // A history that can't be read shows no line; the rest of the table is unaffected.
+    api.projectHistories().then(
+      (l) => historyReplies.current.take(n) && setHistories(Object.fromEntries(l.map((h) => [h.key, h.history]))),
+      () => historyReplies.current.take(n) && setHistories({}),
+    );
+  }, []);
   const load = useCallback(async () => {
     try {
       setList(await api.projects());
     } catch (e) {
       setMsg({ ok: false, text: String(e) });
+      return;
     }
-  }, []);
+    loadHistories();
+  }, [loadHistories]);
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    const t = setInterval(loadHistories, HISTORY_EVERY_MS);
+    return () => clearInterval(t);
+  }, [loadHistories]);
 
-  const act = async (what: () => Promise<unknown>, done?: string) => {
+  const act = async <T,>(what: () => Promise<T>, done?: string | ((r: T) => string)) => {
     try {
       const r = await what();
-      if (r !== null && done) setMsg({ ok: true, text: done });
+      if (r !== null && done) setMsg({ ok: true, text: typeof done === "string" ? done : done(r) });
       await load();
       onChanged();
     } catch (e) {
@@ -148,7 +167,11 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
                   {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
                 </td>
               </tr>
-              <ProjectGateRow p={p} />
+              <ProjectGateRow
+                p={p}
+                history={histories[p.key]}
+                onFix={(fix) => void act(() => runFix(fix, p.key), (n) => fixDone(fix, p.label || p.name, n))}
+              />
             </Fragment>
           ))}
         </tbody>
@@ -265,20 +288,106 @@ export const PROJECT_COLUMNS = 9;
 /** A project's gate on a line under its row, with room to wrap like text; a column of it left the
  *  folder and the gate a word or a few letters wide. Its run command (0077) is the line under it,
  *  with Run, or Stop while it runs (0079). */
-export function GateRow({ name, gate, run, hidden }: { name: string; gate: string; run: string; hidden: boolean }) {
+export function GateRow({ name, gate, run, hidden, history, now, onFix }: { name: string; gate: string; run: string; hidden: boolean; history?: HistoryState; now?: number; onFix?: (fix: HistoryFix) => void }) {
   return (
     <tr className={hidden ? "gate-row dim" : "gate-row"}>
       <td colSpan={PROJECT_COLUMNS}>
         <div><b className="gate-label">Gate</b> <GateCell name={name} gate={gate} /></div>
         <div><b className="gate-label">Run</b> <RunCell name={name} run={run} />{run && <> <RunControls project={name} /></>}</div>
+        {history?.kept && (
+          <div><b className="gate-label">History</b> <HistoryCell h={history} now={now ?? Date.now() / 1000} name={name} onFix={onFix} /></div>
+        )}
       </td>
     </tr>
   );
 }
 
-/** The gate row of the project `p` as the core listed it: "" for a gate or run command it doesn't send. */
-export function ProjectGateRow({ p }: { p: Project }) {
-  return <GateRow name={p.name} gate={p.gate ?? ""} run={p.run ?? ""} hidden={p.hidden} />;
+/** The gate row of the project `p` as the core listed it: "" for a gate or run command it doesn't
+ *  send; a History line when its queue keeps one (0109). */
+export function ProjectGateRow({ p, history, onFix }: { p: Project; history?: HistoryState; onFix?: (fix: HistoryFix) => void }) {
+  return <GateRow name={p.name} gate={p.gate ?? ""} run={p.run ?? ""} hidden={p.hidden} history={history} onFix={onFix} />;
+}
+
+/** How often Settings › Projects reads the histories again while it's open. */
+export const HISTORY_EVERY_MS = 30_000;
+
+/** Numbers requests and keeps only the newest reply: `ask()` before a request, `take(n)` when its
+ *  reply comes, true when nothing newer has been shown yet. */
+export function newestOnly(): { ask: () => number; take: (n: number) => boolean } {
+  let asked = 0;
+  let shown = 0;
+  return {
+    ask: () => ++asked,
+    take: (n) => {
+      if (n <= shown) return false;
+      shown = n;
+      return true;
+    },
+  };
+}
+
+/** What fixes a history in one click: `muster restore --all`, `muster history commit`, or
+ *  `muster history removed --all` (files deleted on purpose). */
+export type HistoryFix = "restore" | "commit" | "removed";
+
+/** The core call behind each fix, for the project `key`; resolves to how many files it did. */
+export function runFix(fix: HistoryFix, key: string, a: Pick<typeof api, "restoreHistory" | "commitHistory" | "recordRemoved"> = api): Promise<number> {
+  if (fix === "restore") return a.restoreHistory(key);
+  if (fix === "commit") return a.commitHistory(key);
+  return a.recordRemoved(key);
+}
+
+/** What a fix of the project `name` did, from how many files it did (`n`). */
+export function fixDone(fix: HistoryFix, name: string, n: number): string {
+  const files = `${n} ${n === 1 ? "file" : "files"}`;
+  if (fix === "restore") return n === 0 ? `${name}: nothing was missing; its files match its history.` : `${name}: ${files} restored from its history.`;
+  if (fix === "commit") return n === 0 ? `${name}: nothing to commit; its history has every file.` : `${name}: ${files} committed to its history.`;
+  return n === 0 ? `${name}: nothing was missing.` : `${name}: ${files} recorded as deleted; older commits keep them (muster restore <path>).`;
+}
+
+/** A local queue's history (0109) in words: what's wrong first, with the command that fixes it,
+ *  in the warning colour and saying so in words; else when it last committed, quietly. `fixes`
+ *  are the buttons, the usual one first. `now` is seconds since 1970. */
+export function historyLine(h: HistoryState, now: number): { text: string; command: string; warn: boolean; fixes: HistoryFix[] } {
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  if (h.pending > 0)
+    return { text: `warning: ${n(h.pending, "write", "writes")} not committed${h.pendingError ? ` (${h.pendingError})` : ""}`, command: "muster history commit", warn: true, fixes: ["commit"] };
+  if (h.missing.length > 0)
+    return { text: `warning: ${n(h.missing.length, "file", "files")} missing since the last commit`, command: "muster restore --all", warn: true, fixes: ["restore", "removed"] };
+  if (!h.started) return { text: "not started yet: the queue's next write starts it", command: "", warn: false, fixes: [] };
+  const at = h.lastCommit === null ? null : Math.max(0, Math.floor((now - h.lastCommit) / 60));
+  const committed = `committed ${lastLabel(at, now)}`;
+  if (h.changed.length > 0)
+    return { text: `${committed}; ${n(h.changed.length, "file", "files")} changed outside muster since`, command: "muster history commit", warn: false, fixes: ["commit"] };
+  return { text: committed, command: "", warn: false, fixes: [] };
+}
+
+/** Each fix's button: its words, and what it does to the project `name` for a screen reader. */
+const FIX_BUTTON: Record<HistoryFix, { label: string; aria: (name: string) => string }> = {
+  restore: { label: "Restore", aria: (name) => `Restore ${name}'s queue files` },
+  commit: { label: "Commit", aria: (name) => `Commit ${name}'s queue files` },
+  removed: { label: "Keep deleted", aria: (name) => `Record ${name}'s missing queue files as deleted` },
+};
+
+/** The History line's value: the words, then the command when there's one to run, and a button
+ *  for each fix (Restore, Commit, Keep deleted) for the project `name` when the window can. */
+export function HistoryCell({ h, now, name, onFix }: { h: HistoryState; now: number; name: string; onFix?: (fix: HistoryFix) => void }) {
+  const l = historyLine(h, now);
+  return (
+    <>
+      <span className={l.warn ? "history-warn" : "meta"}>
+        {l.text}
+        {l.command && <>: <code>{l.command}</code></>}
+      </span>
+      {onFix &&
+        l.fixes.map((f) => (
+          <Fragment key={f}>
+            {" "}
+            <Button aria-label={FIX_BUTTON[f].aria(name)} onClick={() => onFix(f)}>{FIX_BUTTON[f].label}</Button>
+          </Fragment>
+        ))}
+    </>
+  );
 }
 
 /** A project's gate command (0023), shown as it is: a merge runs it in the task's worktree, and

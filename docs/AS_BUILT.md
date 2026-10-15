@@ -61,7 +61,7 @@ tool and the change logged in the task.
                  ▼                                        ▼
    Muster.app: React webview                  Claude Code sessions
    (board, pane, Waiting for you)             (capture, shapers, builders, QA)
-                 │ invoke: 66 Tauri commands      │ muster …, /mu, bin/task
+                 │ invoke: 71 Tauri commands      │ muster …, /mu, bin/task
                  ▼                                ▼
    ┌───────────────── one Rust crate (app/src-tauri) ──────────────────┐
    │  lib.rs (the app)                          cli.rs (`muster`)      │
@@ -90,10 +90,10 @@ The same picture as a table, part by part:
 |---|---|---|
 | The core | `app/src-tauri/src/*.rs` | Every rule: reading queues, changing tasks, the lock, INDEX.md, keys, claims, merges, reviews. One crate, `muster_lib` |
 | The app | `lib.rs` + `app/src/` (React 19, Vite, TypeScript) | The window: polls `state` every 2 s while visible, changes tasks only through the core's commands |
-| The command line | `cli.rs`, `help.rs`; `bin/muster` | `muster <command>`: the same binary as the app (`main.rs` picks), 46 commands |
+| The command line | `cli.rs`, `help.rs`; `bin/muster` | `muster <command>`: the same binary as the app (`main.rs` picks), 48 commands |
 | Scripts and hooks | `bin/` | The answer hook, the gate, the manifest, the `task` stand-in, the Python tests |
 | The personal layer | `~/playground/.claude` (not in this repo) | Links Muster's rule, hook and slash commands into every repo; the handoff and review engine |
-| The queue | `.muster/` or `<project>/tasks` | Task files, backlog notes, attachments, mail, reviews, INDEX.md |
+| The queue | `.muster/` or `<project>/tasks` | Task files, backlog notes, attachments, mail, reviews, INDEX.md; a local queue's history in `.git/muster/history.git` |
 | This Mac's settings | `~/Library/Application Support/ai.sweetlemon.muster/` | Which projects show and how, the lease and LIVE window, notifications, the helper |
 
 ### The core, module by module
@@ -104,13 +104,14 @@ here):
 | Module | Does |
 |---|---|
 | `main.rs` | The entry point: with arguments it's `muster` (`cli::main`), with none it's the app (`run`) |
-| `lib.rs` | The app: the Tauri builder, the 66 commands, the state poll, the hidden window's badge thread. Disk and git work runs in `spawn_blocking` |
+| `lib.rs` | The app: the Tauri builder, the 71 commands, the state poll, the hidden window's badge thread. Disk and git work runs in `spawn_blocking` |
 | `cli.rs` | `muster` on the command line: options, which queue (`--queue`, `$MUSTER_ROOT`, the folder's), each command |
 | `help.rs` | Every command's usage, options and examples; one source for `muster help`, the Help tab and `docs/manual/05-commands.md` |
 | `queue.rs` | Reading queues (both layouts), the `Task` and `State` types, stages, the lock (`with_lock`, `hold_lock`), `write_atomic`, questions and answers (file contract v1) |
 | `ops.rs` | Changing tasks: create, claim, pass, return, block, set fields, notes, attachments, reclaim. The rules both the app and the CLI use |
 | `layout.rs` | Where a layout keeps what: the old `<project>/tasks` and the repo's `.muster/`, and finding a repo's queue from any worktree |
 | `migrate.rs` | `muster migrate`: copy an old queue into a repo's `.muster/`, never moving the old one |
+| `history.rs` | A local queue's history (mu-109): a bare git at `<git common dir>/muster/history.git` with `.muster/` as its work tree, started by `init` and `migrate` (or the first write); `with_lock` commits the files each write changed, `<key>: <log line>`, never `mail/`, `INDEX.md` or `tasks.json`; writes it couldn't commit, `check`'s lines, `muster restore`, `muster history` and `history removed`; `git gc --auto` after each commit, outside the lock |
 | `index.rs` | INDEX.md, the generated master list, rewritten after every change; and the queue at a glance for this document (`--as-built`) |
 | `backlog.rs` | Backlog notes: add, shape (the brief), file as a task, drop |
 | `lenses.rs` | The shaping lenses (accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs): a project's skips with their reasons, read from `.muster/config.toml`'s `[shaping]` or an old queue's README front matter (written by hand, never by Muster) and their problems for `check`; a task's `**Lenses:**` lines; a VISION's `**Lenses needed:**` line. Read by `backlog.rs` (shape, file), `vision.rs` and `queue.rs` (problems) |
@@ -338,6 +339,7 @@ is in section 6.
 |---|---|---|
 | Queue files, stages, claims, leases, questions, file contract v1 | Built, tested | mu-2, mu-14 |
 | `.muster/` in the repo: layout, local mode, one queue for every worktree, `muster init`, `muster migrate` | Built, tested. Muster's own queue moved 2026-10-13; the other 19 projects' haven't | mu-5 |
+| A local queue's history: a commit per write, `muster restore`, `muster history`, `check`'s lines, Settings › Projects' History line, the layer's guard against `git clean -x` | Built, tested; on its branch, not on main. The guard is in the personal layer | mu-109 |
 | Committed mode with live state in `.git/muster/` | Not built (committed mode today has one copy, like local) | 0005's next step (a backlog note) |
 | Task keys (`mu-12`) | Built, tested | mu-33 |
 | INDEX.md, and the queue at a glance in this document | Built, tested | mu-18, mu-80 |
@@ -550,6 +552,16 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 - **An old-layout queue needs its folder in the layer's sandbox list** (`layer-settings.json`,
   `allowWrite`) and `link-personal-layer` re-run in that project's checkouts; otherwise its agents
   can read tasks but not claim, log or ask (`DOGFOOD.md` 41).
+- **A local queue's history keeps everything, for good** (mu-109): nothing is pruned, and
+  attachments (up to 25 MB each) stay in it as long as the queue does. It is packed: `git gc
+  --auto` runs after each commit, outside the queue's lock, and packs once there are about 6,700
+  loose objects (about 1,700 writes), in the background. A file deleted on purpose is recorded
+  with `muster history removed` (Settings: Keep deleted) and stays in the older commits (its id
+  isn't given again, and `restore` refuses a task file whose id is taken); there is
+  no way to erase it from the history short of removing `.git/muster/history.git`. A file changed outside
+  muster (a hand edit, Drover's answers) goes in only with the next `muster history commit`, and
+  `check` warns until then. The guard against `git clean -x` reads the command's words: a script
+  that runs it, or git through another program, isn't seen; `muster restore --all` is the undo.
 - **A committed queue has one copy too, for now:** every worktree writes the main checkout's
   `.muster/`, so every claim and pass rewrites tracked files there. That's why `init` and `migrate`
   write a local queue unless `--committed` is given.
