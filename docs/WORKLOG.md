@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Citation audit of the orchestration research (mu-9)
+**Did (Pouya, researcher):** a fresh agent checked eight key claims against their sources; five held,
+three were corrected in `docs/research/2026-10-14-orchestration.md`: the 2025-09-15 Usage Policy
+bullet already had the "identical or similar inputs" words (only "create multiple accounts" is new),
+status-line `rate_limits` also reaches Claude apps gateway users, and openai/codex#14728 was closed
+for lack of upvotes with GitHub's reason "completed". Gaps updated; no change to the plan.
+**Verified:** quotes matched against the fetched pages, the Claude Code changelog and codex source.
+
 ## 2026-10-14 — Research and a plan for orchestration (mu-9)
 **Did (Pouya, researcher):** compared the owner's orchestration brief with current orchestrators,
 frameworks, standards and the providers' terms (9 web-researcher workers); wrote

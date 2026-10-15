@@ -43,7 +43,7 @@ Use couldn't be fetched (403), so its clauses are quoted from the Open Terms Arc
 | "Anthropic does not permit third-party developers to offer Claude.ai login into their own applications, or to route requests through Free, Pro, or Max plan credentials on behalf of their users. Moreover, developers may not collect, store, or intermediate Claude.ai credentials or session tokens" | Legal and compliance [2]; the same in the Agent SDK overview [3] | A sold Muster can't read, store or pass on login tokens. It may start the user's own Claude Code, signed in by the user |
 | "Customers may not pay for, resell, or intermediate Claude usage on their end users' behalf. Each end user must authenticate with their own Anthropic API key, Claude subscription plan credentials, or 3P inference provider credential" | Legal and compliance [2] | The sellable shape: each user brings their own login, Muster never pools accounts |
 | "Resell, proxy, or otherwise provide access to Claude through unauthorized means, including services that route requests through consumer subscriptions or misrepresent the product or client being used" | Usage Policy, effective **2026-11-12** (published 2026-10-08, not yet in force; not in the 2025-09-15 version) [4][4a] | Aimed at services for others, but "route requests through consumer subscriptions" also describes an account pool |
-| "Coordinate malicious activity across multiple accounts, or create multiple accounts, to avoid detection, circumvent product guardrails, or generate identical or similar inputs that otherwise violate our Usage Policy" | Usage Policy, effective **2026-11-12** [4]. The 2025-09-15 version in force today has only "Coordinate malicious activity across multiple accounts to avoid detection or circumvent product guardrails" [4a] | From 2026-11-12, creating accounts to "circumvent product guardrails" is named outright. Usage limits are a guardrail on any plain reading |
+| "Coordinate malicious activity across multiple accounts, or create multiple accounts, to avoid detection, circumvent product guardrails, or generate identical or similar inputs that otherwise violate our Usage Policy" | Usage Policy, effective **2026-11-12** [4]. The 2025-09-15 version in force today reads "Coordinate malicious activity across multiple accounts to avoid detection or circumvent product guardrails or generating identical or similar inputs that otherwise violate our Usage Policy" [4a]; the new words are "or create multiple accounts" | From 2026-11-12, creating accounts to "circumvent product guardrails" is named outright. Usage limits are a guardrail on any plain reading |
 | "We only allow a maximum of three Claude accounts to be verified with the same phone number." | Support, 2026-08-17 [6] | The only numeric rule on several accounts. Holding two or three is not itself banned |
 | "Both Pro and Max plans have a five-hour session limit and a weekly limit." "These limits are shared across Claude and Claude Code" | Support, read 2026-10-14 [5][71] | The owner's chat and interactive sessions draw on the same pool as dispatched runs, so the reserve matters |
 
@@ -93,10 +93,12 @@ text on holding several accounts was found.
   `--append-system-prompt`, `--allowedTools` and `--permission-mode` are all available [11].
 - **Usage limits, readable.** Stream-json and the SDK emit a `rate_limit_event` whose status is
   `allowed`, `allowed_warning` or `rejected`, with `resets_at`, `rate_limit_type` (`five_hour`,
-  `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `overage`) and `utilization` (0.0–1.0). It is
+  `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `overage`) and `utilization` (0.0–1.0), all on the
+  event's nested `rate_limit_info`. It is
   "emitted when rate limit status changes" [13], and v2.1.295 improved its warnings [21]. Status-line
   scripts receive `rate_limits.five_hour` and `.seven_day` with `used_percentage` and `resets_at`, for
-  Pro and Max, after the first response [14]. A `StopFailure` hook fires with a `rate_limit` matcher
+  Pro and Max (or behind a Claude apps gateway with a spend limit), after the first response; each
+  window may be absent on its own [14]. A `StopFailure` hook fires with a `rate_limit` matcher
   when a turn ends on one [15]. Retries show as `system/api_retry` events with a `rate_limit`
   category [10].
 - **Don't use the hidden endpoint.** Some menu-bar meters call an undocumented
@@ -121,7 +123,8 @@ text on holding several accounts was found.
 - `codex exec --json` streams JSONL (`thread.started`, `turn.completed` with token usage, `item.*`,
   `turn.failed`, `error`) [23][28]. Usage has input, cached input, cache write, output and
   reasoning tokens, and no rate-limit field [28]. A request to add rate limits to exec output was
-  closed unimplemented on 2026-05-16 [26].
+  closed on 2026-05-16 without being built ("This feature hasn't received any upvotes, so closing";
+  GitHub records the reason as "completed") [26].
 - Rate limits are readable through the app server's `account/rateLimits/read` and
   `account/rateLimits/updated`, with `usedPercent`, `windowDurationMins` (300 for the 5-hour window)
   and `resetsAt` [25][27]. The app server is "experimental and isn't supported for production
@@ -174,7 +177,7 @@ product puts a human approval before merge, which Muster already has in Your che
   Both predate the official `rate_limits` field [14], which gives the real figure instead.
 - Anthropic doesn't say when a 5-hour window starts [71]; the weekly reset is a fixed time per
   account (support summary, not fetched verbatim) [5]. Use `resets_at` from the account itself.
-- Token cost varies up to 30× between runs of the same SWE-bench task, frontier models predict their
+- Total tokens vary up to 30× between runs of the same SWE-bench task, frontier models predict their
   own use with correlation up to 0.39 and underestimate it, and expert difficulty ratings match cost
   only weakly [72]. METR's time horizons measure human-equivalent task length, not agent tokens [73].
 - Evidence-based scheduling keeps each estimator's history of estimate ÷ actual and runs a Monte
@@ -229,10 +232,13 @@ product puts a human approval before merge, which Muster already has in Your che
   copy of the Europe terms (updated 2026-01-16) [31]; the US page wasn't read, nor the help article
   on Codex with ChatGPT plans. "No multiple-accounts sentence" in OpenAI's terms is a tool-reported
   absence.
-- No citation audit by a fresh agent was run (the session reached its context cap). The terms
-  quotes were fetched by two separate workers and agree; the rest rests on one worker each.
+- A fresh agent audited eight key claims on 2026-10-14 against the sources ([1], [2], [4], [4a],
+  [13], [14], [17], [26], [28], [72]): five held as written, three were corrected (the old Usage
+  Policy bullet, who gets status-line `rate_limits`, how #14728 was closed). Other claims rest on
+  one worker each.
 - Codex doc pages carry no dates; dates come from its changelog, releases and issues.
-- The status-line `rate_limits` field's first version (2.1.80) is from a search summary.
+- The status-line `rate_limits` field's first version (2.1.80) is from the Claude Code changelog;
+  the docs page names no version.
 - Gas Town's account rotation has no docs beyond its changelog lines [34].
 - Several pages were read through a summarising fetch, so a quote may be trimmed.
 - No prompt-injection attempts were found in fetched pages.
