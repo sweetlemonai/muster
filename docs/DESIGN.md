@@ -262,6 +262,21 @@ Visible doesn't mean loud. Controls are always there but never between the owner
   is spent only on what's waiting on the owner or broken.
 - **Lead with what matters** (title, stage, what's waiting); details below, still on screen.
 
+## Roles (task 0112)
+
+Settings › Agents › Roles is the last section of Agents: a list of the team's roles, a row each
+with its name (in bold, `dir="auto"` so a Persian name reads right to left) and, quieter, its id
+and slot count ("coder · 3 slots"). Selecting a row opens its fields inline under it, the row
+lit as Settings' selected group is (the selected tint and the accent bar); selecting it again closes them. No overlay, no modal. The open role
+shows one quiet line (title, stage, permission, stage moves) and then a labelled box per field
+with its Save and what it changes; a refusal shows in red under its field, as Claims' do.
+Existing tokens only.
+
+On cards and in the task pane, a claim made for a slot shows the slot's name where the holder's
+label shows today, same size and colour: "Kaveh-2 · main · 7b5e8856". It's text, read with the
+card, and the role's name now, so a rename shows everywhere at the next poll, as it does in
+`muster team`.
+
 ## The icon (task 0085)
 
 The owner's robot head with a check, in violet. One drawing everywhere: the app icon (light or

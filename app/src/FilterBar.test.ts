@@ -25,7 +25,7 @@ function bar(over: { query?: Partial<Query>; sortable?: boolean; views?: SavedVi
       tasks,
       query: { ...EMPTY_QUERY, ...over.query },
       onQuery: () => {},
-      ctx: dayContext(NOW),
+      ctx: dayContext(NOW, {}),
       sortable: over.sortable ?? false,
       views: over.views ?? [],
       onViews: () => {},

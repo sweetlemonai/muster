@@ -1,4 +1,4 @@
-import { boardColumn, holder, isBoardSort, priorityName, stageLabel, STAGES, stamp, type BoardSort } from "./lib";
+import { boardColumn, holder, isBoardSort, priorityName, stageLabel, STAGES, stamp, type BoardSort, type RoleNames } from "./lib";
 import { queryWords, searchWords, taskMatches, textMatches } from "./search";
 import { isBlocked } from "./blockWords";
 import { needsYou } from "./human";
@@ -14,14 +14,15 @@ export type Filters = Record<string, string[]>;
 export type Query = { search: string; filters: Filters; sort: BoardSort };
 export const EMPTY_QUERY: Query = { search: "", filters: {}, sort: "priority" };
 
-/** Days as "YYYY-MM-DD", local time: today, the Monday this week started, the 1st of the month. */
-export type DayContext = { today: string; week: string; month: string };
+/** Days as "YYYY-MM-DD", local time: today, the Monday this week started, the 1st of the month;
+ *  and the roles' names now (0112), so a holder filters and searches by the name it shows. */
+export type DayContext = { today: string; week: string; month: string; names: RoleNames };
 
-export function dayContext(now: number): DayContext {
+export function dayContext(now: number, names: RoleNames): DayContext {
   const d = new Date(now * 1000);
   const day = (x: Date) => stamp(x).slice(0, 10);
   const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
-  return { today: day(d), week: day(monday), month: day(new Date(d.getFullYear(), d.getMonth(), 1)) };
+  return { today: day(d), week: day(monday), month: day(new Date(d.getFullYear(), d.getMonth(), 1)), names };
 }
 
 export type Group = {
@@ -41,12 +42,12 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const same = (v: string) => v;
 
 /** A group of free values (types, tags, holders): those the tasks have, sorted. */
-function listGroup(id: string, label: string, get: (t: Task) => string[], chip = same, active = chip): Group {
+function listGroup(id: string, label: string, get: (t: Task, ctx: DayContext) => string[], chip = same, active = chip): Group {
   return {
     id,
     label,
-    present: (tasks) => [...new Set(tasks.flatMap(get).filter(Boolean))].sort(cmp),
-    has: (t, v) => get(t).includes(v),
+    present: (tasks, ctx) => [...new Set(tasks.flatMap((t) => get(t, ctx)).filter(Boolean))].sort(cmp),
+    has: (t, v, ctx) => get(t, ctx).includes(v),
     chip,
     active,
   };
@@ -96,7 +97,7 @@ export const GROUPS: Group[] = [
   listGroup("type", "Type", (t) => [t.kind]),
   fixedGroup("priority", "Priority", ["high", "normal", "low"], (t, v) => priorityName(t.priority) === v, same),
   listGroup("tag", "Tags", (t) => t.tags, (v) => `#${v}`),
-  listGroup("holder", "Held by", (t) => [holder(t)], same, (v) => `held by ${v}`),
+  listGroup("holder", "Held by", (t, ctx) => [holder(t, ctx.names)], same, (v) => `held by ${v}`),
   fixedGroup("state", "Flags", Object.keys(STATES), (t, v) => STATES[v]?.has(t) ?? false, (v) => STATES[v]?.label ?? v),
   dateGroup("captured", "Captured", "captured", (t) => t.captured.slice(0, 10)),
   dateGroup("changed", "Changed", "changed", changedDay),
@@ -115,7 +116,7 @@ export function applyQuery(tasks: Task[], q: Query, ctx: DayContext): Task[] {
   const words = queryWords(q.search);
   const active = GROUPS.map((g) => [g, q.filters[g.id] ?? []] as const).filter(([, v]) => v.length > 0);
   if (!words.length && !active.length) return tasks;
-  return tasks.filter((t) => active.every(([g, vals]) => vals.some((v) => g.has(t, v, ctx))) && taskMatches(t, words));
+  return tasks.filter((t) => active.every(([g, vals]) => vals.some((v) => g.has(t, v, ctx))) && taskMatches(t, words, ctx.names));
 }
 
 /** Backlog notes on the board under a query: matched by the search on their title and text,

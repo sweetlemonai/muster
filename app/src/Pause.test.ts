@@ -135,7 +135,7 @@ describe("what the pane says after a pause or resume", () => {
 });
 
 describe("finding paused tasks", () => {
-  const ctx = dayContext(NOW);
+  const ctx = dayContext(NOW, {});
   const tasks = [task({ ...paused, id: "0001" }), task({ id: "0002" })];
   it("the Flags filter has a Paused chip when a task is paused, and it keeps only those", () => {
     const flags = GROUPS.find((g) => g.id === "state")!;

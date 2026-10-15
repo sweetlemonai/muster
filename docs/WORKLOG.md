@@ -4,6 +4,83 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Role profiles and slot names: roles.toml, Kaveh-2 on cards, muster team (mu-112)
+**Did (Akbar_11, builder):** new `roles.rs`: `roles.toml` beside projects.json, written from the
+defaults (the brief's ten roles and Pouya) on first read and cached by modified time and size;
+slots (`--role` on claim, next and start hands out the lowest free one, held while a task in
+Building or Testing has it); `muster team [--json]` and `muster instructions <role>`. `session.rs`
+stamps a slot after the session and agent (`Kaveh-2 (main · session … · slot coder-2 · cc-hg)`),
+and one slot in one session is one holder whatever its label. The poll sends `roleNames`; cards,
+the pane and the built-by line show a slot by its role's name now (`whoLine`, `shownHolder`).
+Settings › Agents › Roles (`Roles.tsx`, `rolesData.ts`, `roles_info`/`set_role`). PROTOCOL.md,
+help (new Team group), the manual (concepts, Settings › Agents, for agents), DESIGN.md, AS_BUILT.md.
+**Decided:** a strict reader for the few TOML shapes the file needs instead of a `toml` crate (a
+new dependency needs the owner's yes; config.toml is hand-read too). Stamps keep the role id and
+number in a `slot` part rather than relying on the label, so a rename needs no migration and an
+old stamp reads as before. Role ids: shaper, architect, designer, coder, tester, security,
+performance, accessibility, release, lead, researcher.
+**Verified:** roles 12, session 4 new, cli 2 new (cargo); Roles.test.ts 9 (Vitest); the debug
+binary on a scratch queue in `$TMPDIR` (claim --role, team, rename, a bad key); Roles rendered
+light and dark in headless Chromium; gate below.
+**Open:** "a live run holds a slot" waits for the runner (plan 2.1): today only claims hold one.
+Two sessions asking `--role` at the same moment can get the same number; the dispatcher (2.2)
+hands slots out one at a time. Notifications name no holder, so nothing changed there.
+**Fixed (Akbar_15, round 1):** R1: `--role` handed one session a new slot per claim, so it could
+hold two Building tasks; `role_label` (now in `run_on`) gives a session the slot it already holds
+in Building or Testing (by session and agent), so a second claim is refused as any is and a re-run
+of `start` resumes; another role's slot in the same session is refused; the branch's test that
+asserted two holds asserts the refusal. R3: a pass into Testing or a takeover under the slot's old
+name after a rename dropped the slot; `session::keep_slot` carries the claim's slot. R2: History,
+the Next step's held and stale notes, the table, the graph and Recently finished's built by show the
+slot's name now (`nameOf`, `RoleNamesContext`). R4: every field hand-set reads back through
+render/parse and survives a Settings edit. R5: `start` and `next --role` tested in a git fixture,
+re-run included. Nits: R6 title and prompt refuse bidi controls and U+2028/2029; R7 an open list is
+scanned once per line and a refused file is cached; R8 the manual says `--role` is for roles that
+claim; R9 `shownLabel` reads only the roles' own keys; R10 the bad-file table covers every bound.
+**Fixed (Akbar_18, round 2):** R11: one session got a second slot by a takeover, `--as` another
+slot's name, or `--as` an old name after a rename, because the rule lived only in `role_label`.
+It's in the core now, under the queue lock: `holding()` counts a Building claim of the caller's
+session and agent as the caller's when either stamp has a slot, and claims and takeovers are
+refused while the session holds another slot in Building or Testing (`ops::other_slot`). An old
+slot name is stamped with the slot the session holds under it (`stamped_who`). R12: a send-back
+from Testing gave the claim to the bare label, dropping session and slot; `return_task` keeps the
+builder's exact stamp when it has a slot. R13: the Held by chips, the stage track's title and the
+move toast, search and the table's who sort take the role names, and the `= {}` defaults are gone,
+so a missed call site fails the typecheck. R14: a cache hit is observable (a per-thread cache and a
+parse counter in tests), and the test fails when a refusal isn't cached.
+**Decided:** a plain label beside a slot's claim in one session is refused too (one session holds
+one Building task), and two plain labels in one session stay two holders, as on main.
+**Verified:** cli 6 new, session 1 new (cargo); Roles.test.ts 4 new (Vitest); mutations of
+`holding`, `other_slot` (claim and takeover), the send-back and the R14 cache each fail a test; gate below.
+**Fixed (Akbar_20, round 3):** R15: one slot per session held only within a queue, since the
+checks read `tasks_now(root)`; `ops::slot_refusal` (replacing `other_slot`) reads the other queues
+too (`ops::elsewhere`, the ones `muster team` reads). R16: no write checked that a slot was free of
+other sessions, so `--as` a held slot's name, or a return from Your check, gave one slot two
+holders; claims as a slot another session holds are refused, and a task coming back to a holder
+(return to Building or Testing, a pass into Testing) after its slot went elsewhere comes back by its
+exact session without the slot (`ops::unless_taken`, `session::without_slot`); a stamp without a
+slot part holds none (`roles::slot_of_holder` reads a label only without a stamp). R17: a takeover
+re-runs `holding` and `slot_refusal` as the slot `keep_slot` carries on, and `log_unblocked`
+releases a freed claim beside a slot's in any queue (`one_session_slot`). R18: check-ins, comments,
+the Work rows and question askers show the slot's name now: the core sends `slot` on Work rows
+(`work::SessionRef`) and questions (`queue::asker_slot`, from a stamp of the asker's label, session
+and agent); `slotLabel` and `askerShown` in lib.ts. mu-97's holder ribbon, merged meanwhile, names
+the slot too (`nameOf`), and its tooltip the full stamp.
+**Decided:** the other queues are read without their locks, as `muster team` reads them, so two
+claims racing in two queues can still both pass; the dispatcher (plan 2.2) serialises claims.
+**Verified:** cli 5 new, session, work and queue 1 new each (cargo); Roles.test.ts 5 new (Vitest);
+mutants killed: no other queues, no taken check, no strip on return, label fallback kept, the
+pass keeping the slot, no takeover re-check, unblock by `same_holder` only and without other
+queues, the cross-queue Building check, the asker's label and agent, Work rows' slot, and each of
+the four views and the ribbon on the raw label; gate below.
+**Open:** a holder brought back without its slot keeps its label, so two cards can read Kaveh-1
+(one of them holding no slot) until the returned task is passed on.
+**Fixed (Akbar_23, R19):** a task back in Building without its slot couldn't be taken over: the
+successor's `--as Kaveh-1` is stamped with coder-1, which another session held, so `slot_refusal`
+refused it. `takeover_task` drops the slot from the successor (`session::without_slot`) when the
+old claim has none. **Verified:** cli 1 new (`a_task_back_without_its_slot_is_taken_over_without_it`,
+fails without the fix); slot and takeover tests green; gate below.
+
 ## 2026-10-14 — projects.json byte-identical test fills every map, run and your_check too (mu-160)
 **Did (Akbar_21, builder):** `folding_and_unfolding_a_heading_leaves_projects_json_byte_identical`
 also fills `run` (`bin/run`) and `your_check` (a mix of `Off` and `At(n)`) for its 24 queues, and

@@ -107,7 +107,7 @@ describe("the Commands page", () => {
   });
   it("is grouped as the spec says", () => {
     expect(page("05-commands.md").sections.map((s) => s.title)).toEqual([
-      "Tasks", "Stages", "Claims", "Review", "Questions", "Backlog", "Levels", "Projects and the queue", "On every command", "Inside a Claude Code session",
+      "Tasks", "Stages", "Claims", "Review", "Team", "Questions", "Backlog", "Levels", "Projects and the queue", "On every command", "Inside a Claude Code session",
     ]);
   });
 });

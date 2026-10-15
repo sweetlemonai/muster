@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { claimant, fmtMinutes, fmtTokens, stageLabel, stamp, stampMinutes } from "./lib";
+import { useContext, useEffect, useState, type ReactNode } from "react";
+import { fmtMinutes, fmtTokens, nameOf, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
 import { siblingKey, taskKey } from "./taskKey";
@@ -9,6 +9,7 @@ import { criteriaSection, fmtWall, IMAGE, timeInWork } from "./paneData";
 import type { Criterion, Task } from "./types";
 import { StatusPill } from "./ui";
 import { acceptWords, criterionWords, type NamedView } from "./yourCheck";
+import { RoleNamesContext } from "./settingsData";
 
 /** The task pane's left column: what this stage needs. Building and Testing: the work so far.
  *  Your check: what you're accepting (mu-78) with its Run (mu-79), the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
@@ -224,6 +225,7 @@ function History({ task }: { task: Task }) {
 }
 
 function HistoryList({ task }: { task: Task }) {
+  const names = useContext(RoleNamesContext);
   if (task.stageHistory.length === 0) return <p className="meta small">No stage moves in the log yet.</p>;
   return (
     <ol className="history">
@@ -231,7 +233,7 @@ function HistoryList({ task }: { task: Task }) {
         <li key={`${s.at}-${i}`}>
           <span className="h-when">{s.at.slice(5)}</span>
           <span>
-            <b>{stageLabel(s.from)} → {stageLabel(s.to)}</b> <span className="meta">· {claimant(s.who)}</span>
+            <b>{stageLabel(s.from)} → {stageLabel(s.to)}</b> <span className="meta" dir="auto">· {nameOf(s.who, names)}</span>
           </span>
         </li>
       ))}

@@ -13,7 +13,7 @@ export const SETTINGS_GROUPS: { id: SettingsGroup; label: string; holds: string;
   { id: "appearance", label: "Appearance", holds: "Theme, accent, text size, cards", topic: "appearance" },
   { id: "display", label: "Display", holds: "ADHD, Standard or Focus: how much shows", topic: "display" },
   { id: "projects", label: "Projects", holds: "The queues Muster shows", topic: "projects" },
-  { id: "agents", label: "Agents", holds: "The helper, the claim lease, LIVE", topic: "agents" },
+  { id: "agents", label: "Agents", holds: "The helper, the claim lease, LIVE, roles", topic: "agents" },
   { id: "notifications", label: "Notifications", holds: "A Mac notification when something new waits for you", topic: "notifications" },
   { id: "about", label: "About", holds: "Version, settings, what it reads", topic: "about" },
 ];
@@ -26,6 +26,10 @@ export const DEFAULT_MACHINE: MachineSettings = { leaseMinutes: LEASE_SECS / 60,
 /** The settings the board judges by: the window provides the ones from the last poll; the
  *  defaults before the first. */
 export const Machine = createContext<MachineSettings>(DEFAULT_MACHINE);
+
+/** Each role's name by its id (0112), from the last poll: what a slot in a stamp (`slot coder-2`)
+ *  shows as on cards and in the pane. Empty before the first poll and when roles.toml is refused. */
+export const RoleNamesContext = createContext<Readonly<Record<string, string>>>({});
 
 /** The state's settings, or the defaults when the core sent none (an older core). */
 export function machineOf(s: { settings?: Partial<MachineSettings> } | null | undefined): MachineSettings {

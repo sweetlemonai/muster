@@ -53,6 +53,32 @@ pub struct Question {
     /// Its options, when it was asked with them (0049, `choices::read`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choices: Option<crate::choices::Choices>,
+    /// The role slot its asker acts as (0112, `coder-2`), so the window names it by the role's
+    /// name now: from a stamp in the task of the asker's label, session and agent (`asker_slot`).
+    /// "" when none says.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub slot: String,
+}
+
+/// The role slot a question's asker acts as (0112): its asker part is `<label>, session <id>[ ·
+/// agent <agent>], <stamp>`, and the slot is the one a stamp in `stamps` of that label, session
+/// and agent carries. "" when the asker names no session or no such stamp has a slot.
+fn asker_slot<'a>(asker: &str, stamps: impl IntoIterator<Item = &'a str>) -> String {
+    let mut parts = asker.split(", ");
+    let label = parts.next().unwrap_or_default();
+    let Some(from) = parts.find_map(|p| p.strip_prefix("session ")) else {
+        return String::new();
+    };
+    let (id, agent) = from.split_once(" · agent ").unwrap_or((from, ""));
+    stamps
+        .into_iter()
+        .find_map(|w| match crate::session::split(w) {
+            (l, Some(s)) if l == label && s.id == id && s.agent == agent && !s.slot.is_empty() => {
+                Some(s.slot)
+            }
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 /// One stage change from the log: `- <at> <who>: stage <from> → <to>[ (<detail>)]`.
@@ -813,6 +839,10 @@ pub struct State {
     /// The per-machine settings the state was judged by (0036): the lease for the quiet claims,
     /// and the LIVE window the app's live marks use.
     pub settings: crate::settings::Settings,
+    /// Each role's name by its id (0112), from roles.toml, so a slot in a stamp (`slot coder-2`)
+    /// shows as the role's name now (`Kaveh-2`). Empty when the file is refused: stamps then
+    /// show their labels as written.
+    pub role_names: std::collections::BTreeMap<String, String>,
 }
 
 pub fn now_secs() -> u64 {
@@ -1094,6 +1124,7 @@ fn parse_question(item: &str) -> Question {
         text,
         escalated: item.contains("Escalated to owner"),
         owner_answered: item.contains("**A (owner"),
+        slot: String::new(),
     }
 }
 
@@ -1154,6 +1185,19 @@ pub fn parse_task(
                 .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()))
         .then(|| d.to_string())
     };
+    // Each asker's slot, from the claim, the holder and the who of each log line.
+    let mut questions = questions;
+    let (claim, held) = (get("claimed-by"), get("held-by"));
+    for q in &mut questions {
+        let whos = log_lines.iter().filter_map(|l| {
+            let (who, _) = l.get(2..)?.get(17..)?.split_once(": ")?;
+            Some(who)
+        });
+        q.slot = asker_slot(
+            &q.asker,
+            [claim.as_str(), held.as_str()].into_iter().chain(whos),
+        );
+    }
     let block_history = block_history(&log_lines);
     let done_at = done_at(&log_lines);
     let captured_at = log_lines
@@ -3152,6 +3196,22 @@ mod tests {
     }
 
     #[test]
+    fn a_questions_asker_carries_the_slot_its_stamps_act_as() {
+        let text = "---\nid: 0001\nstage: building\nclaimed-by: Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)\n---\n\n# T\n\n## Questions\n\n- [ ] **Q1 (Kaveh-2, session 7b5e8856, 2026-10-14 20:00):** Which port?\n- [ ] **Q2 (akbar, session 7b5e8856, 2026-10-14 20:01):** And?\n- [ ] **Q3 (Sohrab-1, session 1c6af0d9 · agent a1b2c3d4, 2026-10-14 20:02):** Safe?\n- [ ] **Q4 (Kaveh-2, session 0f0f0f0f, 2026-10-14 20:03):** Mine?\n- [ ] **Q5 (Sohrab-1, session 1c6af0d9, 2026-10-14 20:04):** Lead?\n\n## Log\n- 2026-10-14 19:00 Sohrab-1 (wt · session 1c6af0d9 · agent a1b2c3d4 · slot security-1): check-in · on it\n";
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("0001-t.md");
+        let t = parse_task("", d.path(), "", &path, text, 0).unwrap();
+        let slots: Vec<&str> = t.questions.iter().map(|q| q.slot.as_str()).collect();
+        // The claim's slot; a plain label of the same session isn't it; a teammate's from the
+        // log, by its agent; another session's label isn't the claim's; nor is the lead its
+        // teammate under the same label.
+        assert_eq!(slots, ["coder-2", "", "security-1", "", ""]);
+        let json = serde_json::to_value(&t.questions).unwrap();
+        assert_eq!(json[0]["slot"], "coder-2");
+        assert!(json[1].get("slot").is_none());
+    }
+
+    #[test]
     fn needs_owner_is_a_question_for_them_your_check_or_a_block_on_you_or_by_a_permission() {
         let q = |ticked: bool, escalated: bool| Question {
             n: Some(1),
@@ -3161,6 +3221,7 @@ mod tests {
             escalated,
             owner_answered: false,
             choices: None,
+            slot: String::new(),
         };
         // 0022's: an open question escalated to the owner, and Your check.
         assert!(needs_owner(&[q(false, true)], "building", ""));

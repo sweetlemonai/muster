@@ -66,7 +66,7 @@ describe("Settings (0036)", () => {
     expect(list.match(/aria-current="page"/g)).toHaveLength(1);
     expect(list).toMatch(/aria-current="page"[^>]*>Agents</);
     // Each says what it holds, so nothing is behind a click to find out.
-    expect(text(list)).toContain("Agents The helper, the claim lease, LIVE");
+    expect(text(list)).toContain("Agents The helper, the claim lease, LIVE, roles");
   });
 
   it("heads each group with its name, what it holds and a ? into the manual", () => {

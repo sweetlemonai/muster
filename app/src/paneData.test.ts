@@ -112,30 +112,30 @@ describe("wall-clock time, in 24-hour days (the estimate stays in 8-hour agent d
 describe("a move on the track", () => {
   const held = task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" });
   it("out of Building held by someone else releases their claim: said so, and no Undo", () => {
-    expect(releasedBy(held, "testing")).toBe("drover/main");
-    expect(trackMove(held, "testing")).toEqual({ done: "Put in Testing. drover/main's claim on Building was released.", undo: undefined });
+    expect(releasedBy(held, "testing", {})).toBe("drover/main");
+    expect(trackMove(held, "testing", {})).toEqual({ done: "Put in Testing. drover/main's claim on Building was released.", undo: undefined });
   });
   it("any other move offers Undo back to where it was", () => {
-    expect(releasedBy(task({ stage: "building", claimedBy: "owner" }), "testing")).toBe("");
-    expect(trackMove(task({ stage: "building", claimedBy: "owner" }), "testing")).toEqual({ done: "Put in Testing.", undo: { back: "building", to: "testing" } });
-    expect(releasedBy(task({ stage: "ready", claimedBy: "wt-a" }), "shaping")).toBe("");
-    expect(trackMove(task({ stage: "ready", claimedBy: "wt-a" }), "shaping").undo).toEqual({ back: "ready", to: "shaping" });
-    expect(releasedBy(held, "building")).toBe("");
+    expect(releasedBy(task({ stage: "building", claimedBy: "owner" }), "testing", {})).toBe("");
+    expect(trackMove(task({ stage: "building", claimedBy: "owner" }), "testing", {})).toEqual({ done: "Put in Testing.", undo: { back: "building", to: "testing" } });
+    expect(releasedBy(task({ stage: "ready", claimedBy: "wt-a" }), "shaping", {})).toBe("");
+    expect(trackMove(task({ stage: "ready", claimedBy: "wt-a" }), "shaping", {}).undo).toEqual({ back: "ready", to: "shaping" });
+    expect(releasedBy(held, "building", {})).toBe("");
   });
   it("out of Shaping held by a session releases the shaper's claim too (0097), as the core does", () => {
     const shaping = task({ stage: "shaping", claimedBy: "shapour (main · session 1137d98f · cc-mg)" });
-    expect(releasedBy(shaping, "ready")).toBe("shapour");
-    expect(trackMove(shaping, "ready")).toEqual({ done: "Put in Ready. shapour's claim on Shaping was released.", undo: undefined });
-    expect(releasedBy(shaping, "shaping")).toBe("");
-    expect(releasedBy(task({ stage: "shaping", claimedBy: "owner" }), "backlog")).toBe("");
-    expect(releasedBy(task({ stage: "shaping" }), "ready")).toBe("");
+    expect(releasedBy(shaping, "ready", {})).toBe("shapour");
+    expect(trackMove(shaping, "ready", {})).toEqual({ done: "Put in Ready. shapour's claim on Shaping was released.", undo: undefined });
+    expect(releasedBy(shaping, "shaping", {})).toBe("");
+    expect(releasedBy(task({ stage: "shaping", claimedBy: "owner" }), "backlog", {})).toBe("");
+    expect(releasedBy(task({ stage: "shaping" }), "ready", {})).toBe("");
   });
   it("Release says where a quiet claim goes: Building back to Ready, Shaping stays, unheld (0097)", () => {
     expect(releaseWords("building").done).toBe("Released: back in Ready.");
     expect(releaseWords("shaping").done).toBe("Released: still in Shaping, nobody holds it.");
   });
   it("from a stage the window doesn't know: no Undo", () => {
-    expect(trackMove(task({ stage: "reviewing" }), "ready")).toEqual({ done: "Put in Ready.", undo: undefined });
+    expect(trackMove(task({ stage: "reviewing" }), "ready", {})).toEqual({ done: "Put in Ready.", undo: undefined });
   });
 });
 

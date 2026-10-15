@@ -708,6 +708,56 @@ delete a task file.
 Coders never ask the owner directly about a task. They ask in the task file. Capture answers
 or escalates. That way every answer lands in the file, where the next session finds it.
 
+### Role profiles and slots (Muster 0112, 2026-10-14)
+
+The team's roles each have a name: Shapour (shaper), Arash (architect), Dariush (designer),
+Kaveh (coder), Kia (tester), Sohrab (security), Parviz (performance), Azadeh (accessibility),
+Mehran (release), Leila (lead) and Pouya (researcher). Their profiles are in `roles.toml` beside
+the app's `projects.json`, written from Muster's defaults on first read: one table per role, keyed
+by its id (`[coder]`), which never changes, with `name`, `title`, `stage`, `prompt`, `tools`,
+`permission`, `models`, `max_turns`, `max_budget_usd`, `context_cap`, `workers`, `slots`, `moves`,
+`providers` and `writes`. A table only overrides what it names, so renaming Kaveh is one line.
+An unknown table or key, a value of the wrong shape, out of bounds or off its allowlist (tools,
+permission profiles, models, providers, stages) refuses the file, naming its line and key; every
+command that reads it says so. Settings › Agents › Roles edits the same file.
+
+- **Slots.** A role runs in numbered slots, `<name>-<n>`: Kaveh-1, Kaveh-2, up to its `slots`.
+  `muster claim <id> --role coder` (and `next`, `start`) hands out the lowest free one: the claim
+  is made as `Kaveh-2`, and the stamp carries the slot after the session and agent:
+  `Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)`. A slot is held while a task in
+  Building or Testing, in any queue Muster knows, has a holder with it (the stamp's slot; a
+  label that names one only without a stamp, since a session's label that names a slot is stamped
+  with it); `--role` is refused when every slot is held, beside `--as`, and with
+  `--takeover` (a successor keeps the slot's name with `--as`). Two sessions asking at the same
+  moment can be handed the same number; the dispatcher (plan 2.2) hands slots out one at a time.
+- **Acting as a slot.** From the claim on, use `--as Kaveh-2` or `--as coder-2`: one slot in one
+  session is one holder whatever its label says, so the holder stays itself after a rename, and a
+  name from before a rename (`--as Kaveh-2`, now کاوه) is stamped with the slot the session holds.
+- **One session is one slot,** in every queue Muster knows, enforced under the lock of the queue
+  being changed (the other queues are read as `muster team` reads them). While a session (and
+  agent) holds a Building task with a slot, any claim, `next` or takeover of a second one by it is
+  refused, whatever label it acts as (another slot's name, or a plain label beside a slot's claim,
+  and the other way round) and whichever queue it's in; while it holds a slot in Testing, it can't
+  claim or take over as another slot. A takeover is checked as the slot it carries on. When a
+  dependency is merged and frees a slot's claim (or a plain one) while its session holds another
+  Building task beside a slot, in any queue, the freed one goes back to Ready.
+- **A slot is one session's.** A claim or `next` as a slot (`--as Kaveh-1`, `--as coder-1`) that
+  another session holds in Building or Testing, in any queue, is refused; a takeover carries the
+  slot on from the claim it succeeds. A send-back from Testing returns the task to its builder's
+  exact stamp when that carries a slot, so the slot stays held; a successor session takes it over
+  with `--takeover` as for any claim. A task coming back to a holder (a return to Building or
+  Testing, a pass into Testing) after its slot went to another session comes back to that holder
+  by its exact session, without the slot: the stamp keeps its label but holds no slot. A successor
+  takes such a task over without a slot too (`--takeover --as Kaveh-1`), so it isn't refused for
+  the slot the label names when another session holds that now.
+- **Names at read time.** Stamps store the role id and the number, never the display name, so a
+  rename needs no migration: cards, the task pane and `muster team` show the role's name now
+  (`کاوه-2` after a rename to کاوه). A stamp without a slot part reads as before.
+- **`muster team [--json]`** lists every role with its name, models, caps and slots, who holds
+  each (task and holder) and the next free one. **`muster instructions <role>`** prints a role's
+  brief for a prompt to load: what it does, its stage moves, tools, caps and the rules here it
+  keeps.
+
 ## Layout: the folder is the status
 
 The old layout, `<project>/tasks`. In a repo's `.muster/` there are no status folders: task files

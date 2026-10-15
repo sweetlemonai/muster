@@ -557,6 +557,7 @@ mod tests {
             escalated,
             owner_answered: false,
             choices: None,
+            slot: String::new(),
         }
     }
 

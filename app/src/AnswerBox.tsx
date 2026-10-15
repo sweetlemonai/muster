@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { api } from "./api";
-import { stamp } from "./lib";
+import { askerShown, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PickOne, { answeredText } from "./PickOne";
+import { RoleNamesContext } from "./settingsData";
 import { pressed } from "./shortcuts";
 import type { Question, Task } from "./types";
 import { Badge, Button } from "./ui";
@@ -12,6 +13,7 @@ import { Badge, Button } from "./ui";
  *  Waiting for you doesn't pull the lazy task pane into the startup chunk. `boxId` is the pane's
  *  only (`answerId`, what a block's Answer focuses), so two open boxes never share an id. */
 export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: { task: Task; q: Question; onChanged: () => void; keys?: Map<string, string>; onLink?: (href: string) => void; boxId?: string }) {
+  const names = useContext(RoleNamesContext);
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
@@ -32,7 +34,7 @@ export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: {
   return (
     <div className={`answer${q.escalated ? " needs-you" : ""}`}>
       <p>
-        <b>Q{q.n}</b> <span className="asker">{q.asker}</span>
+        <b>Q{q.n}</b> <span className="asker" dir="auto">{askerShown(q, names)}</span>
         {q.escalated && <Badge variant="warn">for you</Badge>}
       </p>
       <Markdown text={q.choices ? q.choices.question : q.text} keys={keys} onLink={onLink} />

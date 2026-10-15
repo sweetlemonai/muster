@@ -10,6 +10,10 @@
 //! A teammate (a subagent) shares its lead's session id, so its stamp also carries its agent id
 //! (task 0090): `asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)`. A stamp without an
 //! agent part is the lead's, so a lead and each of its teammates are different holders.
+//!
+//! A claim made for a role's slot (task 0112) carries the slot's role id and number after the
+//! session and agent: `Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)`. Views show the
+//! role's name from `roles.toml` at read time, so renaming Kaveh renames every stamp that has one.
 
 use std::path::Path;
 
@@ -42,6 +46,8 @@ pub struct Stamp {
     pub id: String,
     /// The agent id, "" for a lead's stamp.
     pub agent: String,
+    /// The role slot (0112), `coder-2`; "" when the claim wasn't made for one.
+    pub slot: String,
     pub account: String,
 }
 
@@ -218,6 +224,11 @@ fn says(label: &str, part: &str) -> bool {
 /// `label` as the session acts: the label (any stamp typed into it replaced) with the session's
 /// stamp after it. Without a session, the label as is.
 pub fn stamped(label: &str, session: Option<&Session>) -> String {
+    stamped_slot(label, session, None)
+}
+
+/// `stamped`, with the role slot the label acts as (0112, `coder-2`) after the session and agent.
+pub fn stamped_slot(label: &str, session: Option<&Session>, slot: Option<&str>) -> String {
     // No session, or a blank label (refused by actor, never made valid by a stamp): as is.
     let Some(s) = session.filter(|_| !label.trim().is_empty()) else {
         return label.to_string();
@@ -233,6 +244,9 @@ pub fn stamped(label: &str, session: Option<&Session>) -> String {
     if let Some(agent) = &s.agent {
         parts.push(format!("agent {agent}"));
     }
+    if let Some(slot) = slot.filter(|x| crate::roles::Slot::parse(x).is_some()) {
+        parts.push(format!("slot {slot}"));
+    }
     if !s.account.is_empty() {
         parts.push(format!("cc-{}", s.account));
     }
@@ -240,8 +254,8 @@ pub fn stamped(label: &str, session: Option<&Session>) -> String {
 }
 
 /// A holder as (label, stamp): the stamp is a last ` (… · session <8 hex> …)` group in exactly
-/// the shape `stamped` writes, an `agent <8 hex>` part right after the session when it has one.
-/// Anything else (a hand-typed `(drover/main, session 349bc9c3)`) is part of the label.
+/// the shape `stamped` writes, an `agent <8 hex>` part right after the session when it has one,
+/// then a `slot <role>-<n>` part when it has one (0112). Anything else (a hand-typed `(drover/main, session 349bc9c3)`) is part of the label.
 pub fn split(who: &str) -> (&str, Option<Stamp>) {
     let parsed = || -> Option<(usize, Stamp)> {
         let at = who.rfind(" (")?;
@@ -262,6 +276,15 @@ pub fn split(who: &str) -> (&str, Option<Stamp>) {
                     return None;
                 }
                 stamp.agent = agent.to_string();
+            } else if let Some(slot) = part.strip_prefix("slot ").filter(|_| !stamp.id.is_empty()) {
+                // Once, after the session (and agent), before the account.
+                if !stamp.slot.is_empty()
+                    || !stamp.account.is_empty()
+                    || crate::roles::Slot::parse(slot).is_none()
+                {
+                    return None;
+                }
+                stamp.slot = slot.to_string();
             } else if stamp.id.is_empty() {
                 if !is_token(part) || stamp.parts.len() == 2 {
                     return None;
@@ -290,23 +313,92 @@ pub fn split(who: &str) -> (&str, Option<Stamp>) {
 
 /// Is `a` the same holder as `b`? The same text; or the same label, with sessions that don't
 /// differ (one without a session matches any, as every claim did before stamps) and the same
-/// agent (none on both is the lead; a teammate is never its lead, nor another teammate).
+/// agent (none on both is the lead; a teammate is never its lead, nor another teammate). Two
+/// stamps of one role slot (0112) in one session are one holder whatever their labels say, so a
+/// slot acting as `coder-2` after a claim as `Kaveh-2`, or after a rename, is still itself.
 pub fn same_holder(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
     let ((la, sa), (lb, sb)) = (split(a), split(b));
-    la == lb
+    let one_slot =
+        matches!((&sa, &sb), (Some(x), Some(y)) if !x.slot.is_empty() && x.slot == y.slot);
+    (la == lb || one_slot)
         && match (sa, sb) {
             (Some(x), Some(y)) => x.id == y.id && x.agent == y.agent,
             _ => true,
         }
 }
 
+/// One session (and agent) is one role slot (0112): two stamps of the same session and agent
+/// where either acts as a slot are one holder for one claim per holder, whatever their labels
+/// say (`Kaveh-1 (… slot coder-1)` and `Kaveh-2 (… slot coder-2)`, or a plain `akbar (…)`).
+pub fn one_session_slot(a: &str, b: &str) -> bool {
+    match (split(a).1, split(b).1) {
+        (Some(x), Some(y)) => {
+            x.id == y.id && x.agent == y.agent && (!x.slot.is_empty() || !y.slot.is_empty())
+        }
+        _ => false,
+    }
+}
+
+/// The role slot a holder's stamp acts as (0112, `coder-2`); empty without one.
+pub fn slot_of(who: &str) -> String {
+    split(who).1.map(|s| s.slot).unwrap_or_default()
+}
+
 /// The session and agent of a holder's stamp, for telling two holders' sessions apart whatever
 /// their labels; None without a stamp.
 pub fn session_of(who: &str) -> Option<(String, String)> {
     split(who).1.map(|s| (s.id, s.agent))
+}
+
+/// `who` with the role slot of `from`'s stamp (0112), for a holder that's rewritten: the pass
+/// into Testing from the claim, a takeover from the old claim. Carried when `who` is a stamp
+/// without a slot and is `from`'s holder or its successor under the same label, so a slot acting
+/// as its old name after a rename (`Kaveh-2`, now کاوه) still holds it. Anything else as is.
+pub fn keep_slot(from: &str, who: &str) -> String {
+    let (from_label, from_stamp) = split(from);
+    let (label, stamp) = split(who);
+    match (from_stamp, stamp) {
+        (Some(f), Some(mut w))
+            if !f.slot.is_empty()
+                && w.slot.is_empty()
+                && (label == from_label || same_holder(from, who)) =>
+        {
+            w.slot = f.slot;
+            written(label, &w)
+        }
+        _ => who.to_string(),
+    }
+}
+
+/// `who` without its role slot (0112): the same label and stamp, its session and account kept, for
+/// a holder coming back to a task after its slot went to another session.
+pub fn without_slot(who: &str) -> String {
+    match split(who) {
+        (label, Some(mut s)) if !s.slot.is_empty() => {
+            s.slot.clear();
+            written(label, &s)
+        }
+        _ => who.to_string(),
+    }
+}
+
+/// A label and a stamp as `stamped` writes them.
+fn written(label: &str, s: &Stamp) -> String {
+    let mut parts = s.parts.clone();
+    parts.push(format!("session {}", s.id));
+    if !s.agent.is_empty() {
+        parts.push(format!("agent {}", s.agent));
+    }
+    if !s.slot.is_empty() {
+        parts.push(format!("slot {}", s.slot));
+    }
+    if !s.account.is_empty() {
+        parts.push(format!("cc-{}", s.account));
+    }
+    format!("{label} ({})", parts.join(" · "))
 }
 
 /// Is this holder the owner (`owner`, with or without a session)?
@@ -316,6 +408,87 @@ pub fn is_owner(who: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn one_session_acting_as_a_slot_is_one_holder() {
+        use super::{one_session_slot, slot_of};
+        let one = "Kaveh-1 (main · session 7b5e8856 · slot coder-1 · cc-hg)";
+        let two = "Kaveh-2 (wt-0112 · session 7b5e8856 · slot coder-2 · cc-hg)";
+        let plain = "akbar (main · session 7b5e8856 · cc-hg)";
+        assert!(one_session_slot(one, two));
+        assert!(one_session_slot(one, plain) && one_session_slot(plain, one));
+        // Neither a slot: labels still tell holders apart, as before slots.
+        assert!(!one_session_slot(plain, "asghar (main · session 7b5e8856)"));
+        // Another session, another agent, or no stamp: not the same.
+        assert!(!one_session_slot(
+            one,
+            "Kaveh-2 (main · session 0f0f0f0f · slot coder-2)"
+        ));
+        assert!(!one_session_slot(
+            one,
+            "Kaveh-2 (main · session 7b5e8856 · agent a1b2c3d4 · slot coder-2)"
+        ));
+        assert!(!one_session_slot(one, "Kaveh-1"));
+        assert_eq!(slot_of(one), "coder-1");
+        assert_eq!(slot_of(plain), "");
+        assert_eq!(slot_of("Kaveh-1"), "");
+    }
+
+    #[test]
+    fn a_holders_slot_is_carried_to_its_next_stamp() {
+        use super::keep_slot;
+        let claim = "Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)";
+        // The holder acting as its old name after a rename: the slot, before the account.
+        assert_eq!(
+            keep_slot(claim, "Kaveh-2 (wt-0112 · session 7b5e8856 · cc-hg)"),
+            "Kaveh-2 (wt-0112 · session 7b5e8856 · slot coder-2 · cc-hg)"
+        );
+        // A successor under the same label (a takeover), a teammate's agent kept.
+        assert_eq!(
+            keep_slot(claim, "Kaveh-2 (session 11111111 · agent a1b2c3d4)"),
+            "Kaveh-2 (session 11111111 · agent a1b2c3d4 · slot coder-2)"
+        );
+        // The round trip reads back.
+        let carried = keep_slot(claim, "Kaveh-2 (session 7b5e8856)");
+        assert_eq!(super::split(&carried).1.unwrap().slot, "coder-2");
+        for (from, who) in [
+            // Another label in another session, the owner, no stamp, a slot already, no slot to carry.
+            (claim, "wt-a (session 11111111)"),
+            (claim, "owner (session 11111111 · cc-mg)"),
+            (claim, "Kaveh-2"),
+            (claim, "coder-3 (session 7b5e8856 · slot coder-3)"),
+            ("wt-a (session 7b5e8856)", "wt-a (session 7b5e8856)"),
+            ("Kaveh-2", "Kaveh-2 (session 7b5e8856)"),
+        ] {
+            assert_eq!(keep_slot(from, who), who, "{from} → {who}");
+        }
+    }
+
+    #[test]
+    fn a_stamp_without_its_slot_keeps_the_rest() {
+        use super::{slot_of, split, without_slot};
+        let claim = "Kaveh-2 (main · session 7b5e8856 · agent a1b2c3d4 · slot coder-2 · cc-hg)";
+        let bare = without_slot(claim);
+        assert_eq!(
+            bare,
+            "Kaveh-2 (main · session 7b5e8856 · agent a1b2c3d4 · cc-hg)"
+        );
+        assert_eq!(slot_of(&bare), "");
+        let (label, stamp) = split(&bare);
+        let stamp = stamp.unwrap();
+        assert_eq!(
+            (label, stamp.id.as_str(), stamp.agent.as_str()),
+            ("Kaveh-2", "7b5e8856", "a1b2c3d4")
+        );
+        for who in [
+            "akbar (main · session 7b5e8856 · cc-hg)",
+            "Kaveh-2",
+            "owner",
+            "",
+        ] {
+            assert_eq!(without_slot(who), who);
+        }
+    }
+
     #[test]
     fn a_part_containing_the_login_name_is_dropped_wherever_it_comes_from() {
         let dir = tempfile::tempdir().unwrap();
@@ -537,6 +710,7 @@ mod tests {
                 parts: vec!["main-29".into()],
                 id: "7b5e8856".into(),
                 agent: String::new(),
+                slot: String::new(),
                 account: "hg".into()
             }
         );
@@ -669,6 +843,7 @@ mod tests {
                 parts: vec!["main".into()],
                 id: "7b5e8856".into(),
                 agent: "a1b2c3d4".into(),
+                slot: String::new(),
                 account: "mg".into(),
             }
         );
@@ -724,5 +899,127 @@ mod tests {
         assert!(same_holder(old, "wt-a (session 7b5e8856)"));
         assert!(!same_holder(old, "wt-a (session 11111111)"));
         assert_eq!(split(old).1.unwrap().agent, "");
+    }
+
+    // Task 0112: a claim made for a role's slot carries the slot in its stamp.
+
+    #[test]
+    fn a_slot_stamp_round_trips_role_slot_and_session() {
+        let s = Session {
+            id: "7b5e8856".into(),
+            checkout: "main".into(),
+            account: "hg".into(),
+            ..Default::default()
+        };
+        let who = stamped_slot("Kaveh-2", Some(&s), Some("coder-2"));
+        assert_eq!(
+            who,
+            "Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)"
+        );
+        let (label, stamp) = split(&who);
+        assert_eq!(label, "Kaveh-2");
+        let stamp = stamp.unwrap();
+        assert_eq!(
+            (
+                stamp.id.as_str(),
+                stamp.slot.as_str(),
+                stamp.account.as_str()
+            ),
+            ("7b5e8856", "coder-2", "hg")
+        );
+        let roles = crate::roles::defaults();
+        let slot = crate::roles::slot_of_holder(&roles, &who).unwrap();
+        assert_eq!((slot.role.as_str(), slot.n), ("coder", 2));
+        // Stamping again changes nothing; a slot that isn't one is left out.
+        assert_eq!(stamped_slot(&who, Some(&s), Some("coder-2")), who);
+        assert_eq!(
+            stamped_slot("x", Some(&s), Some("coder-02")),
+            "x (main · session 7b5e8856 · cc-hg)"
+        );
+        // A teammate's: the slot after its agent.
+        let t = Session {
+            agent: Some("a1b2c3d4".into()),
+            ..s.clone()
+        };
+        let mate = stamped_slot("Sohrab-1", Some(&t), Some("security-1"));
+        assert_eq!(
+            mate,
+            "Sohrab-1 (main · session 7b5e8856 · agent a1b2c3d4 · slot security-1 · cc-hg)"
+        );
+        assert_eq!(split(&mate).1.unwrap().slot, "security-1");
+    }
+
+    #[test]
+    fn a_slot_stamp_with_a_persian_name_parses_back() {
+        let s = Session {
+            id: "7b5e8856".into(),
+            account: "hg".into(),
+            ..Default::default()
+        };
+        let who = stamped_slot("کاوه-2", Some(&s), Some("coder-2"));
+        assert_eq!(who, "کاوه-2 (session 7b5e8856 · slot coder-2 · cc-hg)");
+        let (label, stamp) = split(&who);
+        assert_eq!(label, "کاوه-2");
+        assert_eq!(stamp.unwrap().slot, "coder-2");
+        // Without a stamp, the Persian name and the ASCII number after it find the role; a stamp
+        // without the slot part holds none (it came back after its slot went to another session).
+        let roles = crate::roles::parse("[coder]\nname = \"کاوه\"\n").unwrap();
+        let slot = crate::roles::slot_of_holder(&roles, "کاوه-2").unwrap();
+        assert_eq!(slot.id(), "coder-2");
+        assert_eq!(
+            crate::roles::slot_of_holder(&roles, "کاوه-2 (session 7b5e8856 · cc-hg)"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_slot_part_only_after_the_session_once_and_before_the_account() {
+        for who in [
+            "x (slot coder-2 · session 7b5e8856)",
+            "x (session 7b5e8856 · cc-hg · slot coder-2)",
+            "x (session 7b5e8856 · slot coder-2 · slot coder-2)",
+            "x (session 7b5e8856 · slot coder-02)",
+            "x (session 7b5e8856 · slot Coder-2)",
+            "x (session 7b5e8856 · slot coder)",
+            "x (session 7b5e8856 · slot ../coder-2)",
+        ] {
+            assert_eq!(split(who), (who, None), "{who}");
+        }
+    }
+
+    #[test]
+    fn old_stamps_read_as_before_and_one_slot_in_one_session_is_one_holder() {
+        let old = "wt-a (main · session 7b5e8856 · cc-hg)";
+        let (label, stamp) = split(old);
+        assert_eq!((label, stamp.unwrap().slot), ("wt-a", String::new()));
+        assert_eq!(
+            crate::roles::slot_of_holder(&crate::roles::defaults(), old),
+            None
+        );
+        let kaveh = "Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)";
+        assert!(same_holder(
+            kaveh,
+            "coder-2 (wt-0112 · session 7b5e8856 · slot coder-2)"
+        ));
+        assert!(
+            same_holder(kaveh, "کاوه-2 (session 7b5e8856 · slot coder-2)"),
+            "renamed"
+        );
+        assert!(
+            !same_holder(kaveh, "coder-2 (session 11111111 · slot coder-2)"),
+            "another session"
+        );
+        assert!(
+            !same_holder(kaveh, "Kaveh-3 (session 7b5e8856 · slot coder-3)"),
+            "another slot"
+        );
+        assert!(
+            same_holder(kaveh, "Kaveh-2"),
+            "unstamped matches any, as before"
+        );
+        assert!(
+            !same_holder(kaveh, "coder-2"),
+            "another label without a stamp"
+        );
     }
 }

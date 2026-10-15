@@ -1,5 +1,5 @@
 import { isHuman } from "./human";
-import { stageHolders, stamp, stampMinutes, whoLine } from "./lib";
+import { type RoleNames, stageHolders, stamp, stampMinutes, whoLine } from "./lib";
 import { isWork } from "./levels";
 import type { Task } from "./types";
 
@@ -155,9 +155,10 @@ export function weekCount(tasks: Task[], now: number, kind: KindFilter): number 
 }
 
 /** Who built it: the session that took it into Building, short ("muster/wt-0051 · main ·
- *  531266d4"); "you" for the owner's own task; "" when the log doesn't say. */
-export function builtBy(t: Task): string {
+ *  531266d4", a role slot by its role's name now); "you" for the owner's own task; "" when the
+ *  log doesn't say. */
+export function builtBy(t: Task, names: RoleNames = {}): string {
   if (isHuman(t)) return "you";
   const who = stageHolders(t).find((h) => h.stage === "building")?.who ?? "";
-  return who ? whoLine({ stage: "building", claimedBy: who, heldBy: "" }) : "";
+  return who ? whoLine({ stage: "building", claimedBy: who, heldBy: "" }, names) : "";
 }

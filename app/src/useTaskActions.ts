@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { api, type Paused, type Returned } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
 import { isHuman } from "./human";
 import { releaseWords, trackMove } from "./paneData";
+import { RoleNamesContext } from "./settingsData";
 import type { Task } from "./types";
 
 export type StageForm = "gate" | "back" | "block";
@@ -16,6 +17,8 @@ export type Msg = { ok: boolean; text: string; undo?: Undo };
  *  and their controls are off (`busy`) while one is in flight. */
 export function useTaskActions(task: Task, onChanged: () => void) {
   const [msg, setMsg] = useState<Msg | null>(null);
+  // The roles' names now (0112), for the claim a track move releases.
+  const names = useContext(RoleNamesContext);
   // One stage form open at a time: the gate line (Building → Testing), send back, or block. A
   // form belongs to the stage it was opened in: once the task moves, here or elsewhere, it's gone.
   const [opened, setOpened] = useState<{ kind: StageForm; stage: string } | null>(null);
@@ -89,7 +92,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
     /** The owner's override from the track: no confirmation, an Undo in the message instead
      *  (see trackMove). It says the stage it was clicked in, so a stale window is refused. */
     move: (to: string) => {
-      const { done, undo } = trackMove(task, to);
+      const { done, undo } = trackMove(task, to, names);
       void stageRun(() => api.setStage(task.queue, task.id, to, isStage(task.stage) ? task.stage : null, now()), done, undo);
     },
     /** Undo a move: back where it was, refused if it has moved on from where the move put it. */

@@ -15,6 +15,8 @@ export type Question = {
   ownerAnswered: boolean;
   /** Its options, when it was asked with them (0049); absent for a question in words. */
   choices?: Choices;
+  /** The role slot its asker acts as (0112, `coder-2`); absent when none. */
+  slot?: string;
 };
 
 /** A pick-one question's options, (a) first, with the asker's pick and what it does with no
@@ -204,6 +206,8 @@ export type SessionRow = {
   stages: string[];
   /** It holds the task now. */
   holds: boolean;
+  /** The role slot its stamps act as (0112, `coder-2`); absent when none. */
+  slot?: string;
   found: "read" | "missing" | "too-big" | "not-read";
   tokens: Tokens;
   start: number | null;
@@ -325,7 +329,32 @@ export type State = {
    *  old pauses once (mu-59); undefined from a core that doesn't say. claudeAccounts: the labels
    *  of the Claude accounts Muster reads (0099), `mg` for `~/.claude-mg`. */
   settings?: { leaseMinutes: number; liveMinutes: number; oldPausesOffered?: boolean; claudeAccounts: string[] };
+  /** Each role's name by its id (0112), from roles.toml; empty when the file is refused. */
+  roleNames?: Record<string, string>;
 };
+
+/** One role's profile (0112), as roles.rs `Role` sends it. */
+export type Role = {
+  id: string;
+  name: string;
+  title: string;
+  stage: string;
+  prompt: string;
+  tools: string[];
+  permission: string;
+  models: string[];
+  maxTurns: number;
+  maxBudgetUsd: number;
+  contextCap: number;
+  workers: number;
+  slots: number;
+  moves: string[];
+  providers: string[];
+  writes: string[];
+};
+
+/** The role fields Settings › Agents › Roles edits (roles.rs `EDITABLE`). */
+export type RoleField = "name" | "models" | "max_turns" | "max_budget_usd" | "context_cap" | "slots" | "providers";
 
 export type Project = {
   key: string;

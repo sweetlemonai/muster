@@ -37,6 +37,7 @@ pub mod projects;
 pub mod queue;
 pub mod review;
 mod review_cmds;
+pub mod roles;
 pub mod run;
 pub mod search;
 pub mod session;
@@ -61,6 +62,8 @@ pub(crate) struct AppState {
     pub(crate) config_file: PathBuf,
     /// This machine's settings (0036), beside projects.json; `muster` reads the same file.
     settings_file: PathBuf,
+    /// The role profiles (0112), beside projects.json; `muster team` reads the same file.
+    roles_file: PathBuf,
     /// Session transcripts under the home folder (0025), read and cached off the main thread.
     transcripts: Arc<transcripts::Reader>,
     /// Claude Code's session states (0048), read off the main thread at most every 15 s.
@@ -131,6 +134,7 @@ async fn state(
     app.badge.polled(std::time::Instant::now());
     let file = app.config_file.clone();
     let settings_file = app.settings_file.clone();
+    let roles_file = app.roles_file.clone();
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
     let reader = app.transcripts.clone();
@@ -147,6 +151,11 @@ async fn state(
         let mut s = projects::read_state(&config, &list, &settings, &mut cache);
         // The accounts Muster reads (0099), from the settings like the LIVE window.
         let allowed = accounts::allowed(&settings, &home());
+        // The roles' names (0112), read again only when roles.toml changes, so a rename in
+        // Settings or by hand shows at the next poll.
+        s.role_names = roles::load(&roles_file)
+            .map(|r| roles::names(&r))
+            .unwrap_or_default();
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, &allowed, s.now);
@@ -1190,6 +1199,33 @@ async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String>
     .await
 }
 
+/// The role profiles (0112) for Settings › Agents › Roles and the names on cards: roles.toml,
+/// written from the defaults on first read. A refused file is an error naming its line and key.
+#[tauri::command]
+async fn roles_info(handle: tauri::AppHandle) -> Result<Vec<roles::Role>, String> {
+    blocking(move || roles::load(&handle.state::<AppState>().roles_file)).await
+}
+
+/// Change one field of one role (`roles::EDITABLE`) from Settings › Agents › Roles. The core
+/// checks the role, the field and the whole team; a refusal says why and leaves the file.
+#[tauri::command]
+async fn set_role(
+    handle: tauri::AppHandle,
+    id: String,
+    field: String,
+    value: String,
+) -> Result<Vec<roles::Role>, String> {
+    if id.len() > 40 || field.len() > 40 || value.len() > 400 {
+        return Err("that value is too long".into());
+    }
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        let _guard = app.config.lock().map_err(|e| e.to_string())?;
+        roles::edit(&app.roles_file, &id, &field, &value)
+    })
+    .await
+}
+
 /// Change one of this machine's settings, `lease` or `live`, to a span like `12h` or `5m` (empty
 /// is the default), or a switch (`settings::set`). The core checks the name, the units and the
 /// bounds; the next poll uses it, and the menu bar icon follows its switch at once.
@@ -1538,6 +1574,7 @@ pub fn run() {
                 agents: agents::Monitor::app(home()),
                 config_file: dir.join("projects.json"),
                 settings_file: dir.join(settings::FILE),
+                roles_file: dir.join(roles::FILE),
                 badge: badge::Badge::default(),
                 notify: notify::Notifier::new(dir.join(notify::FILE)),
                 runs: run::Runs::new(run_events(app.handle().clone())),
@@ -1563,6 +1600,8 @@ pub fn run() {
             projects,
             settings_info,
             set_setting,
+            roles_info,
+            set_role,
             set_your_check_limit,
             add_project,
             create_project,

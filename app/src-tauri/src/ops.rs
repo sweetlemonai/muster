@@ -1418,6 +1418,10 @@ fn change_locked(
                     )
                 });
             }
+            let others = elsewhere(root);
+            if let Some(e) = slot_refusal(root, &tasks, &others, &c.claimed_by, id, "") {
+                return Err(e);
+            }
         }
         // Merged now (0042: Your check or Done; the owner's own task, Done) or no longer. Read
         // before this change is written, so `freed` is what it was holding back.
@@ -1482,8 +1486,17 @@ fn change_locked(
         // Testing any other way, to whoever did that last. Your check is the owner's.
         let held_by = match c.stage.as_str() {
             s if s == now.stage => now.held_by.clone(),
-            "testing" if now.stage == "building" => who.to_string(),
-            "testing" => now.tester.clone().unwrap_or_else(|| who.to_string()),
+            // The claim's role slot stays with its holder (0112), whatever name it acts as.
+            // Unless the slot went to another session while it came back without it.
+            "testing" if now.stage == "building" => {
+                unless_taken(root, id, &crate::session::keep_slot(&now.claimed_by, who))
+            }
+            // A tester whose slot went to another session meanwhile gets it back without the slot.
+            "testing" => now
+                .tester
+                .as_deref()
+                .map(|t| unless_taken(root, id, t))
+                .unwrap_or_else(|| who.to_string()),
             "your-check" => "owner".to_string(),
             _ => String::new(),
         };
@@ -1543,6 +1556,7 @@ fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp
     let prefix = crate::key::prefix_for(root);
     let key = |id: &str| crate::key::key(&prefix, id);
     let tasks = tasks_now(root);
+    let far = std::cell::OnceCell::new();
     let mut released: Vec<&str> = Vec::new();
     for t in &tasks {
         let freed = t.id != dep_id
@@ -1576,22 +1590,38 @@ fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp
         let line = format!("{stamp} {who}: unblocked: {}", parts.join("; "));
         let held = t.stage == "building" && !t.claimed_by.is_empty() && !is_owner(&t.claimed_by);
         // Another task this holder has in Building, not blocked (one freed by this same Done
-        // counts until it's been released here).
-        let other = tasks.iter().find(|o| {
-            o.id != t.id
-                && o.stage == "building"
-                && o.blocked_kind.is_empty()
-                && !o.claimed_by.is_empty()
-                && same_holder(&o.claimed_by, &t.claimed_by)
-                && !released.contains(&o.id.as_str())
-        });
+        // counts until it's been released here); its session's, in any queue, when either acts
+        // as a role slot (0112: one session is one slot).
+        let building = |o: &queue::Task| {
+            o.stage == "building" && o.blocked_kind.is_empty() && !o.claimed_by.is_empty()
+        };
+        let one = |o: &queue::Task| {
+            building(o) && crate::session::one_session_slot(&o.claimed_by, &t.claimed_by)
+        };
+        let other = tasks
+            .iter()
+            .find(|o| {
+                o.id != t.id
+                    && !released.contains(&o.id.as_str())
+                    && (one(o) || building(o) && same_holder(&o.claimed_by, &t.claimed_by))
+            })
+            .map(|o| key(&o.id))
+            .or_else(|| {
+                let session = held && crate::session::session_of(&t.claimed_by).is_some();
+                session
+                    .then(|| far.get_or_init(|| elsewhere(root)))
+                    .and_then(|e| e.iter().find(|o| one(o)))
+                    .map(|o| match o.queue.as_str() {
+                        "" => crate::key::key(&o.prefix, &o.id),
+                        q => format!("{} in {q}", crate::key::key(&o.prefix, &o.id)),
+                    })
+            });
         let _ = match other.filter(|_| held) {
             Some(o) => {
                 released.push(&t.id);
                 let why = format!(
-                    " (released: {} already holds {})",
+                    " (released: {} already holds {o})",
                     crate::session::split(&t.claimed_by).0,
-                    key(&o.id)
                 );
                 change_locked(root, &t.id, who, stamp, |c| {
                     Ok(Change {
@@ -2401,7 +2431,9 @@ pub(crate) fn tasks_now(root: &Path) -> Vec<queue::Task> {
 }
 
 /// The task `who` holds in Building in this queue (not blocked, by tasks either: a blocked task is
-/// waiting, and blocking it is how a holder lets go), other than `except`.
+/// waiting, and blocking it is how a holder lets go), other than `except`. A claim of `who`'s
+/// session and agent is `who`'s whatever its label when either acts as a role slot (0112): one
+/// session holds one Building task, however it names itself.
 fn holding(tasks: &[queue::Task], who: &str, except: &str) -> Option<String> {
     tasks
         .iter()
@@ -2409,10 +2441,143 @@ fn holding(tasks: &[queue::Task], who: &str, except: &str) -> Option<String> {
             t.stage == "building"
                 && t.blocked_kind.is_empty()
                 && !t.claimed_by.is_empty()
-                && same_holder(&t.claimed_by, who)
+                && (same_holder(&t.claimed_by, who)
+                    || crate::session::one_session_slot(&t.claimed_by, who))
                 && t.id != except
         })
         .map(|t| t.id.clone())
+}
+
+/// Every task of the other queues Muster knows (0112): the ones `muster team` and the window read
+/// (`projects::places`), not the one at `root`, each with its project's prefix for its key. A role
+/// slot is held across them all, so one session is one slot whichever queue it claims in. They're
+/// read without their locks, as `muster team` reads them.
+pub(crate) fn elsewhere(root: &Path) -> Vec<queue::Task> {
+    let places = crate::projects::places();
+    let cfg = crate::projects::load(&places.config_file);
+    let list = crate::projects::list(&places.base, &cfg);
+    let here = root.canonicalize().ok();
+    let queues: Vec<(String, PathBuf)> = crate::projects::shown(&list)
+        .into_iter()
+        .filter(|(_, p)| match (&here, p.canonicalize().ok()) {
+            (Some(x), Some(y)) => *x != y,
+            _ => p != root,
+        })
+        .collect();
+    if queues.is_empty() {
+        return Vec::new();
+    }
+    let prefix_of = |name: &str| {
+        list.iter()
+            .find(|p| p.name == name)
+            .map(|p| p.prefix.clone())
+            .unwrap_or_default()
+    };
+    queue::read_state_keyed(
+        &queues,
+        &mut queue::Cache::default(),
+        &crate::settings::Settings::default(),
+        &prefix_of,
+    )
+    .tasks
+}
+
+/// Why `who` may not hold `id` (0112), from this queue's `tasks` and every other queue's
+/// (`others`, `elsewhere`); None when it may. One session (and agent) is one slot across every
+/// queue: refused while it holds a Building task in another queue and either acts as a slot, or
+/// holds another slot than `who`'s in Building or Testing anywhere (this queue's Building claims
+/// are `holding`'s). And a slot is one session's: refused while another session holds `who`'s
+/// slot in Building or Testing anywhere, except `lineage`'s session (the claim a takeover
+/// succeeds, whose slot it carries on).
+fn slot_refusal(
+    root: &Path,
+    tasks: &[queue::Task],
+    others: &[queue::Task],
+    who: &str,
+    id: &str,
+    lineage: &str,
+) -> Option<String> {
+    use crate::session::{one_session_slot, session_of, slot_of};
+    let me = session_of(who)?;
+    let mine = slot_of(who);
+    // This queue's by its key; another's by its key and its project's name.
+    let key = |(here, t): (bool, &queue::Task)| {
+        if here {
+            keys_of(root, std::slice::from_ref(&t.id))
+        } else if t.queue.is_empty() {
+            crate::key::key(&t.prefix, &t.id)
+        } else {
+            format!("{} in {}", crate::key::key(&t.prefix, &t.id), t.queue)
+        }
+    };
+    if let Some(t) = others.iter().find(|t| {
+        t.stage == "building"
+            && t.blocked_kind.is_empty()
+            && !t.claimed_by.is_empty()
+            && one_session_slot(&t.claimed_by, who)
+    }) {
+        return Some(format!(
+            "you already hold {}; one session is one slot in every queue, so pass, return or block it first",
+            key((false, t))
+        ));
+    }
+    let any = || {
+        tasks
+            .iter()
+            .filter(|t| t.id != id)
+            .map(|t| (true, t))
+            .chain(others.iter().map(|t| (false, t)))
+            .filter(|(_, t)| matches!(t.stage.as_str(), "building" | "testing"))
+    };
+    if !mine.is_empty() {
+        if let Some((here, t)) = any().find(|(_, t)| {
+            let slot = slot_of(t.holder());
+            session_of(t.holder()).as_ref() == Some(&me) && !slot.is_empty() && slot != mine
+        }) {
+            let label = crate::session::split(t.holder()).0;
+            return Some(format!(
+                "this session is {label} already ({} holds it): one session is one slot, so act as {label} (--as {label}), or start another session",
+                key((here, t))
+            ));
+        }
+        let heir = session_of(lineage);
+        if let Some((here, t)) = any().find(|(_, t)| {
+            let theirs = session_of(t.holder());
+            slot_of(t.holder()) == mine && theirs.as_ref() != Some(&me) && theirs != heir
+        }) {
+            let label = crate::session::split(who).0;
+            return Some(format!(
+                "{label} is another session's ({} holds {}): a slot is one session's, so take a free one (--role) or act as your own",
+                crate::session::split(t.holder()).0,
+                key((here, t))
+            ));
+        }
+    }
+    None
+}
+
+/// `who` without its role slot when another session holds that slot now, in Building or Testing
+/// in any queue (`slot_refusal`), other than task `id` (0112): a task coming back to a holder whose
+/// slot went to someone else meanwhile comes back to the holder alone, so no slot has two.
+fn unless_taken(root: &Path, id: &str, who: &str) -> String {
+    if crate::session::slot_of(who).is_empty() {
+        return who.to_string();
+    }
+    let me = crate::session::session_of(who);
+    let taken = tasks_now(root)
+        .iter()
+        .filter(|t| t.id != id)
+        .chain(elsewhere(root).iter())
+        .any(|t| {
+            matches!(t.stage.as_str(), "building" | "testing")
+                && crate::session::slot_of(t.holder()) == crate::session::slot_of(who)
+                && crate::session::session_of(t.holder()) != me
+        });
+    if taken {
+        crate::session::without_slot(who)
+    } else {
+        who.to_string()
+    }
 }
 
 /// Tasks of the queue at `root` as a log line names them (0033): by their keys, `mu-14, mu-16`.
@@ -3052,6 +3217,7 @@ pub fn takeover_task(
     let who = actor(who)?;
     with_lock(root, || {
         let owner = is_owner(&who);
+        let tasks = tasks_now(root);
         let mut out = None;
         let path = edit_locked(root, id, |path, text| {
             let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
@@ -3064,7 +3230,7 @@ pub fn takeover_task(
             }
             // One claim per holder in Building; a shaper's claim in Shaping doesn't count (0097).
             if !owner && t.stage == "building" {
-                if let Some(held) = holding(&tasks_now(root), &who, id) {
+                if let Some(held) = holding(&tasks, &who, id) {
                     return Err(already_holds(&held));
                 }
             }
@@ -3130,6 +3296,24 @@ pub fn takeover_task(
                     quiet_text(TAKEOVER_QUIET)
                 ));
             };
+            // The successor is the claim's role slot too (0112), even acting as its old name: so
+            // the one-session checks run again as that slot, against every queue. It takes no
+            // second task beside the slot, nor another slot beside one it holds in Testing. A claim
+            // that came back without its slot is taken over without one: the slot its label names
+            // may be another session's by now.
+            let who = if crate::session::slot_of(&old).is_empty() {
+                crate::session::without_slot(&who)
+            } else {
+                crate::session::keep_slot(&old, &who)
+            };
+            if !owner {
+                if let Some(held) = holding(&tasks, &who, id).filter(|_| t.stage == "building") {
+                    return Err(already_holds(&held));
+                }
+                if let Some(e) = slot_refusal(root, &tasks, &elsewhere(root), &who, id, &old) {
+                    return Err(e);
+                }
+            }
             let line = format!("{stamp} {who}{}{old} ({why})", queue::TOOK_OVER);
             // Read back as the log reads it, so the chain of builders never misses this one.
             if queue::takeover_line(&format!("- {line}")).is_none() {
@@ -3296,10 +3480,19 @@ fn return_change(
         // task in Building, so whichever session works under it next (the first may have
         // ended) carries on; otherwise to the exact session that built it, which keeps one
         // claim per holder. The stage lines still say which session built it.
+        // A builder acting as a role slot (0112) gets it back as it was, slot and all, so the slot
+        // stays held and its session can't take another; a successor takes it over as for any
+        // claim. A builder whose slot went to another session meanwhile gets it back as itself,
+        // without the slot, and by its exact session, since the slot's name is its label.
         claimed_by: if target == "building" {
-            let builder = t.builder.clone().unwrap_or_default();
+            let built = t.builder.clone().unwrap_or_default();
+            let builder = unless_taken(root, id, &built);
             let label = crate::session::split(&builder).0.to_string();
-            if !label.is_empty() && holding(&tasks_now(root), &label, id).is_none() {
+            if builder == built
+                && !label.is_empty()
+                && crate::session::slot_of(&builder).is_empty()
+                && holding(&tasks_now(root), &label, id).is_none()
+            {
                 label
             } else {
                 builder

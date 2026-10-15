@@ -10,7 +10,7 @@ const t = (over: Partial<Task>): Task => ({
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
 const ids = (list: Task[]) => list.map((x) => x.id);
-const finds = (task: Task, q: string) => taskMatches(task, queryWords(q));
+const finds = (task: Task, q: string) => taskMatches(task, queryWords(q), {});
 
 describe("fold", () => {
   it("lowercases and drops accents, precomposed or decomposed", () => {

@@ -15,7 +15,7 @@ const t = (over: Partial<Task>): Task => ({
 const ids = (list: Task[]) => list.map((x) => x.id);
 // Wednesday 2026-10-14, noon local time.
 const NOW = new Date(2026, 9, 14, 12, 0).getTime() / 1000;
-const ctx = dayContext(NOW);
+const ctx = dayContext(NOW, {});
 const q = (over: Partial<Query>): Query => ({ ...EMPTY_QUERY, ...over });
 
 const tasks = [
@@ -27,9 +27,9 @@ const tasks = [
 
 describe("dayContext", () => {
   it("is today, the Monday this week started and the first of the month, local time", () => {
-    expect(ctx).toEqual({ today: "2026-10-14", week: "2026-10-12", month: "2026-10-01" });
-    expect(dayContext(new Date(2026, 9, 18, 23, 0).getTime() / 1000).week).toBe("2026-10-12");
-    expect(dayContext(new Date(2026, 9, 12, 0, 5).getTime() / 1000).week).toBe("2026-10-12");
+    expect(ctx).toEqual({ today: "2026-10-14", week: "2026-10-12", month: "2026-10-01", names: {} });
+    expect(dayContext(new Date(2026, 9, 18, 23, 0).getTime() / 1000, {}).week).toBe("2026-10-12");
+    expect(dayContext(new Date(2026, 9, 12, 0, 5).getTime() / 1000, {}).week).toBe("2026-10-12");
   });
 });
 

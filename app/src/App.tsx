@@ -34,7 +34,7 @@ import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
-import { Machine, machineOf, type SettingsGroup } from "./settingsData";
+import { Machine, machineOf, RoleNamesContext, type SettingsGroup } from "./settingsData";
 import { bandFold, columnClass, loadMode, loadPicks, plainBoard, look, Mode, pickColumn, pickMode, RAIL_ID, storeMode, storePicks, toggleBand, toggleFocus, type BoardLooks, type ColumnFolds, type ColumnPicks, type ModePicks, type ModeState } from "./modes";
 import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
@@ -260,13 +260,17 @@ export default function App() {
   // This machine's lease and LIVE window, from the last poll, for the cards and the task pane.
   const { leaseMinutes, liveMinutes } = machineOf(state);
   const machine = useMemo(() => ({ leaseMinutes, liveMinutes }), [leaseMinutes, liveMinutes]);
+  // The roles' names (0112), from the last poll; kept while they read the same, so cards
+  // re-render on a rename only.
+  const roleNamesKey = JSON.stringify(state?.roleNames ?? {});
+  const roleNames = useMemo(() => JSON.parse(roleNamesKey) as Record<string, string>, [roleNamesKey]);
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
   }, [state, queue]);
 
   const now = state?.now ?? Math.floor(Date.now() / 1000);
-  const ctx = useMemo(() => dayContext(now), [now]);
+  const ctx = useMemo(() => dayContext(now, roleNames), [now, roleNames]);
   const inQueue = useMemo(() => (state?.tasks ?? []).filter((t) => queue === "all" || t.queue === queue), [state, queue]);
   const words = useMemo(() => queryWords(query.search), [query.search]);
   const searching = words.length > 0;
@@ -403,6 +407,7 @@ export default function App() {
   return (
     <OpenHelp.Provider value={openHelp}>
     <Machine.Provider value={machine}>
+    <RoleNamesContext.Provider value={roleNames}>
     <Mode.Provider value={modes.mode}>
     <Labels.Provider value={labels}>
     <ProjectColours.Provider value={colours}>
@@ -633,6 +638,7 @@ export default function App() {
     </ProjectColours.Provider>
     </Labels.Provider>
     </Mode.Provider>
+    </RoleNamesContext.Provider>
     </Machine.Provider>
     </OpenHelp.Provider>
   );

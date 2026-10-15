@@ -175,6 +175,17 @@ The **holder** is who the task is with now: the claim in Ready and Building, and
 
 See [Claims](05-commands.md#claims) and decision [0001](../decisions/0001-app-on-drovers-stack.md) (how a quiet claim is told apart; tasks 0002 and 0030).
 
+## Roles and slots
+
+Each role on the team has a name, so the board and the log read like a team rather than session ids: Shapour shapes, Arash and Dariush review architecture and design, Kaveh codes, Kia tests, Sohrab, Parviz and Azadeh review security, performance and accessibility as Kia's subagents, Mehran merges, Leila handles escalations, and Pouya researches. Each role runs in numbered **slots**: Kaveh-1, Kaveh-2, Kaveh-3.
+
+- **Claiming as a slot:** `muster claim <id> --role coder` (or `next`, or `start`) hands out the role's lowest free slot. The session is Kaveh-2 from then on (`--as Kaveh-2`, or `--as coder-2`), and the claim's stamp carries the slot: `Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)`. A slot is held while a task in Building or Testing has a holder with it, in any project; when every slot of a role is held, `--role` is refused.
+- **One session is one slot,** in every queue: while a session holds a slot in Building, it can't take a second Building task under any name in any queue, and while it holds one in Testing it can't claim as another slot. A task sent back from Testing goes back to its builder's slot, which stays held.
+- **A slot is one session's:** claiming as a slot another session holds is refused. A task that comes back to its builder or tester after their slot went to another session comes back to them without the slot.
+- **Renaming:** the profiles are in `roles.toml`, beside `projects.json`, one table per role keyed by its id (`[coder]`). The id never changes; the name is one line (`name = "Kaveh"`), and Persian names work (`کاوه`). Stamps keep the id and the number, so a rename shows on every card, in the pane and in `muster team` at once. [Settings › Agents › Roles](04-in-the-app.md#agents) edits the same file.
+- **The profile:** besides the name, each role has its title, stage, prompt (`muster instructions <role>` prints its brief), tools, permission, preferred models, turn, budget and context caps, workers, slots, the stage moves it may make, the providers that may serve it, and for Pouya the folders it may write in. A file with an unknown table or key, or a value out of bounds, is refused with its line and key.
+- **Who holds what:** `muster team` lists every role, its slots, who holds each and which is next.
+
 ## Your criteria and Your check
 
 An acceptance criterion ends with how it's verified. `— verify: command (pnpm test)` means a command proves it; an agent ticks it with the proof. `— verify: owner (open a task and watch the board)` means only you can judge it: it's **your criterion**.

@@ -31,3 +31,4 @@ covers: app/src/App.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src
 - Recently finished is docked at the board's right, or under it when narrow, never hidden. (mu-51)
 - Your check cards say Your turn and the next step, grouped by effort. (mu-43)
 - The window polls every 2 s while visible, never while hidden. (AS_BUILT "Live")
+- A holder with a role slot shows as the role's name now (`کاوه-2` after a rename): cards, pane, filters, search and sort. (mu-112)

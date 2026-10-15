@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { humanColumn } from "./human";
 import {
   ago, boardColumn, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
-  builtTested, homePath, copiedPath, needsTester, nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, sameHolder, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
+  builtTested, homePath, copiedPath, needsTester, nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, sameHolder, shortTokens, shortWho, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
 } from "./lib";
 import type { Task } from "./types";
 
@@ -61,37 +61,37 @@ describe("stages", () => {
     expect(STAGES.filter((s) => inProgress(task({ stage: s.id, paused: "2026-10-13 10:00" })))).toEqual([]);
   });
   it("says who else holds Ready or Building (the owner can't pass those)", () => {
-    expect(heldByOther(task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }))).toBe("drover/main");
-    expect(heldByOther(task({ stage: "ready", claimedBy: "wt-b" }))).toBe("wt-b");
-    expect(heldByOther(task({ stage: "building", claimedBy: "owner" }))).toBe("");
-    expect(heldByOther(task({ stage: "building", claimedBy: "" }))).toBe("");
-    expect(heldByOther(task({ stage: "testing", claimedBy: "qa" }))).toBe("");
+    expect(heldByOther(task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }), {})).toBe("drover/main");
+    expect(heldByOther(task({ stage: "ready", claimedBy: "wt-b" }), {})).toBe("wt-b");
+    expect(heldByOther(task({ stage: "building", claimedBy: "owner" }), {})).toBe("");
+    expect(heldByOther(task({ stage: "building", claimedBy: "" }), {})).toBe("");
+    expect(heldByOther(task({ stage: "testing", claimedBy: "qa" }), {})).toBe("");
   });
   it("shows who holds a task from Ready to Your check: the claim, then held-by (0030)", () => {
-    expect(holder(task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }))).toBe("drover/main");
-    expect(holder(task({ stage: "ready", claimedBy: "owner" }))).toBe("owner");
-    expect(holder(task({ stage: "done", claimedBy: "wt-a", heldBy: "qa" }))).toBe("");
-    expect(holder(task({ stage: "testing", claimedBy: "wt-a" }))).toBe("");
-    expect(holder(task({ stage: "testing", claimedBy: "wt-a", heldBy: "qa (wt-0030 · session 7b5e8856)" }))).toBe("qa");
-    expect(holder(task({ stage: "your-check" }))).toBe("owner");
-    expect(holder(task({ stage: "building", claimedBy: " " }))).toBe("");
+    expect(holder(task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }), {})).toBe("drover/main");
+    expect(holder(task({ stage: "ready", claimedBy: "owner" }), {})).toBe("owner");
+    expect(holder(task({ stage: "done", claimedBy: "wt-a", heldBy: "qa" }), {})).toBe("");
+    expect(holder(task({ stage: "testing", claimedBy: "wt-a" }), {})).toBe("");
+    expect(holder(task({ stage: "testing", claimedBy: "wt-a", heldBy: "qa (wt-0030 · session 7b5e8856)" }), {})).toBe("qa");
+    expect(holder(task({ stage: "your-check" }), {})).toBe("owner");
+    expect(holder(task({ stage: "building", claimedBy: " " }), {})).toBe("");
     expect(holderOf(task({ stage: "testing", heldBy: "qa (session 7b5e8856)" }))).toBe("qa (session 7b5e8856)");
     // Only Ready and Building are claims: the owner's pass is refused only there.
-    expect(heldByOther(task({ stage: "testing", heldBy: "qa" }))).toBe("");
-    expect(heldByOther(task({ stage: "your-check", heldBy: "owner" }))).toBe("");
-    expect(heldByOther(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }))).toBe("");
+    expect(heldByOther(task({ stage: "testing", heldBy: "qa" }), {})).toBe("");
+    expect(heldByOther(task({ stage: "your-check", heldBy: "owner" }), {})).toBe("");
+    expect(heldByOther(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }), {})).toBe("");
   });
   it("holds a task in Shaping by its claim (0097), as the core's Task::holder", () => {
     const shaping = task({ stage: "shaping", claimedBy: "shapour (main · session 1137d98f · cc-mg)" });
     expect(holderOf(shaping)).toBe("shapour (main · session 1137d98f · cc-mg)");
-    expect(holder(shaping)).toBe("shapour");
-    expect(whoLine(shaping)).toBe("shapour · main · 1137d98f");
-    expect(holder(task({ stage: "shaping" }))).toBe("");
-    expect(holder(task({ stage: "shaping", heldBy: "qa" }))).toBe("");
+    expect(holder(shaping, {})).toBe("shapour");
+    expect(whoLine(shaping, {})).toBe("shapour · main · 1137d98f");
+    expect(holder(task({ stage: "shaping" }), {})).toBe("");
+    expect(holder(task({ stage: "shaping", heldBy: "qa" }), {})).toBe("");
     // Not a claim the owner's pass waits on: the core lets the owner pass it on, and that releases it.
-    expect(heldByOther(shaping)).toBe("");
+    expect(heldByOther(shaping, {})).toBe("");
     // Backlog still has no holder.
-    expect(holder(task({ stage: "backlog", claimedBy: "wt-a" }))).toBe("");
+    expect(holder(task({ stage: "backlog", claimedBy: "wt-a" }), {})).toBe("");
   });
   it("runs one stage action at a time: a second click while one is in flight is dropped", async () => {
     const once = oneAtATime();
@@ -348,17 +348,17 @@ describe("who's on it, since when, and how far (0030)", () => {
     // Before the session, "agent x" is no stamp part (it has a space): all label, as before.
     expect(splitHolder("x (agent a1b2c3d4 · session 7b5e8856)").id).toBe("");
     // The card shows a teammate as it shows anyone: name, checkout, session.
-    expect(whoLine(task({ stage: "building", claimedBy: "اصغر (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)" }))).toBe("اصغر · main · 7b5e8856");
+    expect(whoLine(task({ stage: "building", claimedBy: "اصغر (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)" }), {})).toBe("اصغر · main · 7b5e8856");
   });
   it("puts who's on it in one short line: name, checkout, short session; you for the owner", () => {
-    expect(whoLine(task({ stage: "building", claimedBy: A }))).toBe("wt-a · main-29 · wt-0030 · 7b5e8856");
-    expect(whoLine(task({ stage: "building", claimedBy: "muster/wt-0030 (who's on it) (session 7b5e8856)" }))).toBe("muster/wt-0030 · 7b5e8856");
-    expect(whoLine(task({ stage: "building", claimedBy: "capture (drover/main, session 349bc9c3)" }))).toBe("capture · 349bc9c3");
-    expect(whoLine(task({ stage: "testing", heldBy: "wt-0030 (session 7b5e8856)" }))).toBe("wt-0030 · 7b5e8856");
-    expect(whoLine(task({ stage: "your-check" }))).toBe("you");
-    expect(whoLine(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }))).toBe("you · 7b5e8856");
-    expect(whoLine(task({ stage: "ready" }))).toBe("");
-    expect(whoLine(task({ stage: "done", claimedBy: A }))).toBe("");
+    expect(whoLine(task({ stage: "building", claimedBy: A }), {})).toBe("wt-a · main-29 · wt-0030 · 7b5e8856");
+    expect(whoLine(task({ stage: "building", claimedBy: "muster/wt-0030 (who's on it) (session 7b5e8856)" }), {})).toBe("muster/wt-0030 · 7b5e8856");
+    expect(whoLine(task({ stage: "building", claimedBy: "capture (drover/main, session 349bc9c3)" }), {})).toBe("capture · 349bc9c3");
+    expect(whoLine(task({ stage: "testing", heldBy: "wt-0030 (session 7b5e8856)" }), {})).toBe("wt-0030 · 7b5e8856");
+    expect(whoLine(task({ stage: "your-check" }), {})).toBe("you");
+    expect(whoLine(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }), {})).toBe("you · 7b5e8856");
+    expect(whoLine(task({ stage: "ready" }), {})).toBe("");
+    expect(whoLine(task({ stage: "done", claimedBy: A }), {})).toBe("");
   });
   it("says when Building or Testing started, from the stage line into it", () => {
     expect(startedAgo(task({ stage: "building", stageSince: "2026-10-12 12:00" }), now)).toBe("started 2 h ago");
@@ -441,18 +441,18 @@ describe("the tester isn't the builder (0047)", () => {
     expect(needsTester(task({ stage: "testing", heldBy: "owner", builtBy: "owner", forWho: "human" }))).toBe(false);
   });
   it("says who built it and who tested it, short, or that it needs a tester", () => {
-    expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa-0030 (session 99999999)" }))).toBe("built by wt-a · tested by qa-0030");
-    expect(builtTested(task({ stage: "done", builtBy: A, testedBy: "owner (session 22222222)" }))).toBe("built by wt-a · tested by you");
-    expect(builtTested(task({ stage: "testing", heldBy: A, builtBy: A }))).toBe("built by wt-a · needs a tester");
-    expect(builtTested(task({ stage: "testing", heldBy: "owner", builtBy: A }))).toBe("built by wt-a");
-    expect(builtTested(task({ stage: "your-check", builtBy: A }))).toBe("built by wt-a");
-    expect(builtTested(task({ stage: "your-check", builtBy: A, gatedBy: "wt-a (main · session 7b5e8856 · cc-hg)" }))).toBe("built by wt-a");
-    expect(builtTested(task({ stage: "testing", heldBy: "wt-b", builtBy: A, gatedBy: "wt-b" }))).toBe("built by wt-a and wt-b · needs a tester");
-    expect(builtTested(task({ stage: "your-check", gatedBy: "wt-b", testedBy: "qa" }))).toBe("built by wt-b · tested by qa");
+    expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa-0030 (session 99999999)" }), (w) => shortWho(w, {}))).toBe("built by wt-a · tested by qa-0030");
+    expect(builtTested(task({ stage: "done", builtBy: A, testedBy: "owner (session 22222222)" }), (w) => shortWho(w, {}))).toBe("built by wt-a · tested by you");
+    expect(builtTested(task({ stage: "testing", heldBy: A, builtBy: A }), (w) => shortWho(w, {}))).toBe("built by wt-a · needs a tester");
+    expect(builtTested(task({ stage: "testing", heldBy: "owner", builtBy: A }), (w) => shortWho(w, {}))).toBe("built by wt-a");
+    expect(builtTested(task({ stage: "your-check", builtBy: A }), (w) => shortWho(w, {}))).toBe("built by wt-a");
+    expect(builtTested(task({ stage: "your-check", builtBy: A, gatedBy: "wt-a (main · session 7b5e8856 · cc-hg)" }), (w) => shortWho(w, {}))).toBe("built by wt-a");
+    expect(builtTested(task({ stage: "testing", heldBy: "wt-b", builtBy: A, gatedBy: "wt-b" }), (w) => shortWho(w, {}))).toBe("built by wt-a and wt-b · needs a tester");
+    expect(builtTested(task({ stage: "your-check", gatedBy: "wt-b", testedBy: "qa" }), (w) => shortWho(w, {}))).toBe("built by wt-b · tested by qa");
     // Nobody built it on record, it isn't that far yet, or it's the owner's own task: nothing.
-    expect(builtTested(task({ stage: "your-check", testedBy: "qa" }))).toBe("");
-    expect(builtTested(task({ stage: "building", builtBy: A }))).toBe("");
-    expect(builtTested(task({ stage: "done", builtBy: "owner", testedBy: "owner", forWho: "human" }))).toBe("");
+    expect(builtTested(task({ stage: "your-check", testedBy: "qa" }), (w) => shortWho(w, {}))).toBe("");
+    expect(builtTested(task({ stage: "building", builtBy: A }), (w) => shortWho(w, {}))).toBe("");
+    expect(builtTested(task({ stage: "done", builtBy: "owner", testedBy: "owner", forWho: "human" }), (w) => shortWho(w, {}))).toBe("");
     // The pane names each in full.
     expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa" }), (w) => `[${w}]`)).toBe(`built by [${A}] · tested by [qa]`);
   });

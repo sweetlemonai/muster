@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import { fmtMinutes, key, shortTokens } from "./lib";
+import { fmtMinutes, key, type RoleNames, shortTokens } from "./lib";
 import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, whenText } from "./recentData";
+import { RoleNamesContext } from "./settingsData";
 import type { Task } from "./types";
 import ProjectName, { TaskKey } from "./ProjectName";
 import { Pill } from "./ui";
@@ -83,6 +84,7 @@ export default function Recent({ tasks, now, kind, onKind, multi, openKey, onOpe
   const { groups, older } = useMemo(() => dayGroups(byKind(all, kind), now, weeks), [all, kind, now, weeks]);
   const shown = useMemo(() => [...new Map(groups.flatMap((g) => g.rows).map((r) => [key(r.task), r.task])).values()], [groups]);
   const costs = useCosts(shown);
+  const names = useContext(RoleNamesContext);
   return (
     <RecentList
       groups={groups}
@@ -97,6 +99,7 @@ export default function Recent({ tasks, now, kind, onKind, multi, openKey, onOpe
       onOpen={onOpen}
       costs={costs}
       onFold={onFold}
+      names={names}
     />
   );
 }
@@ -104,7 +107,7 @@ export default function Recent({ tasks, now, kind, onKind, multi, openKey, onOpe
 const NOTHING: Record<KindFilter, string> = { all: "merged or accepted", merged: "merged", accepted: "accepted" };
 
 /** The list as drawn: the head with its window and the kind chips, the day groups, Show older. */
-export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, multi, openKey, onOpen, costs, onFold }: {
+export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, multi, openKey, onOpen, costs, onFold, names = {} }: {
   groups: DayGroup[];
   older: number;
   kind: KindFilter;
@@ -118,6 +121,8 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
   costs: Map<string, Cost>;
   /** Sends it to the row above the board (mu-84). */
   onFold: () => void;
+  /** Each role's name by its id (0112), for a builder's slot. */
+  names?: RoleNames;
 }) {
   const days = weeks * 7;
   return (
@@ -143,7 +148,7 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
           <section key={g.day} className="recent-day" aria-label={g.label}>
             <h3 className="recent-day-head">{g.label} <small>{g.rows.length}</small></h3>
             {g.rows.map((r) => (
-              <RecentRow key={`${key(r.task)}:${r.kind}`} r={r} now={now} multi={multi} active={openKey === key(r.task)} onOpen={onOpen} cost={costs.get(key(r.task))} />
+              <RecentRow key={`${key(r.task)}:${r.kind}`} r={r} now={now} multi={multi} active={openKey === key(r.task)} onOpen={onOpen} cost={costs.get(key(r.task))} names={names} />
             ))}
           </section>
         ))}
@@ -159,9 +164,9 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
 
 /** One row: the project (with All), id and title, what happened and when; under them who built
  *  it and its time and tokens. The whole row opens the task in the pane. */
-function RecentRow({ r, now, multi, active, onOpen, cost }: { r: Finish; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; cost: Cost | undefined }) {
+function RecentRow({ r, now, multi, active, onOpen, cost, names }: { r: Finish; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; cost: Cost | undefined; names: RoleNames }) {
   const t = r.task;
-  const by = builtBy(t);
+  const by = builtBy(t, names);
   return (
     <button type="button" className={active ? "recent-row active" : "recent-row"} onClick={() => onOpen(t)}>
       <span className="recent-top">

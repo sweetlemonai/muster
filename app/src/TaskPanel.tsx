@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useContext, useEffect, useId, useState } from "react";
 import AnswerBox from "./AnswerBox";
 import { answerId } from "./answerFocus";
 import { api } from "./api";
@@ -11,7 +11,9 @@ import { Fold } from "./ModeViews";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
 import PaneMsg from "./PaneMsg";
+import { shownHolder } from "./lib";
 import { IMAGE, isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
+import { RoleNamesContext } from "./settingsData";
 import { SessionPing } from "./Ping";
 import { reviewStatus, withoutReview } from "./Review";
 import ReviewPanel from "./ReviewPanel";
@@ -70,6 +72,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   const [saves, setSaves] = useState(0);
   const [over, setOver] = useState(false);
   const a = useTaskActions(task, onChanged);
+  const names = useContext(RoleNamesContext);
   const openLink = (href: string) => {
     const at = taskOfHref(href);
     if (at) onOpenAt?.(at.queue, at.id);
@@ -142,7 +145,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           onOpenTask={onOpenTask}
           pause={{ busy: a.busy, onPause: a.pause, onResume: a.resume }}
         />
-        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} paused={task.paused ?? ""} />
+        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to, names)} human={isHuman(task)} paused={task.paused ?? ""} />
         <div className="tp-cols">
           <div className="tp-main">
             <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} onView={onOpenView} images={images} />
@@ -248,7 +251,8 @@ function NoteBar({ onNote, onPaste }: { onNote: (text: string) => void; onPaste:
 }
 
 /** Every check-in, in order: when, how far (the session's own estimate), what, who (0030). */
-function Checkins({ task }: { task: Task }) {
+export function Checkins({ task }: { task: Task }) {
+  const names = useContext(RoleNamesContext);
   return (
     <section className="checkins">
       <h2>Check-ins <small>{task.checkins.length}</small></h2>
@@ -256,7 +260,7 @@ function Checkins({ task }: { task: Task }) {
       <ol>
         {task.checkins.map((c, i) => (
           <li key={i}>
-            <span className="when">{c.at}</span> {c.pct !== null && <b>{c.pct}%</b>} {c.text} <span className="meta">· {c.who}</span>
+            <span className="when">{c.at}</span> {c.pct !== null && <b>{c.pct}%</b>} {c.text} <span className="meta" dir="auto">· {shownHolder(c.who, names)}</span>
           </li>
         ))}
       </ol>

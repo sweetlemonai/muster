@@ -1,7 +1,7 @@
 // The task pane's facts (0021), the parts without React: what's live, what waits on the owner,
 // time spent from the stage history, the criteria from the write-up. Tested in paneData.test.ts.
 import { BLOCK_LOOKS } from "./blockWords";
-import { boardColumn, claimant, heldByOther, isStage, splitHolder, stageLabel, stageRank, STAGES, stampMinutes } from "./lib";
+import { boardColumn, heldByOther, isStage, nameOf, splitHolder, stageLabel, stageRank, STAGES, stampMinutes, type RoleNames } from "./lib";
 import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
 import type { Msg, Undo } from "./useTaskActions";
@@ -79,11 +79,11 @@ export function fmtWall(m: number): string {
 
 /** Whose claim a move on the track to `to` releases: someone else's (not the owner's) when it
  *  leaves Building or Shaping (0097), as the core's set_stage does; "" otherwise. */
-export function releasedBy(t: Pick<Task, "stage" | "claimedBy">, to: string): string {
+export function releasedBy(t: Pick<Task, "stage" | "claimedBy">, to: string, names: RoleNames): string {
   if (to === t.stage) return "";
-  if (t.stage === "building") return heldByOther(t);
+  if (t.stage === "building") return heldByOther(t, names);
   const who = t.claimedBy.trim();
-  return t.stage === "shaping" && who && splitHolder(who).label !== "owner" ? claimant(who) : "";
+  return t.stage === "shaping" && who && splitHolder(who).label !== "owner" ? nameOf(who, names) : "";
 }
 
 /** What Release does to a claim whose lease ran out, as the core's reclaim does it: Building goes
@@ -97,8 +97,8 @@ export function releaseWords(stage: string): { title: string; does: string; done
 
 /** What a move on the track says once it's done, and its Undo: none when it released someone
  *  else's claim (Undo couldn't give it back) or from a stage the window doesn't know. */
-export function trackMove(t: Pick<Task, "stage" | "claimedBy">, to: string): { done: string; undo: Undo | undefined } {
-  const released = releasedBy(t, to);
+export function trackMove(t: Pick<Task, "stage" | "claimedBy">, to: string, names: RoleNames): { done: string; undo: Undo | undefined } {
+  const released = releasedBy(t, to, names);
   return {
     done: `Put in ${stageLabel(to)}.${released ? ` ${released}'s claim on ${stageLabel(t.stage)} was released.` : ""}`,
     undo: !released && isStage(t.stage) ? { back: t.stage, to } : undefined,

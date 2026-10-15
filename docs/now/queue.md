@@ -15,6 +15,7 @@ covers: app/src-tauri/src/queue.rs, app/src-tauri/src/ops.rs, app/src-tauri/src/
 - Building to Testing is refused while a now page the task covers is unchanged on its branch, unless `--now-unchanged "<why>"`; the log names the pages. (mu-102)
 - Testing to Your check needs every criterion ticked except the owner's. (PROTOCOL.md "Stages")
 - `muster return <id> "<why>"` sends a task back; Building goes to its last builder. (AS_BUILT "Stages")
+- A builder that acted as a role slot gets its task back with its exact stamp, slot and all. (mu-112)
 - A block has a kind: tasks, you, permission, question or outside. (mu-24)
 - Tasks is never a flag: the ids go into `depends:`, which clears once they're merged. (mu-24)
 - A depend on an agent's task is met in Your check or Done; on a human task only at Done. (mu-42)

@@ -173,7 +173,7 @@ describe("a held card wears its holder's ribbon (0097)", () => {
 });
 
 describe("the who line beside the ribbon (0097)", () => {
-  const lineOf = (html: string) => /<span class="card-who[^"]*">([^<]*)<\/span>/.exec(html)?.[1] ?? null;
+  const lineOf = (html: string) => /<span class="card-who[^"]*"[^>]*>([^<]*)<\/span>/.exec(html)?.[1] ?? null;
   it("keeps the session and since when, and leaves the name to the ribbon", () => {
     const t = task({ claimedBy: ASGHAR, stageSince: "2026-10-14 17:00" });
     expect(lineOf(card(t))).toBe("wt-0097 · a82f2534 · started 2 h ago");

@@ -1,4 +1,4 @@
-import { type Ref, useEffect, useRef, useState } from "react";
+import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { api, type HelperInfo } from "./api";
 import Appearance from "./Appearance";
 import { DisplayModes } from "./Display";
@@ -7,6 +7,7 @@ import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
 import Notifications from "./Notifications";
 import Projects from "./Projects";
+import Roles from "./Roles";
 import { sessionStatesLine } from "./sessionState";
 import { homePath } from "./lib";
 import type { DisplayMode } from "./modes";
@@ -91,6 +92,7 @@ function Agents({ info, queues, onInfo, onChanged }: { info: SettingsInfo | null
       helper={helper}
       helperError={error}
       onHelper={() => setAsked((n) => n + 1)}
+      roles={<Roles onChanged={onChanged} />}
       // Lit as soon as the core saved it; the accounts aren't checked again for a model.
       onModel={(m) => void api.helperSetModel(m).then(() => setHelper((h) => withModel(h, m)), (e: unknown) => setError(String(e)))}
       onSet={(name, value) => saveAgentsSetting(name, value, { set: api.setSetting, onInfo, onChanged, onHelper: () => setAsked((n) => n + 1) })}
@@ -128,7 +130,7 @@ const MODEL_NAMES: Record<string, string> = { sonnet: "Sonnet", haiku: "Haiku", 
 /** Agents as drawn: the claim lease and the LIVE window first (they're there at once), then the
  *  helper's account and model, which load slowly (the core asks each account's login), below
  *  them so nothing moves when they arrive. */
-export function AgentsView({ info, helper, helperError = "", onHelper, onModel, onSet }: {
+export function AgentsView({ info, helper, helperError = "", onHelper, onModel, onSet, roles }: {
   info: SettingsInfo;
   /** Null while the core checks the accounts. */
   helper: HelperInfo | null;
@@ -137,6 +139,8 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
   onModel: (model: string) => void;
   /** Resolves to null when saved, else the core's refusal to show. */
   onSet: (name: AgentsSettingName, value: string) => Promise<string | null>;
+  /** Roles (0112), the last section: its own data, so it's given drawn. */
+  roles?: ReactNode;
 }) {
   const s = info.settings;
   return (
@@ -188,6 +192,7 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
           </>
         )}
       </section>
+      {roles}
     </div>
   );
 }

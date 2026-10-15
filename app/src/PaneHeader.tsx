@@ -1,12 +1,12 @@
 import { Fragment, useContext, useState } from "react";
 import { HelpButton } from "./HelpButton";
-import { ago, builtTested, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
+import { ago, builtTested, holderOf, isStage, shownHolder, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo, type RoleNames } from "./lib";
 import { focusAnswer } from "./answerFocus";
 import BlockWhy from "./BlockWhy";
 import { taskKey } from "./taskKey";
 import { isLive, waitingOnYou } from "./paneData";
 import { sessionWords } from "./sessionState";
-import { Machine } from "./settingsData";
+import { Machine, RoleNamesContext } from "./settingsData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
 import { isHuman } from "./human";
 import { PanePause, PausedChip } from "./Pause";
@@ -87,7 +87,8 @@ export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string
 
 /** "you" for the owner, else who as written, session and all (the pane shows the full id; cards
  *  the short one). */
-const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
+export const person = (who: string, names: RoleNames = {}) =>
+  splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : shownHolder(who, names);
 
 /** Stage, Paused with when and why and the Pause or Resume beside it (0045), why it's blocked (the
  *  kind in bold, each task it's blocked by a link, 0024), who's on it
@@ -109,7 +110,10 @@ export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: 
   const yourTurn = task.stage === "your-check" && splitHolder(who).label === "owner";
   const started = startedAgo(task, now);
   const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);
-  const built = builtTested(task, person);
+  // A role slot by its role's name now (0112).
+  const names = useContext(RoleNamesContext);
+  const name = (w: string) => person(w, names);
+  const built = builtTested(task, name);
   const live = isLive(task, now, useContext(Machine).liveMinutes * 60);
   const waiting = waitingOnYou(task);
   const session = sessionWords(task);
@@ -128,10 +132,10 @@ export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: 
             </>
           )}
           <span className="holders">
-            {who && (yourTurn ? <b className="your-turn">Your turn</b> : <>on it: {person(who)}</>)}
+            {who && (yourTurn ? <b className="your-turn">Your turn</b> : <>on it: <bdi>{name(who)}</bdi></>)}
             {started && <>{who ? " · " : ""}{started}</>}
             {earlier.map((h, i) => (
-              <Fragment key={h.stage}>{who || started || i > 0 ? " · " : ""}{stageLabel(h.stage)}: {person(h.who)}</Fragment>
+              <Fragment key={h.stage}>{who || started || i > 0 ? " · " : ""}{stageLabel(h.stage)}: <bdi>{name(h.who)}</bdi></Fragment>
             ))}
           </span>
           {built && <span className="built-tested">{built}</span>}

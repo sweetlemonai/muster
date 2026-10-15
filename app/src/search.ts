@@ -1,4 +1,4 @@
-import { holder, key } from "./lib";
+import { holder, key, type RoleNames } from "./lib";
 import { parseKey } from "./taskKey";
 import type { Task } from "./types";
 
@@ -92,8 +92,8 @@ function isTask(w: string, t: Pick<Task, "id" | "prefix">): boolean | null {
 
 // Holders are few and repeat on every keystroke; their folds are kept (and dropped when many).
 const folded = new Map<string, string>();
-function foldHolder(t: Task): string {
-  const who = holder(t);
+function foldHolder(t: Task, names: RoleNames): string {
+  const who = holder(t, names);
   if (!who) return "";
   let f = folded.get(who);
   if (f === undefined) {
@@ -105,8 +105,8 @@ function foldHolder(t: Task): string {
 }
 
 /** Whether a task has every word: digits as its id, a key as its prefix and id, the rest in its
- *  holder or its search text. */
-export function taskMatches(t: Task, words: string[]): boolean {
+ *  holder (by the name it shows, 0112) or its search text. */
+export function taskMatches(t: Task, words: string[], names: RoleNames): boolean {
   let hay: string | null = null;
   for (const w of words) {
     const it = isTask(w, t);
@@ -114,7 +114,7 @@ export function taskMatches(t: Task, words: string[]): boolean {
       if (!it) return false;
       continue;
     }
-    hay ??= `${foldHolder(t)} ${t.search ?? ""}`;
+    hay ??= `${foldHolder(t, names)} ${t.search ?? ""}`;
     if (!hay.includes(w)) return false;
   }
   return true;

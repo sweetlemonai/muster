@@ -1,9 +1,9 @@
 import { useContext, type ReactNode } from "react";
 import { LiveDot } from "./CardLook";
 import { isHuman } from "./human";
-import { agoText, claimant, leaseRunOut, minutesSince, splitHolder } from "./lib";
+import { agoText, leaseRunOut, minutesSince, nameOf, shownHolder, splitHolder } from "./lib";
 import { useLook } from "./modes";
-import { Machine, spanText } from "./settingsData";
+import { Machine, RoleNamesContext, spanText } from "./settingsData";
 import type { Note, Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
@@ -59,12 +59,13 @@ const quietTip = (lease: number) => `. Quiet: no heartbeat for over ${spanText(l
  *  (styles.css). Not a
  *  control: the card is the button, and the keyboard order stays the card's. */
 function Ribbon({ who, spoken, shown, tip, quiet, children }: { who: string; spoken: string; shown?: string; tip: string; quiet: boolean; children?: ReactNode }) {
+  const names = useContext(RoleNamesContext);
   return (
     <span className={quiet ? "holder-ribbon quiet" : "holder-ribbon"} title={tip}>
       <span className="sr-only">{`${spoken} `}</span>
       {shown && <span aria-hidden="true" className="holder-prefix">{shown}</span>}
       {shown && <span aria-hidden="true" className="holder-sep"> · </span>}
-      <span className="holder-name" dir="auto">{claimant(who)}</span>
+      <span className="holder-name" dir="auto">{nameOf(who, names)}</span>
       {children}
       {quiet && <span className="holder-quiet"> · quiet</span>}
     </span>
@@ -77,11 +78,12 @@ function Ribbon({ who, spoken, shown, tip, quiet, children }: { who: string; spo
 export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
   const on = useLook("holder-ribbon");
   const lease = useContext(Machine).leaseMinutes;
+  const names = useContext(RoleNamesContext);
   const who = ribbonHolder(t);
   if (on !== "show" || !who) return null;
   const quiet = leaseRunOut(t, now, lease);
   return (
-    <Ribbon who={who} spoken="held by" tip={`Held by ${who}${quiet ? quietTip(lease) : ""}`} quiet={quiet}>
+    <Ribbon who={who} spoken="held by" tip={`Held by ${shownHolder(who, names)}${quiet ? quietTip(lease) : ""}`} quiet={quiet}>
       <LiveDot t={t} />
     </Ribbon>
   );
@@ -93,6 +95,7 @@ export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
 export function NoteHolderRibbon({ n, now }: { n: Note; now: number }) {
   const on = useLook("holder-ribbon");
   const lease = useContext(Machine).leaseMinutes;
+  const names = useContext(RoleNamesContext);
   const who = n.heldBy.trim();
   if (on !== "show" || !who) return null;
   const taken = minutesSince(n.heldSince, now);
@@ -100,5 +103,5 @@ export function NoteHolderRibbon({ n, now }: { n: Note; now: number }) {
   const quiet = noteQuiet(n, now, lease);
   const tip = `${since}${quiet ? quietTip(lease) : ""}`;
   if (isOwner(who)) return <YouRibbon title={`You're shaping it${tip}`} spoken="being shaped by" quiet={quiet} />;
-  return <Ribbon who={who} spoken="being shaped by" shown="shaping" tip={`Being shaped by ${who}${tip}`} quiet={quiet} />;
+  return <Ribbon who={who} spoken="being shaped by" shown="shaping" tip={`Being shaped by ${shownHolder(who, names)}${tip}`} quiet={quiet} />;
 }

@@ -102,7 +102,7 @@ describe("the filter bar in each mode", () => {
     inMode(
       mode,
       createElement(FilterBar, {
-        tasks, query: { ...EMPTY_QUERY, ...over.query }, onQuery: () => {}, ctx: dayContext(NOW), sortable: true, views: [], onViews: () => {},
+        tasks, query: { ...EMPTY_QUERY, ...over.query }, onQuery: () => {}, ctx: dayContext(NOW, {}), sortable: true, views: [], onViews: () => {},
         shown: 2, total: 2, hidden: over.hidden ?? 0, estimate: "", out: over.out ?? false, onSummon: () => {}, onHide: () => {},
       }),
     );

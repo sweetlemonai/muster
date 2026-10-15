@@ -17,21 +17,21 @@ const t = (over: Partial<Task>): Task => ({
 describe("sortTasks", () => {
   it("sorts by priority rank, stage order and change time", () => {
     const list = [t({ id: "1", priority: "low" }), t({ id: "2", priority: "high" }), t({ id: "3" })];
-    expect(sortTasks(list, "priority", false).map((x) => x.id)).toEqual(["2", "3", "1"]);
-    expect(sortTasks(list, "priority", true).map((x) => x.id)).toEqual(["1", "3", "2"]);
+    expect(sortTasks(list, "priority", false, {}).map((x) => x.id)).toEqual(["2", "3", "1"]);
+    expect(sortTasks(list, "priority", true, {}).map((x) => x.id)).toEqual(["1", "3", "2"]);
     const st = [t({ id: "a", stage: "done" }), t({ id: "b", stage: "backlog" }), t({ id: "c", stage: "your-check" }), t({ id: "d", stage: "shaping" }), t({ id: "e", stage: "testing", blocked: true })];
-    expect(sortTasks(st, "stage", false).map((x) => x.id)).toEqual(["b", "d", "e", "c", "a"]);
-    expect(sortTasks([t({ id: "x", modified: 5 }), t({ id: "y", modified: 9 })], "changed", true).map((x) => x.id)).toEqual(["y", "x"]);
+    expect(sortTasks(st, "stage", false, {}).map((x) => x.id)).toEqual(["b", "d", "e", "c", "a"]);
+    expect(sortTasks([t({ id: "x", modified: 5 }), t({ id: "y", modified: 9 })], "changed", true, {}).map((x) => x.id)).toEqual(["y", "x"]);
     // "On it / waiting on" sorts by what the cell shows: a Done task's old claim counts as nobody.
     const who = [t({ id: "a", stage: "done", claimedBy: "aaa" }), t({ id: "b", stage: "building", claimedBy: "zed" }), t({ id: "c", claimedBy: "zzz", blockedKind: "tasks", blockedBy: [{ id: "0012", stage: "ready", holder: "" }] })];
-    expect(sortTasks(who, "who", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
+    expect(sortTasks(who, "who", false, {}).map((x) => x.id)).toEqual(["a", "c", "b"]);
   });
   it("sorts by estimate as agent time plus test time, then tokens", () => {
     const a = t({ id: "a", estMinutes: 60, estTestMinutes: 0 });
     const b = t({ id: "b", estMinutes: 30, estTestMinutes: 60 });
     const c = t({ id: "c", estMinutes: 60, estTokenCount: 500_000 });
-    expect(sortTasks([b, c, a], "estimate", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
-    expect(sortTasks([a, b, c], "estimate", true).map((x) => x.id)).toEqual(["b", "c", "a"]);
+    expect(sortTasks([b, c, a], "estimate", false, {}).map((x) => x.id)).toEqual(["a", "c", "b"]);
+    expect(sortTasks([a, b, c], "estimate", true, {}).map((x) => x.id)).toEqual(["b", "c", "a"]);
   });
 });
 
@@ -43,7 +43,7 @@ describe("sortTasks by stage for goals and features", () => {
       t({ id: "c", level: "goal", stage: "ready", shownStage: "in-progress" }),
       t({ id: "a", stage: "ready" }),
     ];
-    expect(sortTasks(list, "stage", false).map((x) => x.id)).toEqual(["a", "c", "d", "b"]);
+    expect(sortTasks(list, "stage", false, {}).map((x) => x.id)).toEqual(["a", "c", "d", "b"]);
   });
 });
 

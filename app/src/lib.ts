@@ -1,5 +1,5 @@
 import { keyOf, taskKey } from "./taskKey";
-import type { Activity, Checkin, Task } from "./types";
+import type { Activity, Checkin, Question, Task } from "./types";
 
 /** The stages a task moves through, in order, with who works each by default. Mirrors the core's
  *  STAGES, stage_label and stage_role (queue.rs); its tests pin the same order. The core leaves
@@ -72,24 +72,26 @@ export function holderOf(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): strin
   }
 }
 
-/** Who holds a task, without the session id. */
-export function holder(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
+/** Who holds a task, without the session id (a role slot by its role's name now, 0112). */
+export function holder(t: Pick<Task, "stage" | "claimedBy" | "heldBy">, names: RoleNames): string {
   const who = holderOf(t);
-  return who ? claimant(who) : "";
+  return who ? nameOf(who, names) : "";
 }
 
 /** Who else holds a task in Ready or Building, the stages that are claims; "" when nobody or the
  *  owner does. The core refuses the owner's pass while someone else holds it. */
-export function heldByOther(t: Pick<Task, "stage" | "claimedBy">): string {
+export function heldByOther(t: Pick<Task, "stage" | "claimedBy">, names: RoleNames): string {
   if (t.stage !== "ready" && t.stage !== "building") return "";
   const who = t.claimedBy.trim();
-  return !who || splitHolder(who).label === "owner" ? "" : claimant(who);
+  return !who || splitHolder(who).label === "owner" ? "" : nameOf(who, names);
 }
 
 /** A holder as the core stamps it (session.rs `stamped`): `label (main-29 · wt-0030 · session
  *  7b5e8856 · cc-hg)`, the name and checkout first, the account last; a teammate's (0090) names its
  *  agent right after the session (`session 7b5e8856 · agent a1b2c3d4`). Anything else is all label. */
-export type HolderParts = { label: string; parts: string[]; id: string; agent?: string; account: string };
+export type HolderParts = { label: string; parts: string[]; id: string; agent?: string; slot?: string; account: string };
+/** A role slot as a stamp stores it (0112, roles.rs `Slot::parse`): the role's id and a number 1 to 20. */
+const SLOT = /^slot ([a-z]{1,20}-(?:[1-9]|1[0-9]|20))$/;
 const STAMP_PART = /^[A-Za-z0-9._-]{1,40}$/;
 export function splitHolder(who: string): HolderParts {
   const none = { label: who, parts: [], id: "", account: "" };
@@ -109,6 +111,11 @@ export function splitHolder(who: string): HolderParts {
       const agent = /^agent ([0-9a-f]{8})$/.exec(part)?.[1];
       if (!justAfterSession || !agent) return none;
       out.agent = agent;
+    } else if (part.startsWith("slot ") && out.id) {
+      // Once, after the session and agent, before the account (0112).
+      const slot = SLOT.exec(part)?.[1];
+      if (out.slot || out.account || !slot) return none;
+      out.slot = slot;
     } else if (!out.id) {
       if (!STAMP_PART.test(part) || out.parts.length === 2) return none;
       out.parts.push(part);
@@ -122,12 +129,57 @@ export function splitHolder(who: string): HolderParts {
 }
 
 /** Is `a` the same holder as `b`? The core's session::same_holder: the same text, or the same
- *  label with sessions that don't differ (one without a session matches any). */
+ *  label (or one role slot, 0112, whatever the labels say) with sessions that don't differ (one
+ *  without a session matches any). */
 export function sameHolder(a: string, b: string): boolean {
   if (a === b) return true;
   const x = splitHolder(a);
   const y = splitHolder(b);
-  return x.label === y.label && (!x.id || !y.id || x.id === y.id);
+  const oneSlot = !!x.slot && x.slot === y.slot;
+  return (x.label === y.label || oneSlot) && (!x.id || !y.id || x.id === y.id);
+}
+
+/** Each role's name by its id (0112), as the state carries it from roles.toml. */
+export type RoleNames = Readonly<Record<string, string>>;
+
+/** A holder's label as views show it (0112): a stamp with a role slot (`slot coder-2`) shows the
+ *  role's name now and the number (`Kaveh-2`, or `کاوه-2` after a rename), so renaming a role
+ *  renames it everywhere; any other holder, and a slot whose role has no name, its label as
+ *  written. */
+export function shownLabel(who: string, names: RoleNames): string {
+  const { label, slot } = splitHolder(who);
+  return slotLabel(label, slot, names);
+}
+
+/** A label that acts as role slot `slot` (0112, `coder-2`) by its role's name now (`کاوه-2`); the
+ *  label as written without a slot, or for a role with no name. */
+export function slotLabel(label: string, slot: string | undefined, names: RoleNames): string {
+  if (!slot) return label;
+  const at = slot.lastIndexOf("-");
+  const id = slot.slice(0, at);
+  // Only the roles' own keys: a slot `constructor-1` isn't Object's.
+  const name = Object.hasOwn(names, id) ? names[id] : "";
+  return name ? `${name}-${slot.slice(at + 1)}` : label;
+}
+
+/** A question's asker part (`Kaveh-2, session 7b5e8856, 2026-10-14 20:00`) with its label by the
+ *  slot's name now, when the core found the slot it acts as (queue.rs `asker_slot`). */
+export function askerShown(q: Pick<Question, "asker" | "slot">, names: RoleNames): string {
+  const at = q.asker.indexOf(", ");
+  const label = at < 0 ? q.asker : q.asker.slice(0, at);
+  return slotLabel(label, q.slot, names) + q.asker.slice(label.length);
+}
+
+/** A holder's name, without the session: a role slot by its role's name now (0112), anyone else
+ *  by the name before any brackets. */
+export function nameOf(who: string, names: RoleNames): string {
+  return splitHolder(who).slot ? shownLabel(who, names) : claimant(who);
+}
+
+/** A holder in full with its label as views show it (`shownLabel`), the stamp after it as is. */
+export function shownHolder(who: string, names: RoleNames): string {
+  const { label } = splitHolder(who);
+  return shownLabel(who, names) + who.slice(label.length);
 }
 
 /** What a card says about the order a holder works their tasks in (mu-66): a task sent back to
@@ -175,14 +227,16 @@ function builders(t: Pick<Task, "builtBy" | "gatedBy">): string[] {
   return [built, gated && !(built && sameHolder(built, gated)) ? gated : ""].filter(Boolean);
 }
 
-/** A holder in a few words: "you" for the owner, else the name before any brackets. */
-const shortWho = (who: string) => (splitHolder(who).label === "owner" ? "you" : claimant(who));
+/** A holder in a few words: "you" for the owner, else the name before any brackets (a role slot
+ *  by its role's name now, 0112). */
+export const shortWho = (who: string, names: RoleNames) =>
+  splitHolder(who).label === "owner" ? "you" : nameOf(who, names);
 
 /** Who built an agent's task and who tested it (0047), from Testing on: "built by wt-a · tested
  *  by qa-0042" (Your check and Done), "built by wt-a · needs a tester" (Testing, still the
  *  builder's); "built by wt-a and wt-b" when one claimed it and another gated it in. "" before Testing, for the owner's own task, or with no builder on record. `name`
  *  shows each holder (short by default; the pane names them in full). */
-export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "testedBy" | "forWho">, name: (who: string) => string = shortWho): string {
+export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "testedBy" | "forWho">, name: (who: string) => string): string {
   const built = [...new Set(builders(t).map(name))];
   if (built.length === 0 || t.forWho === "human" || stageRank(t.stage) < stageRank("testing")) return "";
   const tested = (t.testedBy ?? "").trim();
@@ -192,11 +246,12 @@ export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gate
 
 /** The card's who line (0030): who's on it, short: "wt-a · main-29 · wt-0030 · 7b5e8856", the
  *  owner as "you", "" for nobody. A session typed by hand in an older claim still shows. */
-export function whoLine(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
+export function whoLine(t: Pick<Task, "stage" | "claimedBy" | "heldBy">, names: RoleNames): string {
   const who = holderOf(t);
   if (!who) return "";
-  const { label, parts, id } = splitHolder(who);
-  const name = claimant(label);
+  const { label, parts, id, slot } = splitHolder(who);
+  // A role slot shows its role's name now (0112); any other label, its name before brackets.
+  const name = slot ? shownLabel(who, names) : claimant(label);
   const session = id || (/\bsession ([0-9a-f]{8})\b/.exec(label)?.[1] ?? "");
   const shown = [name === "owner" ? "you" : name, ...parts, session].filter(Boolean);
   return [...new Set(shown)].join(" · ");

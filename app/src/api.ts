@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
-import type { LessonListing, Project, RunView, State, Work } from "./types";
+import type { LessonListing, Project, Role, RoleField, RunView, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
@@ -47,6 +47,10 @@ export const api = {
   // to on or off, or `claude-accounts` (0099) to the labels by spaces (empty for none); the core checks it.
   settingsInfo: () => invoke<SettingsInfo>("settings_info"),
   setSetting: (name: "lease" | "live" | "notify" | "menu-bar" | "claude-accounts", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
+  // The role profiles (0112) from roles.toml, and one field of one role changed (a list
+  // comma-separated); the core checks the whole team and refuses with why.
+  rolesInfo: () => invoke<Role[]>("roles_info"),
+  setRole: (id: string, field: RoleField, value: string) => invoke<Role[]>("set_role", { id, field, value }),
   // A project's Your check limit (0050), by its key (queue folder): 1 to 50, "off", or "" for the default (5).
   setYourCheckLimit: (key: string, value: string) => invoke<void>("set_your_check_limit", { key, value }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>

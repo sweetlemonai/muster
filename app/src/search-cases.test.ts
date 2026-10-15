@@ -28,7 +28,7 @@ function toQuery(q: FixtureQuery): Query {
 }
 
 describe("the shared search cases (the CLI gives the same)", () => {
-  const ctx = dayContext(Date.UTC(2026, 9, 14) / 1000);
+  const ctx = dayContext(Date.UTC(2026, 9, 14) / 1000, {});
   for (const c of cases.cases) {
     const q = c.query as FixtureQuery;
     it(JSON.stringify(q), () => {

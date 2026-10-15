@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { api } from "./api";
-import { fmtMinutes, ofEstimate, shortTokens, stageLabel, stamp } from "./lib";
+import { fmtMinutes, ofEstimate, shortTokens, slotLabel, stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
+import { RoleNamesContext } from "./settingsData";
 import type { SessionRow, Task, Tokens, Work as WorkData } from "./types";
 import { Button } from "./ui";
 
@@ -155,10 +156,11 @@ export function WorkView({ work, error, viewing, transcript, onView }: {
 
 function SessionLine({ r, on, onView }: { r: SessionRow; on: boolean; onView: (session: string | null) => void }) {
   const live = r.live ? <span className="live-now"><i className="dot" />live</span> : null;
+  const names = useContext(RoleNamesContext);
   return (
     <tr className={r.live ? "work-live" : undefined}>
       <td>
-        <code>{r.id}</code> <span className="meta">{r.who}{r.holds ? " · holds it" : ""}{r.sharedWith > 0 ? ` · also on ${r.sharedWith} other task${r.sharedWith === 1 ? "" : "s"}` : ""}</span>
+        <code>{r.id}</code> <span className="meta" dir="auto">{slotLabel(r.who, r.slot, names)}{r.holds ? " · holds it" : ""}{r.sharedWith > 0 ? ` · also on ${r.sharedWith} other task${r.sharedWith === 1 ? "" : "s"}` : ""}</span>
       </td>
       <td>{r.stages.map(stageLabel).join(", ") || "—"}</td>
       {r.found === "read" ? (

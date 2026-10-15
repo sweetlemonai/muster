@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { api, type Commented } from "./api";
-import { stamp } from "./lib";
+import { shownHolder, stamp } from "./lib";
 import Markdown from "./Markdown";
+import { RoleNamesContext } from "./settingsData";
 import type { Task } from "./types";
 import { Button } from "./ui";
 import { commentNotice, editKey } from "./writeUp";
@@ -25,6 +26,7 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
   keys?: Map<string, string>;
   onLink?: (href: string) => void;
 }) {
+  const names = useContext(RoleNamesContext);
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
@@ -97,8 +99,8 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
       {task.comments.length === 0 && <p className="none">No comments yet.</p>}
       {task.comments.map((c, i) => (
         <div key={`${i}-${c.at}-${c.who}`} className="comment">
-          <p className="meta">
-            {c.who} · {c.at}
+          <p className="meta" dir="auto">
+            {shownHolder(c.who, names)} · {c.at}
           </p>
           <Markdown text={c.text} keys={keys} onLink={onLink} />
         </div>

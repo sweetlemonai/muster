@@ -2,8 +2,8 @@ import { useContext, useEffect, useState } from "react";
 import { blockSentence } from "./blockWords";
 import { BranchPane } from "./Branch";
 import { KINDS } from "./fields";
-import { claimant, earlierStages, heldByOther, isStage, leaseRunOut, passLabel, stageLabel } from "./lib";
-import { Machine, spanText } from "./settingsData";
+import { earlierStages, heldByOther, isStage, leaseRunOut, nameOf, passLabel, stageLabel } from "./lib";
+import { Machine, RoleNamesContext, spanText } from "./settingsData";
 import { isHuman } from "./human";
 import { isWork } from "./levels";
 import Links from "./Links";
@@ -75,11 +75,12 @@ export default function Sidebar({ task, nowSecs, a, images, files }: {
 /** The next step for this stage, and the two ways off it. A goal or feature is passed on only
  *  while it's shaped (it never goes into or through Building) and has no claim to release. The
  *  owner's own task (0022) is Start in To do and Done in Doing. */
-function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
+export function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
   const human = isHuman(task);
   const pass = passLabel(task.stage, human);
   const back = earlierStages(task.stage);
-  const holder = heldByOther(task);
+  const names = useContext(RoleNamesContext);
+  const holder = heldByOther(task, names);
   const shapedOnly = !isWork(task);
   // A claim nobody has heard from past the lease (this machine's, Settings 0036): the owner may give
   // it back to Ready, or in Shaping let go of it there (0097).
@@ -126,7 +127,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
       )}
       {stale && (
         <p className="meta small">
-          {claimant(task.claimedBy)} hasn't been heard from for {spanText(lease)}. {releaseWords(task.stage).does}
+          {nameOf(task.claimedBy, names)} hasn't been heard from for {spanText(lease)}. {releaseWords(task.stage).does}
         </p>
       )}
       {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}

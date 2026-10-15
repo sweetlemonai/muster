@@ -129,7 +129,8 @@ here):
 | `ping.rs` | Asking a working session for a check-in, or sending it a message, through its mailbox; the owner's `@ask` question and the send-back notice to the builder |
 | `parallel.rs` | Parallel sessions: which Ready tasks are safe together, `muster start`'s worktree, the merge, `release`, what's left behind |
 | `merge_log.rs` | Git's merge driver for `docs/WORKLOG.md` (`muster merge-log`), and setting it in a repo's config |
-| `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`, a teammate's with `· agent a1b2c3d4` after the session), its mailbox, and when two holders are the same (label, session and agent) |
+| `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`, a teammate's with `· agent a1b2c3d4` after the session, a role slot's with `· slot coder-2` after those, 0112), its mailbox, and when two holders are the same (label or slot, session and agent) |
+| `roles.rs` | The role profiles (0112): `roles.toml`'s strict reader (no TOML crate: strings, numbers and lists of strings; an unknown table or key, a wrong shape or a value off its bounds or allowlist refused with its line and key), the defaults (the brief's ten roles and Pouya), the file cached by modified time and size, `edit` for Settings, slots (`Slot`, `slot_of_label`, `held`, `lowest_free`), `muster team` and `muster instructions`. `--role` gives a session (and agent) the slot it already holds in Building or Testing, so one session is one slot; `session::keep_slot` carries a claim's slot to the Testing holder and a takeover's successor, even under its old name after a rename. `ops::slot_refusal` keeps one session to one slot across every queue (`ops::elsewhere` reads the others) and a slot to one session; `ops::unless_taken` brings a task back to a holder without the slot when another session holds it now (`session::without_slot`), and a takeover of a claim without a slot takes it over without one; a stamp without a slot part holds none |
 | `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name; only sessions stamped with an allowed account are read (0012) |
 | `transcripts.rs` | The one reader of Claude Code transcripts on this Mac, sums only: the allowed accounts' `projects` folders, and in them only project folders under `~/playground` (0012) |
 | `accounts.rs` | The Claude accounts Muster reads (0012): the `claude_accounts` allowlist resolved to `~/.claude-<label>` folders (`allowed`), never `~/.claude` or inside it; the playground key that filters transcript folders (`playground_key`, `is_under`) |
@@ -205,7 +206,7 @@ The 69 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 ### The `muster` command line
 
 The app's binary, run with arguments (`main.rs`). `bin/muster` finds the release build
-(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 46 commands
+(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 48 commands
 in `help.rs`, grouped as the manual groups them:
 
 | Group | Commands |
@@ -214,6 +215,7 @@ in `help.rs`, grouped as the manual groups them:
 | Stages | `pass`, `return`, `block`, `unblock`, `pause`, `resume`, `stage`, `tick`, `untick`, `move` |
 | Claims | `claim`, `next`, `heartbeat`, `checkin`, `ping`, `reclaim`, `ready`, `start`, `release`, `merge-log` |
 | Review | `review`, `lessons` |
+| Team | `team`, `instructions` |
 | Questions | `ask`, `answer`, `escalate`, `inbox` |
 | Backlog | `add`, `shape`, `file`, `drop`, `vision` |
 | Projects and the queue | `projects`, `init`, `migrate`, `check`, `index`, `help` |
@@ -294,6 +296,7 @@ On this Mac, in `~/Library/Application Support/ai.sweetlemon.muster/`:
 |---|---|---|---|
 | `projects.json` (+ `projects.json.lock`) | Added and hidden projects, gates, names, labels, categories, colours, order, folds, Your check limits | the app and `muster projects set`, through `projects::edit` (flock, temp file, rename) | the app, `muster` (through `projects::places`, which tests replace) |
 | `settings.json` | Claim lease, LIVE window, notifications on or off, the old-pauses offer | the app's Settings | the app on every poll; `muster reclaim` and `muster check` |
+| `roles.toml` | The role profiles (0112): each role's name, title, stage, prompt, tools, permission, models, caps, workers, slots, stage moves, providers, writes | `roles.rs` from its defaults on first read; Settings › Agents › Roles; the owner by hand | the app's poll (each role's name, for slot stamps), Roles, `muster team`, `instructions`, and `--role` on claim, next and start |
 | `notified.json` | The keys of what's been notified (the last 500, plus every one still waiting) | `notify.rs` | `notify.rs` |
 | `helper/helper.json`, `helper/<project>.jsonl` | The helper's account and model, and each project's conversation | the app | the app |
 
@@ -883,7 +886,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   Both are saved per machine in `settings.json` beside `projects.json`; `muster reclaim` (with
   no `--after`) and `muster check` read the same file, the app reads it on every poll (Release,
   the card's "quiet" and dot, the pane's LIVE), and a missing, broken or out-of-bounds value is
-  the default, field by field. **Projects** also shows each project's gate command (0023),
+  the default, field by field. **Roles** (0112, `Roles.tsx`, `rolesData.ts`) lists each role
+  of `roles.toml` with its name and slot count; the open one shows its name, models, providers,
+  slots and turn, budget and context caps as fields, each saved by `set_role` (`roles::edit`,
+  which checks the whole team and leaves the file as it was on a refusal) and the queues read
+  again so a rename shows at once. The poll sends `roleNames` (id → name) with the state, read
+  from `roles.toml` only when its modified time or size changes, and cards (`whoLine`), the
+  pane (`person`, `shownHolder`, History, the Next step's notes, check-ins and comments), the
+  Work rows (`SessionRef::slot`, `slotLabel`), question askers (`Question::slot` from a stamp of
+  the asker's label and session, `askerShown`), the holder ribbon (`HolderRibbon.tsx`), the table, the graph, Recently finished and the
+  built-by line (`nameOf`) show a stamp's `slot coder-2` as the
+  role's name now (`Kaveh-2`); a stamp without a slot part, or a refused file, shows the label
+  as written. **Projects** also shows each project's gate command (0023),
   read-only, with the `muster projects set` line when none is set, and under it, in the same
   row and look, its run command (0077): `projects.json`'s `run`, by queue folder like `gate`, set
   with `muster projects set <name> run "<command>"` under the gate's rules (`split_words`, one line

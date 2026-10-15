@@ -572,15 +572,16 @@ Who's on a task. A coding session claims a Ready task, keeps the claim alive whi
 
 ### muster claim
 
-Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in. With --takeover, a successor session takes over a claim in Building, or a filed note's shaper's in Shaping (0097), made under its own label by another session: allowed once that session checked in with --handoff after the claim, or when the claim has been quiet for 30 minutes; the owner may always take over. The claim and its lease become yours, the task's mail waiting for the old session moves to yours (answers to its questions come to you), you count as its builder (so you don't test it), and the log says "took over the claim from \<old\> (handed off)" or "(quiet 42 min)". Refused for another label, while the task is paused, for a blocked task unless its holder handed off (it's waiting, not gone; the owner may still take it over), and while the old session is still working: then it says who holds it, since when, and when you may take it over.
+Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in. With --takeover, a successor session takes over a claim in Building, or a filed note's shaper's in Shaping (0097), made under its own label by another session: allowed once that session checked in with --handoff after the claim, or when the claim has been quiet for 30 minutes; the owner may always take over. The claim and its lease become yours, the task's mail waiting for the old session moves to yours (answers to its questions come to you), you count as its builder (so you don't test it), and the log says "took over the claim from \<old\> (handed off)" or "(quiet 42 min)". Refused for another label, while the task is paused, for a blocked task unless its holder handed off (it's waiting, not gone; the owner may still take it over), and while the old session is still working: then it says who holds it, since when, and when you may take it over. With --role, the claim is made for the role's lowest free slot (muster team): you're Kaveh-2 from then on (--as Kaveh-2, or --as coder-2, which is the same slot), and the stamp says slot coder-2, so the board shows the role's name even after it's renamed; refused when every slot of the role is held, beside --as, and with --takeover (a successor keeps the slot's name with --as). One session is one slot, in every queue Muster knows: while it holds a slot in Building or Testing, a claim, next or takeover as another slot is refused, and so is a second Building task under any label beside a slot's; a slot's name from before a rename is still that slot. A slot is one session's: a claim as a slot another session holds is refused, and a task that comes back to you after your slot went to another session comes back without it.
 
 ```
-muster claim <id> [--takeover] [--as <who>]
+muster claim <id> [--takeover] [--as <who>|--role <role>]
 ```
 
 | Option | What it does |
 | --- | --- |
 | `--takeover` | take over a claim under your label from another session (after its checkin --handoff, or 30 quiet minutes); with a backlog note's file name, its shaping claim (30 quiet minutes, or its holder releases it) |
+| `--role` | claim for a role's lowest free slot (coder, or its name Kaveh): you act as the slot's name (Kaveh-2) and the claim's stamp carries it (slot coder-2); not with --as |
 | `--as` | who you are (your branch or worktree); default $MUSTER\_AS, then the folder's git user.name |
 
 Examples:
@@ -597,17 +598,22 @@ muster claim 0007 --as wt-a --queue drover
 muster claim 0007 --takeover --as wt-a
 ```
 
+```
+muster claim 0007 --role coder
+```
+
 ### muster next
 
 Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on merged (in Your check or Done; the owner's own task, Done), and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints "nothing ready" and exits 1 when there's none. Refused while you already hold a task in Building; when one of them was sent back from Testing, it says to fix that one first. When more of the agents' tasks wait in Your check than the project's limit (5 unless set in the app's Settings › Projects; the owner's own tasks don't count), it says so first, on stderr ("muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck."), and still claims: it warns, never refuses.
 
 ```
-muster next [--as <who>]
+muster next [--as <who>|--role <role>]
 ```
 
 | Option | What it does |
 | --- | --- |
 | `--as` | who you are; default $MUSTER\_AS, then the folder's git user.name |
+| `--role` | claim for a role's lowest free slot (coder, or its name Kaveh): you act as the slot's name (Kaveh-2) and the claim's stamp carries it (slot coder-2); not with --as |
 
 Examples:
 
@@ -617,6 +623,10 @@ muster next --as wt-a
 
 ```
 muster next --as wt-a --queue muster
+```
+
+```
+muster next --role coder
 ```
 
 ### muster heartbeat
@@ -742,7 +752,7 @@ muster ready --parallel 2 --json
 Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/\<id\>-\<slug\> from the local main's commit (however dirty the main checkout is) and a worktree for it, at \<project\>/worktrees/\<repo\>/\<id\>-\<slug\> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch:, and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. A task back in Building with your claim and no branch (sent back from Your check after its merge, mu-101) gets a fresh branch and worktree from main the same way, its claim kept, and the brief names the owner findings to settle first: this branch's review round re-checks them. Refused claims leave nothing behind. It also sets git's merge driver for the work log in the repo's own config (merge.muster-log.name and .driver, muster merge-log), when git has none yet, touching nothing else, so a rebase in any worktree keeps both sides' new entries whole. Warns on stderr, as next does, when Your check is over the project's limit, and still starts.
 
 ```
-muster start <id> [--at <path>|--here]
+muster start <id> [--at <path>|--here] [--as <who>|--role <role>]
 ```
 
 | Option | What it does |
@@ -750,6 +760,7 @@ muster start <id> [--at <path>|--here]
 | `--at` | where to make the worktree instead (a path that doesn't exist yet) |
 | `--here` | use the worktree you're in (one a runner like a Drover lane made, with nothing uncommitted): it's switched to the task's branch, and it stays the runner's: muster never removes it |
 | `--as` | who you are; default $MUSTER\_AS, then the folder's git user.name |
+| `--role` | claim for a role's lowest free slot (coder, or its name Kaveh): you act as the slot's name (Kaveh-2) and the claim's stamp carries it (slot coder-2); not with --as |
 
 Examples:
 
@@ -763,6 +774,10 @@ muster start 0031 --here --as lane-2
 
 ```
 muster start 0031 --at ~/wt/0031 --as wt-a
+```
+
+```
+muster start 0031 --role coder
 ```
 
 ### muster release
@@ -877,6 +892,50 @@ muster lessons accept L3,L5 --as owner
 
 ```
 muster lessons reject L4 "taste, not a defect" --as owner
+```
+
+## Team
+
+The roles and their slots (task 0112): who the team is, by name, and how a session claims as one of them. Each role has a name (Kaveh the coder, Kia the tester), its instances are numbered by slot (Kaveh-1, Kaveh-2), and `--role` on claim, next and start hands out the lowest free one. The profiles are in `roles.toml` beside projects.json, and Settings › Agents › Roles edits them. See [Roles and slots](02-concepts.md#roles-and-slots).
+
+### muster team
+
+The team (task 0112): every role in roles.toml with its name, title, stage, preferred models, turn, budget and context caps, workers, and its slots: Kaveh-1, Kaveh-2 and on, each with the task and holder that holds it, or free, and the next one --role hands out (the lowest free). A slot is held while a task in Building or Testing, in any queue Muster knows (and the one you're in), has a holder with it: a stamp's slot part (slot coder-2), or a label that names it (Kaveh-2). roles.toml sits beside projects.json; Muster writes it from its defaults on first read: Shapour (shaper), Arash (architect), Dariush (designer), Kaveh (coder), Kia (tester), Sohrab (security), Parviz (performance), Azadeh (accessibility), Mehran (release), Leila (lead) and Pouya (researcher). One table per role, keyed by its id, which never changes: \[coder\] then name = "Kaveh", so renaming a role is one line, and every view shows the new name, since stamps keep the id and the number. The other keys: title, stage, prompt, tools, permission, models, max\_turns, max\_budget\_usd, context\_cap, workers, slots, moves, providers, writes. A file with an unknown table or key, a value of the wrong shape, or one out of bounds or off its allowlist is refused with its line and key, and so is every command that reads it. Settings › Agents › Roles edits it too. Writes nothing to the queue.
+
+```
+muster team [--json]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the roles, each with its profile's fields, slotLines (slot, name, heldBy) and free |
+
+Examples:
+
+```
+muster team
+```
+
+```
+muster team --json
+```
+
+### muster instructions
+
+A role's brief, for a session's prompt to load (task 0112): what the role does, its stage and the stage moves it may make, its tools, permission, models and caps, its slots and the name to act as, and the rules from PROTOCOL.md it keeps. The role by its id (coder) or its name (Kaveh), from roles.toml (see muster team). Writes nothing.
+
+```
+muster instructions <role>
+```
+
+Examples:
+
+```
+muster instructions coder
+```
+
+```
+muster instructions Pouya
 ```
 
 ## Questions

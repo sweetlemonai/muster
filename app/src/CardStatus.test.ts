@@ -182,7 +182,7 @@ describe("the card's who and progress lines", () => {
     ]);
     // Beside the ribbon that names the shaper, only the rest.
     const html = renderToStaticMarkup(createElement(CardStatus, { t: task(shaping), now: NOW, named: true }));
-    expect(html).toBe('<span class="card-who">wt-0030 · 7b5e8856</span>');
+    expect(html).toBe('<span class="card-who" dir="auto">wt-0030 · 7b5e8856</span>');
   });
   it("beside a ribbon that names the holder (0097), keeps the rest of the who line and the flags", () => {
     const named = (over: Partial<Task>, look: "all" | "brief" | "status" = "all") => {

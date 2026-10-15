@@ -26,6 +26,10 @@ pub struct SessionRef {
     pub stages: Vec<String>,
     /// It holds the task now: its claim, or `held-by` in Testing and Your check (`Task::holder`).
     pub holds: bool,
+    /// The role slot its stamps act as (0112, `coder-2`), so the window names it by the role's
+    /// name now; "" when none does.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub slot: String,
     /// The Claude account its stamps name (`hg`), "" when none does or two name different ones:
     /// then it's never read. Not sent to the window.
     #[serde(skip)]
@@ -91,6 +95,15 @@ fn label(who: &str) -> String {
         .to_string()
 }
 
+/// The role slot `who`'s stamp acts as for session `id` (0112): "" when `who` has no stamp, its
+/// stamp no slot, or it's another session's.
+fn stamp_slot(who: &str, id: &str) -> String {
+    match crate::session::split(who.trim()).1 {
+        Some(s) if s.id == id => s.slot,
+        _ => String::new(),
+    }
+}
+
 /// The account `who`'s stamp (`session::split`) names for session `id`: "" when `who` has no
 /// stamp, its stamp has no account, or it's another session's.
 fn stamp_account(who: &str, id: &str) -> String {
@@ -114,6 +127,13 @@ fn note_account(s: &mut SessionRef, account: String, clashed: &mut HashSet<Strin
     }
 }
 
+/// The slot a session's stamps act as: the latest one named (a session is one slot at a time).
+fn note_slot(s: &mut SessionRef, slot: String) {
+    if !slot.is_empty() {
+        s.slot = slot;
+    }
+}
+
 /// Where session `id` is in `out`, added there with `who`'s label when it isn't yet.
 fn entry(out: &mut Vec<SessionRef>, id: String, who: &str) -> usize {
     if let Some(i) = out.iter().position(|s| s.id == id) {
@@ -124,6 +144,7 @@ fn entry(out: &mut Vec<SessionRef>, id: String, who: &str) -> usize {
         who: label(who),
         stages: Vec::new(),
         holds: false,
+        slot: String::new(),
         account: String::new(),
     });
     out.len() - 1
@@ -162,8 +183,10 @@ pub fn sessions(named: &[&str], holder: &str, body: &str) -> Vec<SessionRef> {
         });
         for id in mentions(who) {
             let account = stamp_account(who, &id);
+            let slot = stamp_slot(who, &id);
             let i = entry(&mut out, id, who);
             note_account(&mut out[i], account, &mut clashed);
+            note_slot(&mut out[i], slot);
             if let Some(stage) = &held {
                 if !out[i].stages.contains(stage) {
                     out[i].stages.push(stage.clone());
@@ -174,8 +197,10 @@ pub fn sessions(named: &[&str], holder: &str, body: &str) -> Vec<SessionRef> {
     for who in named.iter().copied().chain([holder]) {
         for id in mentions(who) {
             let account = stamp_account(who, &id);
+            let slot = stamp_slot(who, &id);
             let i = entry(&mut out, id, who);
             note_account(&mut out[i], account, &mut clashed);
+            note_slot(&mut out[i], slot);
         }
     }
     let holding = mentions(holder);
@@ -595,6 +620,7 @@ waiting_on:
                     who: "muster/wt-0025".into(),
                     stages: vec!["building".into()],
                     holds: false,
+                    slot: String::new(),
                     // Its first stamps have no account; a later one names it.
                     account: "hg".into(),
                 },
@@ -603,6 +629,7 @@ waiting_on:
                     who: "qa".into(),
                     stages: vec!["testing".into()],
                     holds: false,
+                    slot: String::new(),
                     account: "mg".into(),
                 },
             ]
@@ -618,6 +645,7 @@ waiting_on:
                 who: "wt-b".into(),
                 stages: vec![],
                 holds: true,
+                slot: String::new(),
                 account: "hg".into(),
             }
         );
@@ -670,6 +698,31 @@ waiting_on:
         // A log line quoted in the description isn't the log.
         let quoted = "# T\n\n```\n- 2026-10-12 10:00 x (session 11111111): stage ready → building (claimed)\n```\n\n## Log\n- 2026-10-12 09:00 capture: created\n";
         assert!(session_ids(&[], quoted).is_empty());
+    }
+
+    #[test]
+    fn a_sessions_row_carries_the_slot_its_stamps_act_as() {
+        let body = "# T\n\n## Log\n- 2026-10-14 19:41 Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg): stage ready → building (claimed)\n- 2026-10-14 19:45 akbar (main · session 1c6af0d9): check-in 10% · on it\n";
+        let refs = sessions(
+            &[],
+            "Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)",
+            body,
+        );
+        let slots: Vec<(&str, &str, &str)> = refs
+            .iter()
+            .map(|r| (r.id.as_str(), r.who.as_str(), r.slot.as_str()))
+            .collect();
+        assert_eq!(
+            slots,
+            [
+                ("7b5e8856", "Kaveh-2", "coder-2"),
+                ("1c6af0d9", "akbar", "")
+            ]
+        );
+        // Sent to the window only when there is one.
+        let json = serde_json::to_value(&refs).unwrap();
+        assert_eq!(json[0]["slot"], "coder-2");
+        assert!(json[1].get("slot").is_none());
     }
 
     #[test]

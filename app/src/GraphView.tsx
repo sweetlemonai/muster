@@ -11,6 +11,7 @@ import { Badge, Pill } from "./ui";
 import YouRibbon from "./YouRibbon";
 import { labelOf, Labels } from "./labels";
 import ProjectName from "./ProjectName";
+import { RoleNamesContext } from "./settingsData";
 
 const W = 232; // node width: id, stage, priority and needs you fit one line
 const H = 100; // node height: room for the top line to wrap onto a second
@@ -61,7 +62,7 @@ const NONE: Task[] = [];
 /** The state line every task shows, as a node or a chip: stage, ready, paused, blocked, who holds
  *  it. A space between the parts, so a chip reads "Done high", not "Donehigh". */
 function Status({ t, ready }: { t: Task; ready: boolean }) {
-  const who = holder(t);
+  const who = holder(t, useContext(RoleNamesContext));
   const parts = [
     <span key="stage" className="g-stage">{stageLabel(t.stage)}</span>,
     t.priority === "high" && <span key="pri" className="pri pri-high">high</span>,

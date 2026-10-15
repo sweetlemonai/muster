@@ -143,7 +143,7 @@ describe("the grouped board's Paused band", () => {
 });
 
 describe("the other views treat the lane the same way", () => {
-  const ctx = dayContext(NOW);
+  const ctx = dayContext(NOW, {});
   const list = [task({ ...paused, id: "0001" }), task({ id: "0002" }), task({ ...paused, id: "0003", stage: "ready" })];
   it("a Paused chip in the filter bar's Flags finds the lane's tasks, and with a stage, what was paused there", () => {
     const flags = GROUPS.find((g) => g.id === "state")!;
@@ -157,7 +157,7 @@ describe("the other views treat the lane the same way", () => {
     expect(html).toContain('<span class="ui-status-pill ui-status-pill--paused">⏸︎ Paused</span><span class="ui-status-pill ui-status-pill--building was">was Building</span>');
     expect(html).not.toContain('<span class="ui-status-pill ui-status-pill--building">Building</span>');
     const rows = [task({ id: "0001", stage: "backlog" }), task({ ...paused, id: "0002" }), task({ id: "0003", stage: "ready" })];
-    expect(sortTasks(rows, "stage", false).map((t) => t.id)).toEqual(["0002", "0001", "0003"]);
+    expect(sortTasks(rows, "stage", false, {}).map((t) => t.id)).toEqual(["0002", "0001", "0003"]);
   });
   it("the timeline doesn't call a paused bar its stage's: it says Paused and where it was", () => {
     const t = task({ ...paused, stageHistory: [{ at: "2026-10-13 08:00", who: A, from: "ready", to: "building" }], pauseHistory: [{ from: "2026-10-13 10:00", to: "" }] });

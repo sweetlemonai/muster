@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
 type Env<'a> = &'a dyn Fn(&str) -> Option<String>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Args {
     pos: Vec<String>,
     flags: std::collections::HashMap<String, String>,
@@ -110,7 +110,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
             | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built"
-            | "--agent" | "--now-unchanged" => {
+            | "--agent" | "--now-unchanged" | "--role" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -728,9 +728,134 @@ fn clean_git_name(raw: &str) -> Option<String> {
 }
 
 /// Who's acting as it's written: the label, with the session stamped after it when the command
-/// runs in one (0030).
-fn stamped_who(label: &str, env: Env, cwd: Option<&Path>) -> String {
-    session::stamped(label, Session::from_env(env, cwd).as_ref())
+/// runs in one (0030), and the role slot when the label names one (0112, `Kaveh-2`: `slot
+/// coder-2`). A label that named a slot before a rename is the slot this session holds under it
+/// (in Building or Testing, in any queue or `here`), so the slot goes on being held. The profiles
+/// are read only for a label shaped like a slot; a refused roles.toml stamps no slot rather than
+/// stopping the command.
+fn stamped_who(label: &str, env: Env, cwd: Option<&Path>, here: Option<&Path>) -> String {
+    let session = Session::from_env(env, cwd);
+    let slot = crate::roles::looks_like_slot(label)
+        .then(|| crate::roles::load(&roles_file()).ok())
+        .flatten()
+        .and_then(|roles| {
+            crate::roles::slot_of_label(&roles, label).or_else(|| {
+                let (slot, hold) = session_slot(&roles, &every_task(here), session.as_ref()?)?;
+                (session::split(&hold.holder).0 == label.trim()).then_some(slot)
+            })
+        })
+        .map(|s| s.id());
+    session::stamped_slot(label, session.as_ref(), slot.as_deref())
+}
+
+/// The role slot this session (and agent) holds, in Building or Testing, and the task holding it
+/// (0112); None when it holds none.
+fn session_slot(
+    roles: &[crate::roles::Role],
+    tasks: &[queue::Task],
+    me: &Session,
+) -> Option<(crate::roles::Slot, crate::roles::Hold)> {
+    let me = Some((me.id.clone(), me.agent.clone().unwrap_or_default()));
+    crate::roles::held(roles, tasks)
+        .into_iter()
+        .find_map(|(slot, holds)| {
+            holds
+                .into_iter()
+                .find(|h| session::session_of(&h.holder) == me)
+                .map(|h| (slot, h))
+        })
+}
+
+/// roles.toml (0112), beside projects.json.
+fn roles_file() -> PathBuf {
+    crate::roles::file_beside(&config_file())
+}
+
+/// Every task in Muster's queues, and in `here` when it's a queue they don't list, for the slots
+/// they hold (0112). Each queue is read once.
+fn every_task(here: Option<&Path>) -> Vec<queue::Task> {
+    let cfg = projects::load(&config_file());
+    let list = projects::list(&base(), &cfg);
+    let mut tasks = projects::read_state(
+        &cfg,
+        &list,
+        &crate::settings::Settings::default(),
+        &mut queue::Cache::default(),
+    )
+    .tasks;
+    if let Some(root) = here {
+        let same = |p: &Path| match (p.canonicalize(), root.canonicalize()) {
+            (Ok(x), Ok(y)) => x == y,
+            _ => p == root,
+        };
+        if !projects::active(&base(), &cfg).iter().any(|(_, p)| same(p)) {
+            tasks.extend(keyed(root, &crate::key::prefix_for(root)).tasks);
+        }
+    }
+    tasks
+}
+
+/// `--role <role>` on claim, next and start (0112): the label becomes the role's lowest free
+/// slot (`Kaveh-2`), so the claim is stamped with it. One session (and agent) is one slot: when
+/// a task in Building or Testing already holds a slot of this role in the caller's session, that
+/// slot is the label again, so a second claim is refused as any is (one claim per holder) and a
+/// re-run of start resumes; a slot of another role held in the session refuses it. Without a
+/// session nothing tells callers apart, so it's the lowest free slot. Refused beside `--as` or
+/// `--takeover`, on another command, for a role that isn't one, and when every slot of the role
+/// is held.
+fn role_label(
+    a: &Args,
+    cmd: &str,
+    root: &Path,
+    env: Env,
+    cwd: Option<&Path>,
+) -> Result<Option<String>, String> {
+    let Some(role) = a.flags.get("role") else {
+        return Ok(None);
+    };
+    if !matches!(cmd, "claim" | "next" | "start") {
+        return Err(format!(
+            "--role is for claim, next and start, not {cmd} (see `muster help`)"
+        ));
+    }
+    if a.flags.contains_key("as") {
+        return Err("--role names who you are, so it doesn't go with --as: the slot it hands out is your --as from then on (see `muster help`)".into());
+    }
+    if a.takeover {
+        return Err("--takeover keeps the claim's name: use --as <the slot's name>, not --role (see `muster help`)".into());
+    }
+    let roles = crate::roles::load(&roles_file())?;
+    let r = crate::roles::find(&roles, role).ok_or_else(|| {
+        format!(
+            "unknown role {role:?}: one of {} (muster team) (see `muster help`)",
+            roles
+                .iter()
+                .map(|r| format!("{} ({})", r.id, r.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    let tasks = every_task(Some(root));
+    let held = crate::roles::held(&roles, &tasks);
+    if let Some(me) = Session::from_env(env, cwd) {
+        if let Some((slot, h)) = session_slot(&roles, &tasks, &me) {
+            let name = crate::roles::slot_name(&roles, &slot);
+            if slot.role != r.id {
+                return Err(format!(
+                    "this session is {name} already ({} holds it): one session is one slot, so act as {name} (--as {name}), or start another session for {}",
+                    h.task, r.name
+                ));
+            }
+            return Ok(Some(name));
+        }
+    }
+    let slot = crate::roles::lowest_free(r, &held).ok_or_else(|| {
+        format!(
+            "every {} slot is held ({} of {}): muster team shows by whom",
+            r.name, r.slots, r.slots
+        )
+    })?;
+    Ok(Some(crate::roles::slot_name(&roles, &slot)))
 }
 
 fn need<'a>(a: &'a Args, i: usize, what: &str) -> Result<&'a str, String> {
@@ -1688,6 +1813,38 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             }
             Ok(0)
         }
+        "team" => {
+            let roles = crate::roles::load(&roles_file())?;
+            let cwd = std::env::current_dir().ok();
+            let known = || projects::active(&base(), &projects::load(&config_file()));
+            let flag = a.flags.get("queue").map(String::as_str);
+            let here = resolve_queue(flag, env_root(), cwd.as_deref(), &known)
+                .ok()
+                .map(|(root, _)| root);
+            let team = crate::roles::team(&roles, &every_task(here.as_deref()));
+            if a.json {
+                print_json(&team)?;
+            } else {
+                print!("{}", crate::roles::team_text(&team));
+            }
+            Ok(0)
+        }
+        "instructions" => {
+            let roles = crate::roles::load(&roles_file())?;
+            let who = need(&a, 1, "a role")?;
+            let r = crate::roles::find(&roles, who).ok_or_else(|| {
+                format!(
+                    "unknown role {who:?}: one of {} (see `muster help`)",
+                    roles
+                        .iter()
+                        .map(|r| r.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+            print!("{}", crate::roles::instructions(r));
+            Ok(0)
+        }
         "projects" => {
             if a.pos.get(1).map(String::as_str) == Some("set") {
                 let file = config_file();
@@ -1761,7 +1918,8 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 }
                 None => known(),
             };
-            let who = |root: &Path| stamped_who(&label(&a, env, root), env, cwd.as_deref());
+            let who =
+                |root: &Path| stamped_who(&label(&a, env, root), env, cwd.as_deref(), Some(root));
             let (lines, code) = fix_pauses(&queues, a.dry_run, &who, &stamp);
             for l in &lines {
                 println!("{l}");
@@ -1844,12 +2002,19 @@ fn run_on(
     env: Env,
     cwd: Option<&Path>,
 ) -> Result<i32, String> {
+    // --role (0112) is the slot's name as --as from here on.
+    if let Some(slot) = role_label(a, cmd, root, env, cwd)? {
+        let mut a = a.clone();
+        a.flags.remove("role");
+        a.flags.insert("as".into(), slot);
+        return run_on(&a, cmd, root, prefix, stamp, env, cwd);
+    }
     // A task as it's shown (0033): `mu-12`.
     let key = |id: &str| crate::key::key(prefix, id);
     // Who's acting, worked out only by the commands that write: the label, and the label with the
     // session (the questions' commands record the session on their own).
     let label = || label(a, env, root);
-    let me = || stamped_who(&label(), env, cwd);
+    let me = || stamped_who(&label(), env, cwd, Some(root));
     match cmd {
         "new" => {
             let title = need(a, 1, "a title")?;
@@ -6769,5 +6934,991 @@ mod tests {
         );
         assert_eq!(run_in(&["move", &id, "done", "--as", "owner"]), Ok(0));
         assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "done");
+    }
+    // Task 0112: role slots from the command line.
+
+    #[test]
+    fn role_hands_out_the_lowest_free_slot_and_stamps_it() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let a = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let b = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "d6419719-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let c = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "0f0f0f0f-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let e = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "e0e0e0e0-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        for t in ["One", "Two", "Three", "Four", "Five"] {
+            assert_eq!(code_in(&q, &[], &["new", t, "--as", "owner"]), 0);
+        }
+        assert_eq!(code_in(&q, &a, &["claim", "0001", "--role", "coder"]), 0);
+        assert_eq!(code_in(&q, &b, &["claim", "0002", "--role", "Kaveh"]), 0);
+        let held = |id: &str| queue::read_task(d.path(), id).unwrap().claimed_by;
+        let one = held("0001");
+        assert!(
+            one.starts_with("Kaveh-1 (") && one.contains("session 1c6af0d9 · slot coder-1"),
+            "{one}"
+        );
+        let two = held("0002");
+        assert!(
+            two.starts_with("Kaveh-2 (") && two.contains("session d6419719 · slot coder-2"),
+            "{two}"
+        );
+        // The slot acts as its name or as its id; another session can't.
+        assert_eq!(
+            code_in(&q, &a, &["checkin", "0001", "on", "it", "--as", "Kaveh-1"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &a, &["checkin", "0001", "still", "--as", "coder-1"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &b, &["checkin", "0001", "mine", "--as", "Kaveh-1"]),
+            1
+        );
+        assert_eq!(code_in(&q, &c, &["claim", "0003", "--role", "coder"]), 0);
+        assert!(held("0003").starts_with("Kaveh-3 ("), "{}", held("0003"));
+        // One session is one slot (R1): c holds Kaveh-3, so --role hands it Kaveh-3 again and the
+        // claim is refused as any second claim is; another role's slot is refused too.
+        assert_eq!(code_in(&q, &c, &["claim", "0004", "--role", "coder"]), 1);
+        assert_eq!(code_in(&q, &c, &["next", "--role", "coder"]), 1);
+        assert_eq!(code_in(&q, &c, &["claim", "0004", "--role", "tester"]), 1);
+        assert_eq!(held("0004"), "");
+        assert_eq!(held("0005"), "");
+        // Refusals: beside --as or --takeover, an unknown role, another command.
+        assert_eq!(
+            code_in(&q, &c, &["claim", "0004", "--role", "coder", "--as", "x"]),
+            2
+        );
+        assert_eq!(
+            code_in(&q, &c, &["claim", "0004", "--role", "coder", "--takeover"]),
+            2
+        );
+        assert_eq!(code_in(&q, &c, &["claim", "0004", "--role", "cook"]), 2);
+        assert_eq!(
+            code_in(&q, &c, &["checkin", "0001", "x", "--role", "coder"]),
+            2
+        );
+        // The team and the instructions read, and write nothing to the queue.
+        let before = files_under(d.path());
+        assert_eq!(code_in(&q, &[], &["team"]), 0);
+        assert_eq!(code_in(&q, &[], &["team", "--json"]), 0);
+        assert_eq!(code_in(&q, &[], &["instructions", "coder"]), 0);
+        assert_eq!(code_in(&q, &[], &["instructions", "Pouya"]), 0);
+        assert_eq!(code_in(&q, &[], &["instructions", "cook"]), 2);
+        assert_eq!(code_in(&q, &[], &["instructions"]), 2);
+        assert_eq!(files_under(d.path()), before);
+        // A renamed role: the stamps keep the slot, the team names it anew.
+        let file = roles_file();
+        std::fs::write(&file, "[coder]\nname = \"کاوه\"\n").unwrap();
+        let roles = crate::roles::load(&file).unwrap();
+        let tasks = every_task(Some(d.path()));
+        let team = crate::roles::team(&roles, &tasks);
+        let coder = team.iter().find(|t| t.role.id == "coder").unwrap();
+        let names: Vec<(&str, usize)> = coder
+            .slot_lines
+            .iter()
+            .map(|l| (l.name.as_str(), l.held_by.len()))
+            .collect();
+        assert_eq!(names, [("کاوه-1", 1), ("کاوه-2", 1), ("کاوه-3", 1)]);
+        assert_eq!(
+            code_in(&q, &e, &["claim", "0004", "--role", "کاوه"]),
+            1,
+            "all three held"
+        );
+        // Done frees a slot: 0002 leaves, and the next claim gets کاوه-2; c still holds کاوه-3,
+        // so its claim is refused, and a session that holds nothing gets the free slot.
+        assert_eq!(
+            code_in(&q, &[], &["move", "0002", "done", "--as", "owner"]),
+            0
+        );
+        assert_eq!(code_in(&q, &c, &["claim", "0004", "--role", "کاوه"]), 1);
+        assert_eq!(held("0004"), "");
+        assert_eq!(code_in(&q, &e, &["claim", "0004", "--role", "کاوه"]), 0);
+        assert!(
+            held("0004").starts_with("کاوه-2 (") && held("0004").contains("slot coder-2"),
+            "{}",
+            held("0004")
+        );
+        // A refused roles.toml refuses --role, and every other command still works, unslotted.
+        std::fs::write(&file, "[coder]\ncolour = \"red\"\n").unwrap();
+        assert_eq!(code_in(&q, &b, &["claim", "0005", "--role", "coder"]), 1);
+        assert_eq!(code_in(&q, &c, &["team"]), 1);
+        assert_eq!(
+            code_in(&q, &a, &["checkin", "0001", "x", "--as", "Kaveh-1"]),
+            0
+        );
+    }
+
+    #[test]
+    fn role_is_refused_when_every_slot_is_held() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(roles_file().parent().unwrap()).unwrap();
+        std::fs::write(roles_file(), "[lead]\nslots = 1\n").unwrap();
+        for t in ["One", "Two"] {
+            assert_eq!(code_in(&q, &[], &["new", t, "--as", "owner"]), 0);
+        }
+        let a = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let b = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "d6419719-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        assert_eq!(code_in(&q, &a, &["claim", "0001", "--role", "lead"]), 0);
+        assert_eq!(code_in(&q, &b, &["claim", "0002", "--role", "lead"]), 1);
+        assert_eq!(queue::read_task(d.path(), "0002").unwrap().claimed_by, "");
+    }
+
+    #[test]
+    fn role_works_on_start_and_next_and_a_rerun_of_start_resumes_the_slot() {
+        use crate::parallel::tests::{fx, task};
+        let f = fx();
+        let s = |k: &str| {
+            (k == "CLAUDE_CODE_SESSION_ID").then(|| "1c6af0d9-aaaa-bbbb-cccc-0123456789ab".into())
+        };
+        let t = |k: &str| {
+            (k == "CLAUDE_CODE_SESSION_ID").then(|| "d6419719-aaaa-bbbb-cccc-0123456789ab".into())
+        };
+        let run_in = |env: Env, args: &[&str]| {
+            let a = parse(&sv(args)).unwrap();
+            run_on(
+                &a,
+                args[0],
+                &f.root,
+                "pj",
+                "2026-10-13 10:00",
+                env,
+                Some(&f.repo),
+            )
+        };
+        let held = |id: &str| queue::read_task(&f.root, id).unwrap().claimed_by;
+        let one = task(&f.root, "One", "a/");
+        let two = task(&f.root, "Two", "b/");
+        // The coder's brief: muster start <id> --role coder.
+        assert_eq!(run_in(&s, &["start", &one, "--role", "coder"]), Ok(0));
+        let first = held(&one);
+        assert!(
+            first.starts_with("Kaveh-1 (") && first.contains("session 1c6af0d9 · slot coder-1"),
+            "{first}"
+        );
+        let wt = queue::read_task(&f.root, &one).unwrap().worktree;
+        assert!(Path::new(&wt).is_dir(), "{wt}");
+        // Run again in the same session: the same slot, so it resumes the claim and its worktree.
+        assert_eq!(run_in(&s, &["start", &one, "--role", "coder"]), Ok(0));
+        assert_eq!(held(&one), first);
+        assert_eq!(queue::read_task(&f.root, &one).unwrap().worktree, wt);
+        // Not a second task, though.
+        assert!(run_in(&s, &["start", &two, "--role", "coder"])
+            .unwrap_err()
+            .contains("you already hold"));
+        // next --role in another session takes the top Ready task as the next slot.
+        assert_eq!(run_in(&t, &["next", "--role", "coder"]), Ok(0));
+        let second = held(&two);
+        assert!(
+            second.starts_with("Kaveh-2 (") && second.contains("session d6419719 · slot coder-2"),
+            "{second}"
+        );
+    }
+
+    #[test]
+    fn a_slot_passed_on_under_its_old_name_after_a_rename_keeps_its_slot() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        for t in ["One", "Two"] {
+            assert_eq!(code_in(&q, &[], &["new", t, "--as", "owner"]), 0);
+        }
+        let a = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let b = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "d6419719-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        assert_eq!(code_in(&q, &a, &["claim", "0001", "--role", "coder"]), 0);
+        // The owner renames Kaveh; the session hands off, and its successor takes the claim over
+        // as it was told, as Kaveh-1: the slot goes with it.
+        std::fs::write(roles_file(), "[coder]\nname = \"کاوه\"\n").unwrap();
+        assert_eq!(
+            code_in(
+                &q,
+                &a,
+                &["checkin", "0001", "half", "--handoff", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        let c = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "0f0f0f0f-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        assert_eq!(
+            code_in(&q, &c, &["claim", "0001", "--takeover", "--as", "Kaveh-1"]),
+            0
+        );
+        let claim = queue::read_task(d.path(), "0001").unwrap().claimed_by;
+        assert!(
+            claim.starts_with("Kaveh-1 (") && claim.contains("session 0f0f0f0f · slot coder-1"),
+            "{claim}"
+        );
+        // It passes on as Kaveh-1 too.
+        assert_eq!(
+            code_in(
+                &q,
+                &c,
+                &[
+                    "pass",
+                    "0001",
+                    "--from",
+                    "building",
+                    "--gate",
+                    "gate: green",
+                    "--summary",
+                    "Built",
+                    "--as",
+                    "Kaveh-1"
+                ]
+            ),
+            0
+        );
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.stage, "testing");
+        assert!(
+            t.held_by.starts_with("Kaveh-1 (")
+                && t.held_by.contains("session 0f0f0f0f · slot coder-1"),
+            "{}",
+            t.held_by
+        );
+        // So coder-1 is still held, and the next session gets کاوه-2.
+        assert_eq!(code_in(&q, &b, &["claim", "0002", "--role", "coder"]), 0);
+        let two = queue::read_task(d.path(), "0002").unwrap().claimed_by;
+        assert!(
+            two.starts_with("کاوه-2 (") && two.contains("slot coder-2"),
+            "{two}"
+        );
+    }
+
+    #[test]
+    fn one_session_is_one_slot_whatever_the_role_says() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        for t in ["One", "Two", "Three"] {
+            assert_eq!(code_in(&q, &[], &["new", t, "--as", "owner"]), 0);
+        }
+        let a = [(
+            "CLAUDE_CODE_SESSION_ID",
+            "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+        )];
+        let held = |id: &str| queue::read_task(d.path(), id).unwrap().claimed_by;
+        assert_eq!(code_in(&q, &a, &["claim", "0001", "--role", "coder"]), 0);
+        // Its slot is held in this session: --role names it again, and it's refused as Kaveh-1.
+        let s = roles_file();
+        let roles = crate::roles::load(&s).unwrap();
+        let tasks = every_task(Some(d.path()));
+        let a_env = |k: &str| (k == "CLAUDE_CODE_SESSION_ID").then(|| a[0].1.to_string());
+        let args = parse(&sv(&["claim", "0002", "--role", "coder"])).unwrap();
+        let held_now = crate::roles::held(&roles, &tasks);
+        assert_eq!(held_now.len(), 1);
+        let key = held_now.values().next().unwrap()[0].task.clone();
+        assert_eq!(
+            role_label(&args, "claim", d.path(), &a_env, None),
+            Ok(Some("Kaveh-1".into()))
+        );
+        let e = role_label(
+            &parse(&sv(&["claim", "0002", "--role", "tester"])).unwrap(),
+            "claim",
+            d.path(),
+            &a_env,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("Kaveh-1") && e.contains(&key) && !e.contains("see `muster help`"),
+            "{e}"
+        );
+        // A teammate in the same session is another holder: its own slot.
+        let mate = |k: &str| match k {
+            "CLAUDE_CODE_SESSION_ID" => Some(a[0].1.to_string()),
+            "MUSTER_AGENT" => Some("a1b2c3d4".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            role_label(&args, "claim", d.path(), &mate, None),
+            Ok(Some("Kaveh-2".into()))
+        );
+        // Passed to Testing, the slot is still this session's: the next claim is Kaveh-1 again.
+        assert_eq!(
+            code_in(
+                &q,
+                &a,
+                &[
+                    "pass",
+                    "0001",
+                    "--from",
+                    "building",
+                    "--gate",
+                    "gate: green",
+                    "--summary",
+                    "Built",
+                    "--as",
+                    "Kaveh-1"
+                ]
+            ),
+            0
+        );
+        assert_eq!(code_in(&q, &a, &["next", "--role", "coder"]), 0);
+        assert!(
+            held("0002").starts_with("Kaveh-1 (") && held("0002").contains("slot coder-1"),
+            "{}",
+            held("0002")
+        );
+        // Without a session nothing tells callers apart: the lowest free slot, as before.
+        assert_eq!(
+            role_label(&args, "claim", d.path(), &no_env, None),
+            Ok(Some("Kaveh-2".into()))
+        );
+    }
+
+    const SESSION_S: [(&str, &str); 1] = [(
+        "CLAUDE_CODE_SESSION_ID",
+        "1c6af0d9-aaaa-bbbb-cccc-0123456789ab",
+    )];
+    const SESSION_T: [(&str, &str); 1] = [(
+        "CLAUDE_CODE_SESSION_ID",
+        "d6419719-aaaa-bbbb-cccc-0123456789ab",
+    )];
+    const SESSION_U: [(&str, &str); 1] = [(
+        "CLAUDE_CODE_SESSION_ID",
+        "0f0f0f0f-aaaa-bbbb-cccc-0123456789ab",
+    )];
+
+    /// A queue with `n` tasks the owner made, 0001 up.
+    fn queue_of(n: usize) -> (tempfile::TempDir, String) {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        for t in ["One", "Two", "Three", "Four"].iter().take(n) {
+            assert_eq!(code_in(&q, &[], &["new", t, "--as", "owner"]), 0);
+        }
+        (d, q)
+    }
+
+    fn pass_as(q: &str, env: &[(&str, &str)], id: &str, who: &str) -> i32 {
+        code_in(
+            q,
+            env,
+            &[
+                "pass",
+                id,
+                "--from",
+                "building",
+                "--gate",
+                "gate: green",
+                "--summary",
+                "Built",
+                "--as",
+                who,
+            ],
+        )
+    }
+
+    #[test]
+    fn a_takeover_never_gives_a_session_a_second_slot() {
+        let (d, q) = queue_of(3);
+        let claim = |id: &str| queue::read_task(d.path(), id).unwrap().claimed_by;
+        // T is Kaveh-1 on 0002; S is Kaveh-2 on 0001 and hands it off.
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        let s_claim = claim("0001");
+        assert!(s_claim.contains("slot coder-2"), "{s_claim}");
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_S,
+                &["checkin", "0001", "half", "--handoff", "--as", "Kaveh-2"]
+            ),
+            0
+        );
+        // T, still Kaveh-1 in Building, can't take Kaveh-2's claim over too.
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_T,
+                &["claim", "0001", "--takeover", "--as", "Kaveh-2"]
+            ),
+            1
+        );
+        assert_eq!(claim("0001"), s_claim);
+        // Nor once its own is in Testing: one session is one slot, Building or Testing.
+        assert_eq!(pass_as(&q, &SESSION_T, "0002", "Kaveh-1"), 0);
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_T,
+                &["claim", "0001", "--takeover", "--as", "Kaveh-2"]
+            ),
+            1
+        );
+        assert_eq!(claim("0001"), s_claim);
+        // A session that holds no slot takes it over, as before.
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_U,
+                &["claim", "0001", "--takeover", "--as", "Kaveh-2"]
+            ),
+            0
+        );
+        assert!(claim("0001").contains("session 0f0f0f0f · slot coder-2"));
+    }
+
+    #[test]
+    fn as_another_slot_name_is_refused_while_the_session_holds_one() {
+        let (d, q) = queue_of(3);
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        // --as another slot's name: still this session's second Building task.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0002", "--as", "Kaveh-2"]),
+            1
+        );
+        assert_eq!(code_in(&q, &SESSION_S, &["next", "--as", "Kaveh-2"]), 1);
+        // And a plain label beside a slot: one session holds one Building task.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0002", "--as", "akbar"]),
+            1
+        );
+        for id in ["0002", "0003"] {
+            assert_eq!(queue::read_task(d.path(), id).unwrap().stage, "ready");
+        }
+        // The other way round: a plain label's claim, then --role.
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0002", "--as", "akbar"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0003", "--role", "coder"]),
+            1
+        );
+        assert_eq!(queue::read_task(d.path(), "0003").unwrap().stage, "ready");
+    }
+
+    #[test]
+    fn a_slot_in_testing_keeps_its_session_from_claiming_as_another() {
+        let (d, q) = queue_of(3);
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "Kaveh-1"), 0);
+        // Nothing in Building, but Kaveh-1 is still this session's in Testing.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0002", "--as", "Kaveh-2"]),
+            1
+        );
+        assert_eq!(queue::read_task(d.path(), "0002").unwrap().stage, "ready");
+        // As itself it claims, and so does a plain label.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0002", "--as", "Kaveh-1"]),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0002", "Kaveh-1"), 0);
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0003", "--as", "akbar"]),
+            0
+        );
+    }
+
+    #[test]
+    fn an_old_slot_name_after_a_rename_acts_as_the_sessions_slot() {
+        let (d, q) = queue_of(3);
+        let claim = |id: &str| queue::read_task(d.path(), id).unwrap().claimed_by;
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "Kaveh-1"), 0);
+        std::fs::write(roles_file(), "[coder]\nname = \"Kamran\"\n").unwrap();
+        // S claims as it was told, as Kaveh-1: the name is gone, so it's the session's slot.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0002", "--as", "Kaveh-1"]),
+            0
+        );
+        let two = claim("0002");
+        assert!(
+            two.starts_with("Kaveh-1 (") && two.contains("session 1c6af0d9 · slot coder-1"),
+            "{two}"
+        );
+        // So --role names that slot again, and it's refused as a second claim.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0003", "--role", "coder"]),
+            1
+        );
+        assert_eq!(queue::read_task(d.path(), "0003").unwrap().stage, "ready");
+        // Another session gets the next free slot under the new name.
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0003", "--role", "coder"]),
+            0
+        );
+        assert!(claim("0003").starts_with("Kamran-2 ("), "{}", claim("0003"));
+    }
+
+    #[test]
+    fn a_send_back_keeps_the_builders_slot() {
+        let (d, q) = queue_of(3);
+        let claim = |id: &str| queue::read_task(d.path(), id).unwrap().claimed_by;
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        let built = claim("0001");
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "Kaveh-1"), 0);
+        // Renamed while it's in Testing, then a reviewer sends it back.
+        std::fs::write(roles_file(), "[coder]\nname = \"Kamran\"\n").unwrap();
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_U,
+                &["return", "0001", "AC1", "fails", "--as", "reviewer"]
+            ),
+            0
+        );
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.stage, "building");
+        assert_eq!(t.claimed_by, built);
+        // Its builder can't take another slot beside it.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0002", "--role", "coder"]),
+            1
+        );
+        assert_eq!(queue::read_task(d.path(), "0002").unwrap().stage, "ready");
+        // And coder-1 is still held: a fresh session gets Kamran-2.
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        assert!(claim("0002").starts_with("Kamran-2 ("), "{}", claim("0002"));
+    }
+
+    #[test]
+    fn a_send_back_without_a_slot_still_goes_to_the_label() {
+        let (d, q) = queue_of(1);
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--as", "akbar"]),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "akbar"), 0);
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_U,
+                &["return", "0001", "AC1", "fails", "--as", "reviewer"]
+            ),
+            0
+        );
+        assert_eq!(
+            queue::read_task(d.path(), "0001").unwrap().claimed_by,
+            "akbar"
+        );
+    }
+
+    /// Two queues Muster knows (`projects::use_places`, this thread only), `al` and `be`, with
+    /// `n` tasks the owner made in each.
+    fn two_queues(n: usize) -> (tempfile::TempDir, PathBuf, String, PathBuf, String) {
+        let base = tempfile::tempdir().unwrap();
+        let mut c = projects::Config::default();
+        let mut made = Vec::new();
+        for (name, prefix) in [("alpha", "al"), ("beta", "be")] {
+            let root = base.path().join(name).join("tasks");
+            for f in queue::STATUS_FOLDERS {
+                std::fs::create_dir_all(root.join(f)).unwrap();
+            }
+            std::fs::write(
+                root.join("README.md"),
+                format!("---\nprefix: {prefix}\n---\n\nq"),
+            )
+            .unwrap();
+            c.added.push(root.to_string_lossy().to_string());
+            made.push(root);
+        }
+        let config_file = base.path().join("projects.json");
+        projects::save(&config_file, &c).unwrap();
+        projects::use_places(projects::Places {
+            base: base.path().join("none"),
+            config_file,
+        });
+        let b = made.pop().unwrap();
+        let a = made.pop().unwrap();
+        let (qa, qb) = (
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+        );
+        for q in [&qa, &qb] {
+            for t in ["One", "Two", "Three"].iter().take(n) {
+                assert_eq!(code_in(q, &[], &["new", t, "--as", "owner"]), 0);
+            }
+        }
+        (base, a, qa, b, qb)
+    }
+
+    #[test]
+    fn one_session_is_one_slot_across_every_queue() {
+        let (_base, a, qa, b, qb) = two_queues(2);
+        assert_eq!(
+            code_in(&qa, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        // In the other queue: another slot's name, a plain label, or the same slot again.
+        for who in ["Kaveh-2", "akbar", "Kaveh-1"] {
+            assert_eq!(
+                code_in(&qb, &SESSION_S, &["claim", "0001", "--as", who]),
+                1,
+                "{who}"
+            );
+        }
+        assert_eq!(code_in(&qb, &SESSION_S, &["next", "--as", "Kaveh-2"]), 1);
+        assert_eq!(queue::read_task(&b, "0001").unwrap().stage, "ready");
+        // Passed to Testing in al, Kaveh-1 is still this session's: another slot is refused in
+        // be, its own slot claims.
+        assert_eq!(pass_as(&qa, &SESSION_S, "0001", "Kaveh-1"), 0);
+        assert_eq!(
+            code_in(&qb, &SESSION_S, &["claim", "0001", "--as", "Kaveh-2"]),
+            1
+        );
+        assert_eq!(
+            code_in(&qb, &SESSION_S, &["claim", "0001", "--as", "Kaveh-1"]),
+            0
+        );
+        // Building in be now: a second Building task back in al is refused too.
+        assert_eq!(
+            code_in(&qa, &SESSION_S, &["claim", "0002", "--as", "Kaveh-1"]),
+            1
+        );
+        assert_eq!(queue::read_task(&a, "0002").unwrap().stage, "ready");
+        // Another session gets its own slot in either queue.
+        assert_eq!(
+            code_in(&qa, &SESSION_T, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        let two = queue::read_task(&a, "0002").unwrap().claimed_by;
+        assert!(
+            two.starts_with("Kaveh-2 (") && two.contains("slot coder-2"),
+            "{two}"
+        );
+    }
+
+    #[test]
+    fn a_slot_another_session_holds_is_refused_for_as() {
+        let (_base, a, qa, b, qb) = two_queues(2);
+        assert_eq!(
+            code_in(&qa, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        // T names S's slot, by its name or its id, in this queue or the other.
+        for (q, args) in [
+            (&qa, ["claim", "0002", "--as", "Kaveh-1"]),
+            (&qa, ["claim", "0002", "--as", "coder-1"]),
+            (&qb, ["claim", "0001", "--as", "Kaveh-1"]),
+        ] {
+            assert_eq!(code_in(q, &SESSION_T, &args), 1, "{q} {args:?}");
+        }
+        assert_eq!(code_in(&qa, &SESSION_T, &["next", "--as", "Kaveh-1"]), 1);
+        assert_eq!(queue::read_task(&a, "0002").unwrap().stage, "ready");
+        assert_eq!(queue::read_task(&b, "0001").unwrap().stage, "ready");
+        // In Testing it's still S's.
+        assert_eq!(pass_as(&qa, &SESSION_S, "0001", "Kaveh-1"), 0);
+        assert_eq!(
+            code_in(&qb, &SESSION_T, &["claim", "0001", "--as", "Kaveh-1"]),
+            1
+        );
+        // A free slot by name is anyone's.
+        assert_eq!(
+            code_in(&qb, &SESSION_T, &["claim", "0001", "--as", "Kaveh-2"]),
+            0
+        );
+    }
+
+    /// How many holders slot `slot` has across the queues `every_task` reads.
+    fn holders_of(slot: &str, here: &Path) -> usize {
+        let roles = crate::roles::load(&roles_file()).unwrap();
+        crate::roles::held(&roles, &every_task(Some(here)))
+            .into_iter()
+            .filter(|(s, _)| s.id() == slot)
+            .map(|(_, h)| h.len())
+            .sum()
+    }
+
+    #[test]
+    fn a_task_returned_after_its_slot_went_to_another_session_comes_back_without_it() {
+        let (d, q) = queue_of(3);
+        let task = |id: &str| queue::read_task(d.path(), id).unwrap();
+        let owner = [("MUSTER_AS", "owner")];
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "Kaveh-1"), 0);
+        // Back from Your check while coder-1 is free: the tester's slot comes back with it.
+        assert_eq!(code_in(&q, &owner, &["stage", "0001", "your-check"]), 0);
+        assert_eq!(code_in(&q, &owner, &["return", "0001", "again"]), 0);
+        let t = task("0001");
+        assert_eq!(t.stage, "testing");
+        assert!(
+            t.held_by.contains("session 1c6af0d9 · slot coder-1"),
+            "{}",
+            t.held_by
+        );
+        // In Your check coder-1 is free, and T gets it.
+        assert_eq!(code_in(&q, &owner, &["stage", "0001", "your-check"]), 0);
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        assert!(task("0002")
+            .claimed_by
+            .contains("session d6419719 · slot coder-1"));
+        // Returned to Testing: S's, without the slot.
+        assert_eq!(code_in(&q, &owner, &["return", "0001", "AC1", "fails"]), 0);
+        let t = task("0001");
+        assert_eq!(t.stage, "testing");
+        assert!(
+            t.held_by.starts_with("Kaveh-1 (")
+                && t.held_by.contains("session 1c6af0d9")
+                && !t.held_by.contains("slot "),
+            "{}",
+            t.held_by
+        );
+        assert_eq!(holders_of("coder-1", d.path()), 1);
+        // On to Building, from Testing: S's claim, without the slot.
+        assert_eq!(
+            code_in(&q, &owner, &["return", "0001", "fix", "--to", "building"]),
+            0
+        );
+        let t = task("0001");
+        assert_eq!(t.stage, "building");
+        assert!(
+            t.claimed_by.contains("session 1c6af0d9") && !t.claimed_by.contains("slot "),
+            "{}",
+            t.claimed_by
+        );
+        assert_eq!(holders_of("coder-1", d.path()), 1);
+        // Acting as Kaveh-1 again, S doesn't take the slot back on its pass.
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_S,
+                &["checkin", "0001", "on", "it", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "Kaveh-1"), 0);
+        let t = task("0001");
+        assert!(
+            t.stage == "testing" && !t.held_by.contains("slot "),
+            "{}",
+            t.held_by
+        );
+        assert_eq!(holders_of("coder-1", d.path()), 1);
+        // Straight from Your check to Building too.
+        assert_eq!(code_in(&q, &owner, &["stage", "0001", "your-check"]), 0);
+        assert_eq!(
+            code_in(&q, &owner, &["return", "0001", "fix", "--to", "building"]),
+            0
+        );
+        let t = task("0001");
+        assert_eq!(t.stage, "building");
+        assert!(
+            t.claimed_by.contains("session 1c6af0d9") && !t.claimed_by.contains("slot "),
+            "{}",
+            t.claimed_by
+        );
+        assert_eq!(holders_of("coder-1", d.path()), 1);
+    }
+
+    #[test]
+    fn a_task_back_without_its_slot_is_taken_over_without_it() {
+        let (d, q) = queue_of(3);
+        let task = |id: &str| queue::read_task(d.path(), id).unwrap();
+        let owner = [("MUSTER_AS", "owner")];
+        // S builds 0001 as Kaveh-1 (coder-1); it reaches Your check, and T gets coder-1.
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        assert_eq!(pass_as(&q, &SESSION_S, "0001", "Kaveh-1"), 0);
+        assert_eq!(code_in(&q, &owner, &["stage", "0001", "your-check"]), 0);
+        assert_eq!(
+            code_in(&q, &SESSION_T, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        // Back to Building: S's claim, without the slot. S hands off.
+        assert_eq!(
+            code_in(&q, &owner, &["return", "0001", "fix", "--to", "building"]),
+            0
+        );
+        assert!(!task("0001").claimed_by.contains("slot "));
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_S,
+                &["checkin", "0001", "half", "--handoff", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        // U, its successor under Kaveh-1, takes it over without the slot T holds.
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_U,
+                &["claim", "0001", "--takeover", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        let t = task("0001");
+        assert!(
+            t.stage == "building"
+                && t.claimed_by.starts_with("Kaveh-1 (")
+                && t.claimed_by.contains("session 0f0f0f0f")
+                && !t.claimed_by.contains("slot "),
+            "{}",
+            t.claimed_by
+        );
+        assert_eq!(holders_of("coder-1", d.path()), 1);
+    }
+
+    #[test]
+    fn a_takeover_as_a_slot_is_refused_beside_a_plain_claim() {
+        let (d, q) = queue_of(2);
+        assert_eq!(
+            code_in(&q, &SESSION_S, &["claim", "0001", "--role", "coder"]),
+            0
+        );
+        assert_eq!(
+            code_in(&q, &SESSION_U, &["claim", "0002", "--as", "akbar"]),
+            0
+        );
+        std::fs::write(roles_file(), "[coder]\nname = \"Kamran\"\n").unwrap();
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_S,
+                &["checkin", "0001", "half", "--handoff", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        let before = queue::read_task(d.path(), "0001").unwrap().claimed_by;
+        // U holds 0002 as akbar: taking Kaveh-1's claim over would be a slot beside it.
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_U,
+                &["claim", "0001", "--takeover", "--as", "Kaveh-1"]
+            ),
+            1
+        );
+        assert_eq!(
+            queue::read_task(d.path(), "0001").unwrap().claimed_by,
+            before
+        );
+        // A session holding nothing takes it over.
+        assert_eq!(
+            code_in(
+                &q,
+                &SESSION_T,
+                &["claim", "0001", "--takeover", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn an_unblocked_slot_claim_is_released_beside_a_plain_claim() {
+        let (_base, a, qa, b, qb) = two_queues(3);
+        let owner = [("MUSTER_AS", "owner")];
+        let task = |root: &Path, id: &str| queue::read_task(root, id).unwrap();
+        // S is Kaveh-1 on al-2, which waits on al-1; it then claims al-3 as a plain label.
+        assert_eq!(
+            code_in(&qa, &SESSION_S, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        assert_eq!(
+            code_in(
+                &qa,
+                &SESSION_S,
+                &["block", "0002", "--on", "0001", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        assert_eq!(
+            code_in(&qa, &SESSION_S, &["claim", "0003", "--as", "akbar"]),
+            0
+        );
+        // al-1 merged: al-2 is free, but S holds al-3, so al-2 goes back to Ready.
+        assert_eq!(code_in(&qa, &owner, &["stage", "0001", "your-check"]), 0);
+        let two = task(&a, "0002");
+        assert_eq!((two.stage.as_str(), two.claimed_by.as_str()), ("ready", ""));
+        assert!(task(&a, "0003").claimed_by.starts_with("akbar ("));
+        // The same across queues: Kaveh-1 on be-2 waits on be-1, a plain claim on al-1.
+        assert_eq!(
+            code_in(
+                &qa,
+                &SESSION_S,
+                &[
+                    "pass",
+                    "0003",
+                    "--from",
+                    "building",
+                    "--gate",
+                    "gate: green",
+                    "--summary",
+                    "Built",
+                    "--as",
+                    "akbar"
+                ]
+            ),
+            0
+        );
+        assert_eq!(
+            code_in(&qb, &SESSION_S, &["claim", "0002", "--role", "coder"]),
+            0
+        );
+        assert_eq!(
+            code_in(
+                &qb,
+                &SESSION_S,
+                &["block", "0002", "--on", "0001", "--as", "Kaveh-1"]
+            ),
+            0
+        );
+        assert_eq!(
+            code_in(&qa, &owner, &["return", "0001", "again", "--to", "ready"]),
+            0
+        );
+        assert_eq!(
+            code_in(&qa, &SESSION_S, &["claim", "0001", "--as", "akbar"]),
+            0
+        );
+        assert_eq!(code_in(&qb, &owner, &["stage", "0001", "your-check"]), 0);
+        let two = task(&b, "0002");
+        assert_eq!((two.stage.as_str(), two.claimed_by.as_str()), ("ready", ""));
     }
 }

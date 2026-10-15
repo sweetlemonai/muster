@@ -33,3 +33,4 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - The window never hands the core a path; folders come from the core's dialog. (AS_BUILT "Projects")
 - Display modes: ADHD (the default), Standard, Focus; ⌘. toggles Focus. (mu-38)
 - 7 themes and 6 accents, no blue or orange, contrast tested. (AS_BUILT "Themes and accents")
+- Settings › Agents › Roles edits `roles.toml` beside projects.json; a refused file says its line and key. (mu-112)

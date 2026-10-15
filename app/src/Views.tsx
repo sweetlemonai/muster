@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { estimateText } from "./fields";
 import BlockWhy from "./BlockWhy";
 import { blockedRed, blockLead, isBlocked } from "./blockWords";
@@ -16,6 +16,7 @@ import { Hl, HlId } from "./FilterBar";
 import { isHuman } from "./human";
 import YouRibbon from "./YouRibbon";
 import ProjectName, { TaskKey } from "./ProjectName";
+import { RoleNamesContext } from "./settingsData";
 
 const COLS: { key: SortKey; label: string }[] = [
   { key: "queue", label: "Project" },
@@ -60,7 +61,8 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
       /* storage full or off: the sort still applies for now */
     }
   };
-  const rows = useMemo(() => sortTasks(tasks, by, desc), [tasks, by, desc]);
+  const names = useContext(RoleNamesContext);
+  const rows = useMemo(() => sortTasks(tasks, by, desc, names), [tasks, by, desc, names]);
   const cols = multi ? COLS : COLS.filter((c) => c.key !== "queue");
   const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} words={words} />;
   return (
@@ -87,7 +89,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
                     <BandHead group={g} by={groupBy} multi={multi} active={!!g.head && openKey === key(g.head)} onOpen={onOpen} />
                   </td>
                 </tr>
-                {sortTasks(g.items, by, desc).map(row)}
+                {sortTasks(g.items, by, desc, names).map(row)}
               </tbody>
             ))
           : <tbody>{rows.map(row)}</tbody>}
@@ -102,6 +104,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
 function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; words: string[] }) {
   const parentLevel = !isWork(t);
   const own = estimateText(t);
+  const names = useContext(RoleNamesContext);
   return (
     <tr className={`${active ? "active " : ""}s-${parentLevel ? shownStageClass(t) : stageOf(t)}${parentLevel ? " level-item" : ""}`} onClick={() => onOpen(t)}>
       {multi && <ProjectName name={t.queue} as="td" />}
@@ -129,7 +132,7 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
         )}
         {blockedRed(t) && <StatusPill status="blocked">blocked</StatusPill>}
       </td>
-      <td className="meta">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t)}</td>
+      <td className="meta" dir="auto">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t, names)}</td>
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
       <td className="meta">{t.captured}</td>
       <td className="meta">{ago(now, t.modified)}</td>

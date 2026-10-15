@@ -1,11 +1,11 @@
 import { useContext } from "react";
 import { BranchCardLine } from "./Branch";
-import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, sendBackLine, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
+import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, sendBackLine, quietCheckin, quietText, shortWho, splitHolder, startedAgo, whoLine } from "./lib";
 import { askedText } from "./reach";
 import { finishText } from "./recentData";
 import { useLook, type CardLines } from "./modes";
 import { sessionWords } from "./sessionState";
-import { Machine, spanText } from "./settingsData";
+import { Machine, RoleNamesContext, spanText } from "./settingsData";
 import type { Task } from "./types";
 import { ReviewBadge } from "./Review";
 import { VisionBadge } from "./Vision";
@@ -57,10 +57,12 @@ function DoneLine({ t, now }: { t: Task; now: number }) {
 function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
   const yours = splitHolder(holderOf(t)).label === "owner";
   const step = nextStep(t);
-  const built = builtTested(t);
+  // Role slots by their role's name now (0112).
+  const names = useContext(RoleNamesContext);
+  const built = builtTested(t, (w) => shortWho(w, names));
   return (
     <>
-      {yours ? <span className="card-who your-turn">Your turn</span> : <span className="card-who">{whoLine(t)}</span>}
+      {yours ? <span className="card-who your-turn">Your turn</span> : <span className="card-who" dir="auto">{whoLine(t, names)}</span>}
       {lines !== "status" && <span className="card-next" title={step.full}>{`${step.text}${step.more ? ` · ${step.more} more` : ""}`}</span>}
       {lines !== "status" && t.summary && <span className="card-summary" dir="auto" title={t.summary}>{t.summary}</span>}
       {lines === "all" && built && <span className="card-built">{built}</span>}
@@ -71,7 +73,8 @@ function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
 /** With `named`, the who line leaves out the name the ribbon says ("wt-0097 · a82f2534 · started
  *  2 h ago"), and a held card with nothing more to say has no who line, never "nobody on it". */
 function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: CardLines; named: boolean }) {
-  const who = named ? whoLine(t).split(" · ").slice(1).join(" · ") : whoLine(t);
+  const line = whoLine(t, useContext(RoleNamesContext));
+  const who = named ? line.split(" · ").slice(1).join(" · ") : line;
   const started = startedAgo(t, now);
   const whoText = [who || (named ? "" : "nobody on it"), started].filter(Boolean).join(" · ");
   const checkin = currentCheckin(t);
@@ -87,7 +90,7 @@ function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: Card
   const order = sendBackLine(t);
   return (
     <>
-      {lines !== "brief" && whoText !== "" && <span className={who || named ? "card-who" : "card-who nobody"}>{whoText}</span>}
+      {lines !== "brief" && whoText !== "" && <span className={who || named ? "card-who" : "card-who nobody"} dir="auto">{whoText}</span>}
       {needsTester(t) && <span className="card-tester">needs a tester</span>}
       {order && <span className={order.kind === "first" ? "card-first" : "card-behind"}>{order.text}</span>}
       {order?.why && <span className="card-first card-why" title={order.why}>Sent back by {order.by}: <bdi>{order.reason}</bdi></span>}
