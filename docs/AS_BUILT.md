@@ -117,6 +117,7 @@ here):
 | `block.rs` | Why a task is blocked: five kinds, the sentence every screen shows, and `depends:` met once merged |
 | `fields.rs` | A task's links and comments |
 | `choices.rs` | Pick-one questions: 2 to 6 options, a pick, what happens with no answer |
+| `clarify.rs` | The clarify pass in Shaping (mu-103): `[NEEDS CLARIFICATION: …]` markers that hold Ready, open questions without a default that hold it, and `muster clarify`, the batch of open questions on unstarted tasks sent to the owner at once |
 | `key.rs` | Task keys (`mu-12`): the project's prefix, stored with the queue |
 | `search.rs` | `muster list`'s search, filters and sort, held to the app's by a shared fixture |
 | `vision.rs` | The vision check: the brief, the agent's result recorded, conflicts resolved |
@@ -1406,9 +1407,24 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   thumbnail or the image shutting one; one that opens is scrolled into view, and shutting it
   from the image puts the focus on its thumbnail; the side column is too narrow to read one in
   (mu-91, no overlay), who's on it, what it waits on, and the commit.
+- **The clarify pass in Shaping** (mu-103, `clarify.rs`, `queue::escalate_all_locked`,
+  `WaitingList.tsx`): a `[NEEDS CLARIFICATION: …]` marker (with its colon) left in a write-up
+  (above Comments and Log, outside code, fences read as `merge_log::Fences` reads them) refuses
+  `pass --from shaping`, naming each; `muster file` warns about them on stderr (`markers`). An
+  open question with no `--no-answer` default holds Shaping → Ready too; one with a default
+  doesn't, and a later answer to it is mailed to whoever holds the task then (the claim's
+  mailbox; the asker's when nobody holds it). `muster clarify [--json]` lists the open,
+  unescalated questions on Shaping and Ready tasks that aren't blocked, grouped by task;
+  `--send` escalates them under one hold of the queue's lock, one log line per task, and
+  `--send --json` prints what it sent in the list's shape. The window's poll reads each queue's
+  tasks holding its lock shared (`queue::read_state_settled`), so it sees a batch whole or not at
+  all and posts one notification. Waiting for you
+  puts those tasks first under "From shaping: N questions on M tasks"; a notification folds a
+  task's questions into one line ("asks you 3 questions"). The shaping brief's "Unknowns:" says
+  to mark, decide or ask, and send once at the end of a run.
 - **Pick-one questions** (task 0049, `choices.rs`, `PickOne.tsx`): a question asked with options
   shows them as chips in the pane's open questions and in its Waiting for you entry, every option
-  on screen, the asker's pick marked **pick** and "with no answer: a" after them. One click
+  on screen, the asker's pick marked **pick** and "going with (a) unless you answer" after them. One click
   answers (`answer_pick`): the answer is `(b) <the option's text>`, plus the answer box's words
   after " — " when there are any; the box stays below for something else. Escalated ones keep
   the orange edge, as before.

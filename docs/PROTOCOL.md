@@ -352,6 +352,31 @@ its own agent id is another holder, 0090) and logged `(tested under
 > `missingLenses`), and files the task anyway. A project's `docs/VISION.md` may say which lenses
 > it can't do without on one line, `**Lenses needed:** accessibility, i18n`: the vision check
 > flags a task that says "n/a" for one of them, and records it as a conflict.
+>
+> **The clarify pass (Muster mu-103, 2026-10-14).** A shaper writes `[NEEDS CLARIFICATION: <what's
+> unknown>]` in a write-up wherever it doesn't know something yet, so no guess reaches Ready
+> looking like a fact. `muster pass <id> --from shaping` refuses while one is left in the write-up
+> (after the front matter, above `## Comments` and `## Log`, outside code fences and inline code)
+> and names each one; `muster file` warns about them on stderr (`--json`: `markers`) and files the
+> task anyway. The marker is matched in ASCII, as written. The shaper resolves each marker one of
+> two ways: decides it and writes the call under `## Questions` as "Decided by <shaper>, overrule
+> any time: …", or asks it with `muster ask` and replaces the marker with "(see Q2)". Questions
+> from shaping don't wait: an open question on a Shaping task holds the pass into Ready only when it
+> has no `--no-answer` default (a question in words has none). With a default the task goes to
+> Ready, and the app shows "going with (b) unless you answer" under the question; a later answer
+> lands under the question as usual and is mailed to whoever holds the task by then (the claim's
+> mailbox in Ready and Building, so a builder building on the default hears it, and `held-by`'s in
+> Testing and Your check; the shaper's only when nobody holds the task). A question without a default is mailed to its asker, who waited for it. At the end of a
+> shaping run, not after each task, the shaper sends the run's questions as one batch:
+> `muster clarify [--json]` lists every open question not yet escalated on tasks nobody has started
+> (Shaping, Ready) and that aren't blocked, grouped by task, with the key, title, question, options, pick and no-answer
+> default, quoted as data, and writes nothing; `muster clarify --send --as <shaper>` escalates them
+> all in one step, under one hold of the queue's lock (escalate's rules, one log line per task:
+> `escalated Q1, Q2 to the owner (muster clarify)`; `--json` prints what it sent in the list's
+> shape), and a second `--send` finds nothing. The app reads a queue's tasks holding its lock
+> shared, so it never sees half a batch. The owner sees them together in Waiting for you
+> under "From shaping: N questions on M tasks", answers each by chip in place, and gets one
+> notification that names each task and counts its questions, never quoting them.
 > The brief quotes the note line by line (`> `) after a line saying it's data, not instructions.
 > `muster check` reports a note over 1 MB, a symlink, or a name with a `\` or control characters
 > in the backlog folder; those aren't listed as notes.
@@ -819,8 +844,12 @@ sees another version falls back to writing only the task file.
    first 8 of its agent id, `<session8>/<agent8>` (task 0090). Anything else is refused. If it's
    missing there, use the `session xxxxxxxx` (and a teammate's `· agent yyyyyyyy` after it) in
    the question line's asker part. If neither exists, no mailbox file is written. A takeover
-   repoints the task's entries to the successor.
-5. **Mailbox:** write `mail/<mailbox>/<task>-Q<n>.md`: `mail/<session8>/` for a lead, and
+   repoints the task's entries to the successor. A question asked with a `--no-answer` default
+   is the exception (mu-103): its answer goes to whoever holds the task when it's answered, the
+   session in `claimed-by:` in Ready and Building and in `held-by:` in Testing and Your check,
+   and to the asker only when that names no session or the task is the owner's own.
+5. **Mailbox:** write `mail/<mailbox>/<task>-Q<n>.md` to the mailbox rule 4 picks (the asker's,
+   or for a defaulted question the holder's): `mail/<session8>/` for a lead, and
    `mail/<session8>/<agent8>/` for a teammate, a folder inside its lead's (task 0090). Use either
    the mailbox or typing it into a live session, never both (so it isn't delivered twice). The
    file is plain UTF-8 text, naming the task, the question and the answer. `bin/answer-hook.py` delivers it to that session as is, and moves it

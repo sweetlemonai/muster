@@ -86,7 +86,7 @@ export default function PickOne({ task, q, choices, extra = "", onAnswered, onCh
           {choices.pick === i && <small className="pick-tag">pick</small>}
         </Pill>
       ))}
-      {choices.noAnswer !== null && <span className="pick-fallback">with no answer: {letter(choices.noAnswer)}</span>}
+      {choices.noAnswer !== null && <span className="pick-fallback">going with ({letter(choices.noAnswer)}) unless you answer</span>}
       {result && <span className={result.ok ? "ok" : "err"} role="status">{result.text}</span>}
     </div>
   );

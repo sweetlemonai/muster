@@ -10,6 +10,7 @@ pub mod badge;
 pub mod block;
 pub mod check_limit;
 pub mod choices;
+pub mod clarify;
 pub mod cli;
 pub mod fields;
 pub mod help;
@@ -220,7 +221,8 @@ fn waiting_in(
             .unwrap_or_default()
     };
     let mut taken = std::mem::take(&mut *cache.lock().map_err(|e| e.to_string())?);
-    let mut s = queue::read_state_keyed(&projects::shown(&list), &mut taken, &settings, &prefix_of);
+    let mut s =
+        queue::read_state_settled(&projects::shown(&list), &mut taken, &settings, &prefix_of);
     *cache.lock().map_err(|e| e.to_string())? = taken;
     labels::apply(&list, &mut s.queues);
     // As the poll does (0048): a session waiting for input waits on the owner. The monitor reads

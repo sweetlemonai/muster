@@ -115,6 +115,41 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — Clarify pass in Shaping: markers hold Ready, `muster clarify` sends a run's questions as one batch (mu-103)
+**Did:** `[NEEDS CLARIFICATION: …]` markers in a write-up refuse `pass --from shaping` and warn on
+`muster file`; a default-less open question holds Shaping too. `muster clarify [--json|--send]`
+lists and escalates the open questions on Shaping and Ready tasks at once (`clarify.rs`,
+`queue::escalate_all_locked`). Waiting for you groups them under "From shaping: N questions on M tasks";
+notifications fold a task's questions into one line; pick-one questions read "going with (b)
+unless you answer". The shaping brief, help, PROTOCOL and the manual (02, 04, 05, 07) say how.
+**Decided:** the file keeps "With no answer: (x)" (contract v1 readers); only what's shown says
+"going with (x) unless you answer". Markers inside code don't count, so docs can name the marker.
+The owner's own tasks and blocked tasks stay out of the batch.
+**Verified:** cargo tests (clarify, pass hold, file warning, CLI clarify, notify batch), vitest
+WaitingList/PickOne, headless WebKit screenshots light and dark on a synthetic fixture
+(attachments/0103/), bin/gate.
+**Fixed (asghar_19, review round 1):** R1: an answer to a defaulted question went to the shaper's
+mailbox, though the builder holding the task builds on the default → `answer_with` mails the
+current claim's mailbox for a defaulted question (the asker's when nobody holds it). R2: `--send`
+locked once per task and the app read without the lock, so a poll mid-send split the batch into two
+notifications → one lock for the whole send, and the poll reads each queue's tasks holding its
+lock shared (`read_state_settled`). R3: `--send --json` prints the sent tasks in the list's shape,
+as help says. R4: manual 04's quote. R5: the marker needs its colon. R6: `markers` reads fences
+with `merge_log::Fences`. R7: blocked tasks stay out of `clarify` as of the app's group. R8, R9:
+tests for `escalate_all_locked`'s skips and for `muster file`'s stderr warning (bin/test_task.py).
+**Verified (round 1):** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; the R1 and
+R2 tests fail with the fix turned off.
+**Fixed (Asghar_23, review round 2):** R10: the R2 fix had no test at the app's own readers → one
+test pauses a send and reads through `projects::read_state` (the poll) and `waiting_in` (the
+hidden badge); it fails if either goes back to the unlocked read. R11: PROTOCOL contract rules 4-5,
+`help answer` and manual 02 say a defaulted question's answer goes to the holder. R12: `help
+clarify` and both empty-batch messages say blocked tasks are left out. R13: `clarify`'s text kept
+only the `> ` it added, so an option "> 100 MB" no longer prints as "100 MB". R14: manual 04 says
+what "From shaping" groups. Also: in Testing and Your check the claim still names the builder, so
+a defaulted answer went to the builder → `answer_with` takes `held-by` there.
+**Verified (round 2):** see the pass's gate line; the R10 test fails with either call site reverted,
+the Testing test fails before the `held-by` fix.
+
 ## 2026-10-14 — What's true now: a short page per area in docs/now/ (mu-102)
 **Did:** `docs/now/<area>.md` pages (front matter `covers: <globs>`, one cited rule per line, 60
 lines and 4 KB at most) and `now.rs`, which reads them (plain `*.md` only, bounded, symlinks

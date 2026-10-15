@@ -22,6 +22,8 @@ covers: app/src-tauri/src/backlog.rs, app/src-tauri/src/lenses.rs, app/src-tauri
 - `muster vision <id>` prints the brief; `--record -` stores the result. (mu-29)
 - `muster pass <id> --from shaping` needs acceptance criteria. (mu-15)
 - It's refused while a vision conflict is open; overlaps and gaps never hold it. (mu-29)
+- It's refused while a `[NEEDS CLARIFICATION: …]` marker is left or a question without a default is open; `muster file` warns. (mu-103)
+- A shaping run's questions go to the owner once, at its end: `muster clarify --send`. (mu-103)
 - A task never checked isn't held back; `muster check` warns about it. (mu-29)
 - Settle a conflict with `muster vision <id> --resolve V2 "<how>"`. (mu-29)
 - A conflict that changes direction asks the owner one question, with the cost of pivoting. (mu-29)

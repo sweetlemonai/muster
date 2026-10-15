@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { answerId, focusAnswer } from "./answerFocus";
 import type { Question, Task } from "./types";
-import WaitingList, { BlockLine, unblockNow, waitRank } from "./WaitingList";
+import WaitingList, { BlockLine, counted, fromShaping, unblockNow, waitRank } from "./WaitingList";
 import source from "./WaitingList.tsx?raw";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
@@ -82,6 +82,37 @@ describe("Done, unblock (0060)", () => {
     expect(await unblockNow(send, action, new Date(2026, 9, 13, 18, 30))).toEqual({ ok: false, text: "Error: 0002 isn't blocked" });
   });
 });
+
+describe("the shapers' batch in Waiting for you (mu-103)", () => {
+  const shaped = task("0011", { stage: "shaping", questions: [pick, q(3, "which port?"), q(4, "not sent yet", { escalated: false }), q(5, "answered", { ticked: true })], waitingForOwner: true });
+  it("groups Shaping and Ready tasks with sent questions under one heading that counts them", () => {
+    const out = html([action, check(), asked, shaped]);
+    const group = /<div class="effort-group effort-other from-shaping" role="group" aria-label="From shaping">([\s\S]*?)<\/div><div class="effort-group/.exec(out)?.[1] ?? "";
+    expect(group).toContain('<h3 class="effort-head">From shaping: 3 questions on 2 tasks</h3>');
+    // Both tasks are in it, in the order given, and not again in the band below.
+    expect(order(group)).toEqual(["0004", "0011"]);
+    expect(out.match(/0011 · Task/g)).toHaveLength(1);
+    // Each question keeps its chips, the default in words, answered in place.
+    expect(group).toContain('aria-label="Options for Q2"');
+    expect(group).toContain("going with (b) unless you answer");
+    expect(group).not.toContain("not sent yet");
+    // It comes first: above what blocks agents and Your check.
+    expect(out.indexOf("From shaping")).toBeLessThan(out.indexOf('aria-label="Questions, blocks and your own tasks"'));
+  });
+  it("leaves out started, blocked and the owner's own tasks, and shows no heading without a batch", () => {
+    expect([shaped, asked].map(fromShaping)).toEqual([true, true]);
+    expect(fromShaping({ ...shaped, stage: "building" })).toBe(false);
+    expect(fromShaping(answer)).toBe(false);
+    expect(fromShaping({ ...shaped, forWho: "human" })).toBe(false);
+    // A blocked task waits in its own band; muster clarify leaves it out alike (R7).
+    expect(fromShaping({ ...shaped, blocked: true, blockedKind: "you", blockDetail: "x" })).toBe(false);
+    expect(fromShaping({ ...shaped, questions: [q(1, "x", { escalated: false })] })).toBe(false);
+    expect(html([action])).not.toContain("From shaping");
+    expect(counted(1, 1)).toBe("1 question on 1 task");
+  });
+});
+
+const check = () => task("0010", { stage: "your-check", waitingForOwner: true });
 
 describe("what blocks agents comes first (0060, QA)", () => {
   it("puts questions, blocks and your own tasks above Your check's groups", () => {

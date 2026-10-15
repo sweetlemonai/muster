@@ -1584,7 +1584,7 @@ pub fn read_state_at_with(
     stamp: &str,
     settings: &crate::settings::Settings,
 ) -> State {
-    read_state_from(queues, cache, stamp, settings, &|_| String::new())
+    read_state_from(queues, cache, stamp, settings, &|_| String::new(), false)
 }
 
 /// `read_state_with`, each queue and its tasks with its project's prefix (0033), `prefix_of(name)`,
@@ -1598,7 +1598,21 @@ pub fn read_state_keyed(
     prefix_of: &dyn Fn(&str) -> String,
 ) -> State {
     let stamp = cache.stamp_at(now_secs());
-    read_state_from(queues, cache, &stamp, settings, prefix_of)
+    read_state_from(queues, cache, &stamp, settings, prefix_of, false)
+}
+
+/// `read_state_keyed` for the window's poll and its notifications: each queue's tasks read
+/// holding its lock shared (`shared_lock`), so a write made under one lock, such as a batch
+/// `muster clarify --send` escalates (mu-103), is seen whole or not at all, never half, and
+/// makes one notification. Never call it holding a queue's lock: it would wait on itself.
+pub fn read_state_settled(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    settings: &crate::settings::Settings,
+    prefix_of: &dyn Fn(&str) -> String,
+) -> State {
+    let stamp = cache.stamp_at(now_secs());
+    read_state_from(queues, cache, &stamp, settings, prefix_of, true)
 }
 
 fn read_state_from(
@@ -1607,6 +1621,7 @@ fn read_state_from(
     stamp: &str,
     settings: &crate::settings::Settings,
     prefix_of: &dyn Fn(&str) -> String,
+    settled: bool,
 ) -> State {
     let mut state = State {
         now: now_secs(),
@@ -1617,6 +1632,8 @@ fn read_state_from(
     for (name, root) in queues {
         let mut counts: HashMap<String, usize> = HashMap::new();
         let mut tasks = Vec::new();
+        // Dropped at the end of this queue's task files, before its notes and git are read.
+        let shared = settled.then(|| shared_lock(root)).flatten();
         for (folder, path) in task_files(root) {
             seen.insert(path.clone());
             let Ok(meta) = fs::metadata(&path) else {
@@ -1636,6 +1653,7 @@ fn read_state_from(
                     .push(format!("{name}: {} has no front matter", path.display())),
             }
         }
+        drop(shared);
         let prefix = prefix_of(name);
         for t in &mut tasks {
             t.prefix.clone_from(&prefix);
@@ -2654,27 +2672,92 @@ pub fn escalate(root: &Path, id: &str, n: u32, who: &str, stamp: &str) -> Result
     with_lock(root, || {
         let path = find_task(root, id)?;
         let body = read_body(root, id)?;
-        let no_q = || format!("no Q{n} in {id}");
-        let (start, end) = questions_span(&body).ok_or_else(no_q)?;
-        let sect = &body[start..end];
-        let (a, b) = question_items(sect)
-            .into_iter()
-            .find(|&(a, b)| parse_question(&sect[a..b]).n == Some(n))
-            .ok_or_else(no_q)?;
-        let item = &sect[a..b];
-        if item.contains("Escalated to owner") {
+        let (new_body, already) = mark_escalated(&body, id, n, &who, stamp)?;
+        if already {
             return Err(format!("Q{n} is already escalated"));
         }
-        let new_body = append_log(
-            &format!(
-                "{}{item}\n  **Escalated to owner ({who}, {stamp}).**{}",
-                &body[..start + a],
-                &body[start + b..]
+        write_atomic(
+            &path,
+            &append_log(
+                &new_body,
+                &format!("{stamp} {who}: escalated Q{n} to the owner"),
             ),
-            &format!("{stamp} {who}: escalated Q{n} to the owner"),
-        );
-        write_atomic(&path, &new_body)
+        )
     })
+}
+
+/// Question `n` of task `id`'s `body` marked "Escalated to owner" by `who`, and whether it
+/// already was (the body unchanged then). No log line: the caller writes it.
+fn mark_escalated(
+    body: &str,
+    id: &str,
+    n: u32,
+    who: &str,
+    stamp: &str,
+) -> Result<(String, bool), String> {
+    let no_q = || format!("no Q{n} in {id}");
+    let (start, end) = questions_span(body).ok_or_else(no_q)?;
+    let sect = &body[start..end];
+    let (a, b) = question_items(sect)
+        .into_iter()
+        .find(|&(a, b)| parse_question(&sect[a..b]).n == Some(n))
+        .ok_or_else(no_q)?;
+    let item = &sect[a..b];
+    if item.contains("Escalated to owner") {
+        return Ok((body.to_string(), true));
+    }
+    Ok((
+        format!(
+            "{}{item}\n  **Escalated to owner ({who}, {stamp}).**{}",
+            &body[..start + a],
+            &body[start + b..]
+        ),
+        false,
+    ))
+}
+
+/// `escalate` for several questions of task `id` in one step (`muster clarify --send`, mu-103;
+/// the caller holds the lock, so a whole batch is one write to the readers): each of `ns` not
+/// escalated yet, nor answered meanwhile, is marked, with one log line for them all saying `how`.
+/// Returns the ones it marked; nothing is written when there are none.
+pub fn escalate_all_locked(
+    root: &Path,
+    id: &str,
+    ns: &[u32],
+    who: &str,
+    stamp: &str,
+    how: &str,
+) -> Result<Vec<u32>, String> {
+    let who = answerer(who)?;
+    let path = find_task(root, id)?;
+    let mut body = read_body(root, id)?;
+    let mut marked = Vec::new();
+    for &n in ns {
+        let open = questions_span(&body).is_some_and(|(s, e)| {
+            question_items(&body[s..e]).into_iter().any(|(a, b)| {
+                let q = parse_question(&body[s..e][a..b]);
+                q.n == Some(n) && !q.ticked
+            })
+        });
+        if !open {
+            continue;
+        }
+        let (new_body, already) = mark_escalated(&body, id, n, &who, stamp)?;
+        if !already {
+            body = new_body;
+            marked.push(n);
+        }
+    }
+    if marked.is_empty() {
+        return Ok(marked);
+    }
+    let qs: Vec<String> = marked.iter().map(|n| format!("Q{n}")).collect();
+    let line = format!(
+        "{stamp} {who}: escalated {} to the owner ({how})",
+        qs.join(", ")
+    );
+    write_atomic(&path, &append_log(&body, &line))?;
+    Ok(marked)
 }
 
 /// The answers waiting in `session`'s mailbox (contract rule 5, `mailbox`), oldest name first.
@@ -2809,6 +2892,28 @@ fn answer_with(
         // Unblocked, the file may have moved out of blocked/.
         let path = find_task(root, id).unwrap_or(path);
         let asker = asker_session(&mail, id, n, item);
+        // A question asked with a default didn't wait: someone may be building on the default by
+        // now, so its answer goes to whoever holds the task (mu-103), the asker only when nobody
+        // does. A question without a default goes to its asker, who waited for it. In Testing and
+        // Your check the claim still names the builder; `held-by` is who holds it there.
+        let defaulted = parse_question(item)
+            .choices
+            .is_some_and(|c| c.no_answer.is_some());
+        let holder = defaulted
+            .then(|| parse_task("", root, &folder_of(root, &path), &path, &body, 0))
+            .flatten()
+            .filter(|t| !t.is_human())
+            .and_then(|t| {
+                let by = match t.stage.as_str() {
+                    "testing" | "your-check" => t.holder(),
+                    _ => &t.claimed_by,
+                };
+                crate::session::split(by).1
+            })
+            .map(|s| s.mailbox())
+            .filter(|m| is_mailbox(m));
+        let for_holder = holder.is_some() && holder != asker;
+        let asker = holder.or(asker);
         if let Some(s) = &asker {
             let title = new_body
                 .lines()
@@ -2822,8 +2927,15 @@ fn answer_with(
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
+            let yours = if for_holder {
+                let by = parse_question(item).asker;
+                let by = by.split(',').next().unwrap_or("").trim().to_string();
+                format!("The question ({by}'s, on the task you hold)")
+            } else {
+                "Your question".to_string()
+            };
             let msg = format!(
-                "Answer to Q{n} on task {id} ({title}), from {who}:\nYour question: {q}\nAnswer: {text}\n(Also written in {rel} in the task queue.)\n"
+                "Answer to Q{n} on task {id} ({title}), from {who}:\n{yours}: {q}\nAnswer: {text}\n(Also written in {rel} in the task queue.)\n"
             );
             let dir = mail.join(s);
             fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -2935,6 +3047,16 @@ pub(crate) fn hold_lock<T>(
     let result = f();
     let _ = lock.unlock();
     result
+}
+
+/// The queue's lock shared, for a reader that must see each write whole (`read_state_settled`):
+/// held until it's dropped, after any write under way. None when no write ever made the lock
+/// file (nothing is created for a read) or it can't be opened or locked: the read goes ahead
+/// then.
+fn shared_lock(root: &Path) -> Option<fs::File> {
+    let lock = fs::File::open(root.join("mail").join(".lock")).ok()?;
+    lock.lock_shared().ok()?;
+    Some(lock)
 }
 
 /// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` (and a teammate's `· agent

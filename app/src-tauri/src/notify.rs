@@ -36,6 +36,11 @@ const SHORT: usize = 80;
 /// key, why and project, and nothing it names (a task id, a project's name) runs on.
 const LONG: usize = 200;
 
+/// Why an escalated question waits on the owner, in its item's line; a task's several are folded
+/// into one line by `message`, so a batch (`muster clarify --send`, mu-103) is one notification
+/// that names each task once and counts its questions.
+const ASKS: &str = "asks you a question";
+
 /// One thing waiting on the owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
@@ -100,7 +105,7 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
         }
         for q in t.questions.iter().filter(|q| !q.ticked && q.escalated) {
             let n = q.n.map(|n| n.to_string()).unwrap_or_default();
-            why.push((format!("q{n}"), "asks you a question"));
+            why.push((format!("q{n}"), ASKS));
         }
         match t.blocked_kind.as_str() {
             "you" => why.push(("blocked".into(), "blocked on you")),
@@ -227,24 +232,47 @@ pub fn message(items: &[Item]) -> (String, String) {
         return (String::new(), String::new());
     };
     let one_project = items.iter().all(|i| i.queue == first.queue);
+    // A task's questions are one line, with their count: (item, how many).
+    let asks = format!(": {ASKS}");
+    let mut folded: Vec<(&Item, usize)> = Vec::new();
+    for i in items {
+        let same = |(f, _): &&mut (&Item, usize)| {
+            f.queue == i.queue && f.line == i.line && i.line.ends_with(&asks)
+        };
+        match folded.iter_mut().find(same) {
+            Some((_, n)) => *n += 1,
+            None => folded.push((i, 1)),
+        }
+    }
+    let all_asks = items.iter().all(|i| i.line.ends_with(&asks));
     let title = match (items.len(), one_project) {
         (1, _) => format!("New for you in {}", first.label),
+        (n, true) if all_asks => format!(
+            "{} for you in {}",
+            crate::clarify::counted(n, folded.len()),
+            first.label
+        ),
+        (n, false) if all_asks => format!("{} for you", crate::clarify::counted(n, folded.len())),
         (n, true) => format!("{n} new for you in {}", first.label),
         (n, false) => format!("{n} new for you"),
     };
-    let mut lines: Vec<String> = items
+    let mut lines: Vec<String> = folded
         .iter()
         .take(LINES)
-        .map(|i| {
+        .map(|(i, n)| {
+            let line = match i.line.strip_suffix(ASKS) {
+                Some(head) if *n > 1 => format!("{head}asks you {n} questions"),
+                _ => i.line.clone(),
+            };
             if one_project {
-                cut(&i.line, LONG)
+                cut(&line, LONG)
             } else {
-                cut(&format!("{}: {}", i.label, i.line), LONG)
+                cut(&format!("{}: {line}", i.label), LONG)
             }
         })
         .collect();
-    if items.len() > LINES {
-        lines.push(format!("and {} more", items.len() - LINES));
+    if folded.len() > LINES {
+        lines.push(format!("and {} more", folded.len() - LINES));
     }
     (cut(&title, LONG), lines.join("\n"))
 }
@@ -971,6 +999,59 @@ mod tests {
                 "A: a/1/own line\nB: b/1/own line\nA: a/2/own line\nand 2 more".to_string()
             )
         );
+    }
+
+    #[test]
+    fn a_batch_of_questions_is_one_notification_naming_each_task_once() {
+        // muster clarify --send (mu-103): 5 questions on 2 tasks, read at once.
+        let q = |id: &str, n: u32, title: &str| Item {
+            key: format!("a/{id}/q{n}"),
+            line: format!("mu-{id} {title}: {ASKS}"),
+            ..item("x", "a")
+        };
+        let batch = [
+            q("1", 1, "Port"),
+            q("1", 2, "Port"),
+            q("2", 1, "Lease"),
+            q("1", 3, "Port"),
+            q("2", 2, "Lease"),
+        ];
+        assert_eq!(
+            message(&batch),
+            (
+                "5 questions on 2 tasks for you in A".to_string(),
+                "mu-1 Port: asks you 3 questions\nmu-2 Lease: asks you 2 questions".to_string()
+            )
+        );
+        // One question alone is named as before; a question beside other news counts as news.
+        assert_eq!(message(&batch[..1]).1, "mu-1 Port: asks you a question");
+        let mixed = [q("1", 1, "Port"), q("1", 2, "Port"), item("a/3/own", "a")];
+        assert_eq!(
+            message(&mixed),
+            (
+                "3 new for you in A".to_string(),
+                "mu-1 Port: asks you 2 questions\na/3/own line".to_string()
+            )
+        );
+        // Across projects, each line says which; the same key in another project isn't folded.
+        let other = Item {
+            queue: "b".into(),
+            label: "B".into(),
+            ..q("1", 1, "Port")
+        };
+        assert_eq!(
+            message(&[q("1", 1, "Port"), other]),
+            (
+                "2 questions on 2 tasks for you".to_string(),
+                "A: mu-1 Port: asks you a question\nB: mu-1 Port: asks you a question".to_string()
+            )
+        );
+        // The batch is one post: what decide returns from one read is one message.
+        let qs = vec!["a".to_string()];
+        let mut seen = Seen::default();
+        decide(&mut seen, &[], &qs, &every(), AWAY, "all");
+        let (new, _) = decide(&mut seen, &batch, &qs, &every(), AWAY, "all");
+        assert_eq!(new.len(), 5);
     }
 
     #[test]

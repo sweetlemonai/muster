@@ -436,6 +436,33 @@ class TaskTests(unittest.TestCase):
     def text(self, rel):
         return (self.root / rel).read_text(encoding="utf-8")
 
+    def test_file_warns_of_a_marker_and_clarify_send_json_is_the_lists_shape(self):
+        # mu-103 R9: the marker warning reaches stderr; R3: --send --json prints what it sent in
+        # the list's shape. muster itself, on this test's queue.
+        def muster(*args, body=None):
+            r = subprocess.run([str(MUSTER), args[0], "--queue", str(self.root), *args[1:]],
+                               input=body, env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r
+        # This queue's backlog is inbox/ (the v1 layout).
+        (self.root / "inbox" / "2026-10-14-0900-port.md").write_text("Pick a port\n", encoding="utf-8")
+        body = "**Details:** listen on [NEEDS CLARIFICATION: which port?] for the app.\n"
+        r = muster("file", "--as", "shapour", "--body", "-", "--", "2026-10-14-0900-port.md", "Port", body=body)
+        self.assertIn("has 1 [NEEDS CLARIFICATION] marker in its write-up: [NEEDS CLARIFICATION: which port?]",
+                      r.stderr)
+        [filed] = [t for t in json.loads(muster("list", "--json").stdout)["tasks"] if t["title"] == "Port"]
+        self.assertEqual(filed["stage"], "shaping")
+        muster("ask", "--as", "shapour", "--session", "aaaa1111", "--option", "8080", "--option", "9090",
+               "--pick", "a", "--no-answer", "a", "--", filed["id"], "Which port?")
+        before = json.loads(muster("clarify", "--json").stdout)
+        sent = json.loads(muster("clarify", "--send", "--json", "--as", "shapour").stdout)
+        self.assertEqual(sent, before)
+        self.assertEqual(sorted(sent[0]), ["id", "key", "questions", "stage", "title"])
+        self.assertEqual({k: sent[0]["questions"][0][k] for k in ("n", "question", "options", "pick", "noAnswer")},
+                         {"n": 1, "question": "Which port?", "options": ["8080", "9090"], "pick": "a",
+                          "noAnswer": "a"})
+        self.assertEqual(json.loads(muster("clarify", "--send", "--json", "--as", "shapour").stdout), [])
+
     def test_ask_answer_deliver(self):
         self.run_task("ask", "0042", "Which port?", "--from", "wt-a", "--session", "aaaa1111-full-id")
         t = self.text("doing/0042-something.md")

@@ -382,6 +382,9 @@ pub struct Filed {
     pub attachment: String,
     /// The project's lenses the body has no line for (0076), by name: a warning, it's filed anyway.
     pub missing_lenses: Vec<String>,
+    /// The `[NEEDS CLARIFICATION: …]` markers in the body (mu-103, `clarify::markers`): a
+    /// warning here, it's filed anyway; they hold its pass into Ready.
+    pub markers: Vec<String>,
 }
 
 /// File a backlog note as a task: the next id, in Shaping, with `task`'s fields and its body
@@ -405,6 +408,7 @@ pub fn file_note(
         .into_iter()
         .map(String::from)
         .collect();
+    let markers = crate::clarify::markers(&t.body);
     let log = ops::free_text_line(
         format!("{stamp} {who}: filed from backlog note {name}"),
         "the note's file name",
@@ -441,6 +445,7 @@ pub fn file_note(
             path: created.path.clone(),
             attachment,
             missing_lenses,
+            markers,
         })
     })
 }
@@ -644,6 +649,9 @@ pub struct Brief {
     pub template: String,
     /// What comes after filing: the pass into Ready.
     pub then: String,
+    /// What to do with what isn't known yet (mu-103): mark it, decide or ask it, and send the
+    /// run's questions to the owner once, at its end.
+    pub unknowns: String,
     /// The command for a note that isn't worth a task.
     pub drop: String,
 }
@@ -685,6 +693,7 @@ pub fn brief(
         docs,
         command: format!("muster file --queue {q} {n} \"<title>\" --type code|bug|chore|tech-debt|spike|design|docs|research --priority high|normal|low --tags <a,b> --time <2h> --test-time <30m> --tokens <500k> --body -"),
         then: format!("muster pass <id> --from shaping --queue {q}"),
+        unknowns: format!("Mark anything you don't know yet in the body as [NEEDS CLARIFICATION: <what's unknown>]; the pass into Ready refuses while one is left. Decide each one you can and write the call under ## Questions as \"Decided by <you>, overrule any time: …\"; ask the rest with muster ask <id> \"…\" --option … --pick … --no-answer … --queue {q} and replace the marker with \"(see Q<n>)\". A question with a --no-answer default goes to Ready on it; one without holds the task in Shaping. At the end of the shaping run, not after each task, send every question as one batch: muster clarify --send --queue {q}"),
         drop: format!("muster drop --queue {q} {n} \"<why>\""),
     }
 }
@@ -769,8 +778,8 @@ pub fn brief_text(b: &Brief) -> String {
         }
     }
     out.push_str(&format!(
-        "\nFile it (the task starts in Shaping, and the note moves into its attachments, so nothing is lost):\n  {}\nwith this body on stdin, filled in:\n{}\nOnce it has criteria, hand it to Ready:\n  {}\nNot worth a task:\n  {}\n",
-        b.command, b.template, b.then, b.drop
+        "\nFile it (the task starts in Shaping, and the note moves into its attachments, so nothing is lost):\n  {}\nwith this body on stdin, filled in:\n{}\nUnknowns:\n  {}\nOnce it has criteria, hand it to Ready:\n  {}\nNot worth a task:\n  {}\n",
+        b.command, b.template, b.unknowns, b.then, b.drop
     ));
     out
 }
@@ -1220,6 +1229,7 @@ mod tests {
                     .iter()
                     .map(|l| l.name.to_string())
                     .collect(),
+                markers: Vec::new(),
             }
         );
         let text = fs::read_to_string(p.join(&f.path)).unwrap();
@@ -1530,6 +1540,10 @@ mod tests {
             "  0002 Building: Board columns flicker on resize (shares board, columns, resize)",
             "muster file --queue '/p/tasks' 'it'\\''s a note.md' \"<title>\" --type code|bug|chore|tech-debt|spike|design|docs|research --priority high|normal|low",
             "--body -",
+            "\nUnknowns:\n  Mark anything you don't know yet in the body as [NEEDS CLARIFICATION: <what's unknown>]; the pass into Ready refuses while one is left.",
+            "\"Decided by <you>, overrule any time: …\"",
+            "A question with a --no-answer default goes to Ready on it; one without holds the task in Shaping.",
+            "At the end of the shaping run, not after each task, send every question as one batch: muster clarify --send --queue '/p/tasks'\n",
             "## Acceptance criteria\n- [ ] AC1: ",
             "— verify: command (",
             "muster pass <id> --from shaping",
@@ -1676,6 +1690,19 @@ mod tests {
             serde_json::to_value(&f).unwrap()["missingLenses"],
             serde_json::json!([])
         );
+        assert_eq!(
+            serde_json::to_value(&f).unwrap()["markers"],
+            serde_json::json!([])
+        );
+        // A marker left in the body is named (mu-103), and the task is filed anyway.
+        let c = add(p, "three", "", "owner", T).unwrap();
+        let marked = full.replace(
+            "Tests: x.",
+            "Tests: x. Port: [NEEDS CLARIFICATION: which port?]",
+        );
+        let f = file_note(p, &c, &new_task("Three", &marked), "wt-shape", T).unwrap();
+        assert_eq!(f.markers, ["[NEEDS CLARIFICATION: which port?]"]);
+        assert_eq!(crate::queue::read_task(p, &f.id).unwrap().stage, "shaping");
     }
 
     #[test]

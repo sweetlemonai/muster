@@ -208,7 +208,9 @@ muster ask 0012 "Fix the flicker now or after the redesign?" --option "Now, in t
 
 The options show as chips under the question, the agent's pick marked **pick**. One click answers with that option; the box below still takes "something else", or words to add to a pick. In a terminal: `muster answer 0012 Q1 --pick b`.
 
-Your answer is written into the task and handed to the session that asked. Where the **answer hook** is installed (a Claude Code hook that ships with Muster), the answer appears in that session after its next step, without it looking. Without the hook, the session runs `muster inbox`. Why: an agent never stops to wait, and every answer ends up in the file, where the next session finds it.
+Your answer is written into the task and handed to the session that asked. A question asked with a default didn't wait, so its answer goes to the session holding the task by then (the builder, or the tester in Testing), and to the asker only when nobody holds it. Where the **answer hook** is installed (a Claude Code hook that ships with Muster), the answer appears in that session after its next step, without it looking. Without the hook, the session runs `muster inbox`. Why: an agent never stops to wait, and every answer ends up in the file, where the next session finds it.
+
+Questions from **shaping** come in one batch. A shaper marks what it doesn't know as `[NEEDS CLARIFICATION: …]`, and the task can't go to Ready while a marker is left: each is decided ("Decided by <shaper>, overrule any time: …") or asked. A question with a default lets the task go to Ready anyway ("going with (b) unless you answer"); one without holds it. At the end of its run the shaper sends every question at once with `muster clarify --send`, so they reach you together under **From shaping** in Waiting for you, with one notification.
 
 See [Questions](05-commands.md#questions), the tutorial [Answer an agent's question](03-tutorials.md#answer-an-agents-question), and [PROTOCOL.md](../PROTOCOL.md#questions-and-answers).
 

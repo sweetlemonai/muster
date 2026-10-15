@@ -88,6 +88,14 @@ It turns a backlog note into a task. `muster shape <note-file>` prints the brief
 
 The body's **Lenses:** block has one line for each lens the brief lists (the project's skips are left out, and named with their reasons): what the task must do for accessibility, i18n and RTL, themes, payments and entitlements, architecture, security, privacy, performance, tests and docs, or "n/a" and why. Write one list item per lens, like `- **Security:** stored, never run`, or sentences in one paragraph, like `Security, privacy: n/a.` `muster file` warns, naming each lens the body has no line for, and files it anyway; fix it with `muster edit <id>`.
 
+What the session doesn't know yet, it marks in the body as `[NEEDS CLARIFICATION: <what's unknown>]`. `muster file` warns about each marker, and `muster pass <id> --from shaping` refuses while one is left. Resolve each one: decide it, if it's yours to decide, and write the call under `## Questions` as "Decided by <you>, overrule any time: …"; or ask it, with options, your pick and a default, and replace the marker with "(see Q2)":
+
+```
+muster ask 0007 "Which columns go in the export?" --option "Every field" --option "Key, title, stage only" --pick b --no-answer b --as wt-shape
+```
+
+A question with a `--no-answer` default doesn't hold the task: it goes to Ready on the default, and an answer that comes later still lands under the question. One without a default holds it in Shaping until it's answered. Don't escalate each question as you go. At the end of the shaping run, send them all to the owner as one batch: `muster clarify` shows what would go, and `muster clarify --send --as wt-shape` sends it, once.
+
 Before passing it on, it checks the task against the project's picture. `muster vision <id>` prints that brief: the task (as data), the picture's files, the open tasks it touches, what to look for and the JSON to return. The session reads them, then records what it found:
 
 ```

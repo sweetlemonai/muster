@@ -30,3 +30,4 @@ covers: app/src-tauri/src/queue.rs, app/src-tauri/src/ops.rs, app/src-tauri/src/
 - Comments are written only by `muster comment`; Edit leaves them out. (mu-17)
 - While a session holds a task in Building, the owner adds a note, not an edit. (mu-20)
 - Questions go through `muster ask`; the answer reaches the asking session's mailbox. (PROTOCOL.md "Questions and answers")
+- An answer to a question with a `--no-answer` default reaches whoever holds the task: the claim, `held-by` in Testing and Your check; the asker only when nobody does. (mu-103)

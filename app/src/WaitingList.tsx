@@ -17,7 +17,8 @@ import { nextStep } from "./yourCheck";
 import AnswerBox from "./AnswerBox";
 import ProjectName from "./ProjectName";
 
-/** Waiting for you: every task waiting on the owner. First what blocks agents (0060, QA: with many
+/** Waiting for you: every task waiting on the owner. First the questions shapers sent as one
+ *  batch (mu-103), under "From shaping: N questions on M tasks". Then what blocks agents (0060, QA: with many
  *  in Your check it would be out of sight below them): questions escalated to the owner and
  *  blocks on them, answers first, then actions, then permissions, then sessions waiting for input
  *  in Claude Code (0048) and their own tasks, each kept in the order given. Then the agents' tasks
@@ -39,12 +40,21 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
   const inCheck = (t: Task) => !isHuman(t) && isWork(t) && t.stage === "your-check";
   const check = tasks.filter(inCheck);
   // Answers, then actions, then permissions (0060), each kept in the order given.
-  const rest = tasks.filter((t) => !inCheck(t)).sort((a, b) => waitRank(a) - waitRank(b));
+  // The questions shapers sent as one batch (mu-103, `muster clarify --send`): together, first.
+  const batch = tasks.filter((t) => !inCheck(t) && fromShaping(t));
+  const asked = batch.reduce((n, t) => n + t.questions.filter(openEscalated).length, 0);
+  const rest = tasks.filter((t) => !inCheck(t) && !fromShaping(t)).sort((a, b) => waitRank(a) - waitRank(b));
   const item = (t: Task) => <WaitingItem key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} onChanged={onChanged} />;
   return (
     <main className="list waiting-list">
       <LessonsWaiting queues={queues} queue={queue} onChanged={onChanged} />
       {tasks.length === 0 && lessonsWaiting(queues, queue) === 0 && <p className="empty">Nothing is waiting for you.</p>}
+      {batch.length > 0 && (
+        <div className="effort-group effort-other from-shaping" role="group" aria-label="From shaping">
+          <h3 className="effort-head">From shaping: {counted(asked, batch.length)}</h3>
+          {batch.map(item)}
+        </div>
+      )}
       {rest.length > 0 && (
         <div className="effort-group effort-other" role="group" aria-label="Questions, blocks and your own tasks">
           <h3 className="effort-head">Questions, blocks and your own tasks <small>{rest.length}</small></h3>
@@ -55,6 +65,19 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
       <EffortGroups tasks={check} place="waiting" renderCard={item} onChanged={onChanged} />
     </main>
   );
+}
+
+const openEscalated = (q: Task["questions"][number]) => !q.ticked && q.escalated;
+
+/** Is `t` in the shapers' batch (mu-103)? An agent's task nobody has started (Shaping, Ready),
+ *  not blocked, with a question escalated to the owner and still open. */
+export function fromShaping(t: Task): boolean {
+  return !isHuman(t) && (t.stage === "shaping" || t.stage === "ready") && !t.blocked && t.questions.some(openEscalated);
+}
+
+/** "3 questions on 2 tasks", as `muster clarify` counts them. */
+export function counted(questions: number, tasks: number): string {
+  return `${questions} question${questions === 1 ? "" : "s"} on ${tasks} task${tasks === 1 ? "" : "s"}`;
 }
 
 /** Where a task waiting on the owner sits among the questions, blocks and their own tasks (0060):

@@ -1144,6 +1144,10 @@ struct Current {
     paused: String,
     /// What was built, in one line (mu-78, `summary:`), "" before anyone wrote it.
     summary: String,
+    /// The `[NEEDS CLARIFICATION: …]` markers left in its write-up (mu-103, `clarify::markers`)
+    /// and its open questions with no default (`clarify::waits`): both hold Shaping back.
+    markers: Vec<String>,
+    waits: Vec<u32>,
 }
 
 /// What a stage change writes.
@@ -1320,6 +1324,8 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         worktree: t.worktree,
         paused: t.paused,
         summary: t.summary,
+        markers: crate::clarify::markers(text),
+        waits: crate::clarify::waits(&t.questions),
     })
 }
 
@@ -2186,6 +2192,12 @@ fn pass_change(
                 t.vision_open,
                 &t.vision_ids,
             ))
+        }
+        "shaping" if !t.markers.is_empty() => {
+            return Err(crate::clarify::holds_ready(id, &t.markers))
+        }
+        "shaping" if !t.waits.is_empty() => {
+            return Err(crate::clarify::holds_on_questions(id, &t.waits))
         }
         "testing" if ticked + t.owner_open < items => {
             return Err(format!(
@@ -4731,6 +4743,65 @@ mod tests {
             text.contains("wt-a: stage building → testing (gate: gate full: green (9 steps))\n")
         );
         assert!(text.ends_with("wt-a: stage your-check → done\n"));
+    }
+
+    #[test]
+    fn a_marker_or_a_question_with_no_default_holds_shaping() {
+        let d = queue();
+        let fm = "stage: shaping\nstatus: todo\nclaimed-by:\nwaiting_on:";
+        let marked = format!("The port is [NEEDS CLARIFICATION: which port?].\nWrite `[NEEDS CLARIFICATION: x]` for one.\n\n{TICKED}## Comments\n[NEEDS CLARIFICATION: in a comment]\n\n");
+        put(d.path(), "todo/0001-t.md", &task_text(fm, &marked));
+        let e = pass_task(d.path(), "0001", "shapour", T, &no_gate()).unwrap_err();
+        assert!(
+            e.starts_with("0001 has 1 [NEEDS CLARIFICATION] marker in its write-up: [NEEDS CLARIFICATION: which port?]. "),
+            "{e}"
+        );
+        assert_eq!(only(d.path()).stage, "shaping");
+        // Asked instead, with a default: it goes to Ready on it.
+        let asked = task_text(fm, &format!("The port: (see Q1).\n\n{TICKED}"));
+        put(d.path(), "todo/0001-t.md", &asked);
+        let c =
+            crate::choices::clean(&["8080".into(), "9090".into()], Some("a"), Some("b")).unwrap();
+        crate::queue::ask_with(
+            d.path(),
+            "0001",
+            "Which port?",
+            &c,
+            "shapour",
+            "aaaa1111",
+            T,
+        )
+        .unwrap();
+        // A question in words has no default: it holds the pass, named.
+        crate::queue::ask(d.path(), "0001", "Which colour?", "shapour", "aaaa1111", T).unwrap();
+        let e = pass_task(d.path(), "0001", "shapour", T, &no_gate()).unwrap_err();
+        assert!(
+            e.starts_with("0001 has a question open with no default (Q2): "),
+            "{e}"
+        );
+        // Answered, it doesn't; the defaulted Q1 never did.
+        crate::queue::answer(d.path(), "0001", 2, "Blue.", "owner", T).unwrap();
+        pass_task(d.path(), "0001", "shapour", T, &no_gate()).unwrap();
+        let t = only(d.path());
+        assert_eq!(t.stage, "ready");
+        assert!(!t.questions[0].ticked);
+        // Options with no default hold it too.
+        let d = queue();
+        put(d.path(), "todo/0001-t.md", &task_text(fm, TICKED));
+        let c = crate::choices::clean(&["8080".into(), "9090".into()], Some("a"), None).unwrap();
+        crate::queue::ask_with(
+            d.path(),
+            "0001",
+            "Which port?",
+            &c,
+            "shapour",
+            "aaaa1111",
+            T,
+        )
+        .unwrap();
+        assert!(pass_task(d.path(), "0001", "shapour", T, &no_gate())
+            .unwrap_err()
+            .contains("(Q1)"));
     }
 
     fn gate_and_summary(summary: &str) -> PassOpts {
@@ -8048,6 +8119,83 @@ mod tests {
             crate::queue::answer(d.path(), "0002", 1, "yes", "owner", "2026-10-14 10:11").unwrap();
         assert_eq!(other.as_deref(), Some("1c6af0d9"));
         assert!(old.join("0002-Q1.md").exists());
+    }
+
+    #[test]
+    fn a_later_answer_to_a_defaulted_question_reaches_whoever_holds_the_task() {
+        // mu-103 R1: the shaper asks with a default and moves on; the task goes to Ready and a
+        // builder in another session claims it and builds on the default.
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        let defaulted =
+            crate::choices::clean(&["One".into(), "Two".into()], Some("b"), Some("b")).unwrap();
+        let ask = |q: &str, c: &crate::choices::Choices| {
+            crate::queue::ask_with(d.path(), "0001", q, c, "shapour", "aaaa1111", T).unwrap()
+        };
+        ask("Which port?", &defaulted);
+        ask("Lease?", &defaulted);
+        ask("In words?", &Default::default());
+        let mail = d.path().join("mail");
+        let read = |p: PathBuf| fs::read_to_string(p).unwrap_or_default();
+        // Nobody holds it yet: the answer goes to the shaper.
+        let to = crate::queue::answer_pick(d.path(), "0001", 2, "a", "", "owner", T).unwrap();
+        assert_eq!(to.0.as_deref(), Some("aaaa1111"));
+        assert!(read(mail.join("aaaa1111/0001-Q2.md")).contains("Your question: Lease?"));
+        claim_task(d.path(), "0001", OLD, "2026-10-14 10:00").unwrap();
+        // Held, it goes to the holder, saying whose question it was; the shaper gets nothing.
+        let to = crate::queue::answer_pick(d.path(), "0001", 1, "a", "", "owner", T).unwrap();
+        assert_eq!(to.0.as_deref(), Some("1c6af0d9"));
+        let got = read(mail.join("1c6af0d9/0001-Q1.md"));
+        assert!(got.contains("Answer: (a) One"), "{got}");
+        assert!(got.contains("The question (shapour's, on the task you hold): Which port?"));
+        assert!(!mail.join("aaaa1111/0001-Q1.md").exists());
+        // A question without a default still goes to its asker, who waited for it.
+        let to = crate::queue::answer(d.path(), "0001", 3, "Yes.", "owner", T).unwrap();
+        assert_eq!(to.as_deref(), Some("aaaa1111"));
+        assert!(!mail.join("1c6af0d9/0001-Q3.md").exists());
+    }
+
+    #[test]
+    fn a_defaulted_answer_follows_the_claim_past_a_takeover() {
+        // The claim moved after the ask: the answer reaches the holder at the time it's given.
+        let d = queue();
+        claimed_by_old(d.path());
+        let c = crate::choices::clean(&["One".into(), "Two".into()], None, Some("a")).unwrap();
+        crate::queue::ask_with(d.path(), "0001", "Port?", &c, "shapour", "aaaa1111", T).unwrap();
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        let to = crate::queue::answer(d.path(), "0001", 1, "Two.", "owner", T).unwrap();
+        assert_eq!(to.as_deref(), Some("d6419719"));
+        assert!(d.path().join("mail/d6419719/0001-Q1.md").exists());
+        assert!(!d.path().join("mail/1c6af0d9/0001-Q1.md").exists());
+        assert!(!d.path().join("mail/aaaa1111/0001-Q1.md").exists());
+    }
+
+    #[test]
+    fn a_defaulted_answer_in_testing_reaches_the_tester_not_the_builder() {
+        // In Testing the claim still names the builder; the task is `held-by` the tester.
+        let d = queue();
+        let fm = format!(
+            "status: doing\nstage: testing\nheld-by: {NEW}\nclaimed-by: {OLD}\nwaiting_on:"
+        );
+        put(d.path(), "doing/0001-t.md", &task_text(&fm, TICKED));
+        let c = crate::choices::clean(&["One".into(), "Two".into()], None, Some("a")).unwrap();
+        for q in ["Port?", "Lease?"] {
+            crate::queue::ask_with(d.path(), "0001", q, &c, "shapour", "aaaa1111", T).unwrap();
+        }
+        let to = crate::queue::answer(d.path(), "0001", 1, "Two.", "owner", T).unwrap();
+        assert_eq!(to.as_deref(), Some("d6419719"));
+        assert!(!d.path().join("mail/1c6af0d9/0001-Q1.md").exists());
+        // In Your check the owner holds it: no session to mail, so it goes to the asker.
+        let body = file_0001(d.path()).replace("stage: testing", "stage: your-check");
+        let body = body.replace(&format!("held-by: {NEW}"), "held-by:");
+        put(d.path(), "doing/0001-t.md", &body);
+        let to = crate::queue::answer(d.path(), "0001", 2, "Two.", "owner", T).unwrap();
+        assert_eq!(to.as_deref(), Some("aaaa1111"));
     }
 
     #[test]

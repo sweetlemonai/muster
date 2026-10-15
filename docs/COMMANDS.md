@@ -75,7 +75,7 @@ Prints the command and its output, verbatim.
 ## The `muster` command
 
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
-route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
+route run as `! muster …` in a session: new, move, stage, set, attach, escalate, clarify (task 0103: a shaping run's questions as one batch), inbox, reclaim,
 checkin (task 0030), ping (task 0039), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
 0020), the backlog's shape, file and drop (task 0015), link and comment (task 0017: a task's
 external links, and a comment thread anyone may add to), index (task 0018), vision (a task

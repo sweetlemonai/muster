@@ -43,6 +43,8 @@ struct Args {
     takeover: bool,
     /// `checkin --handoff` (0090): the holder's last check-in; its successor may take over.
     handoff: bool,
+    /// `clarify --send` (mu-103): escalate the batch to the owner.
+    send: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -67,6 +69,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         fix_pauses: false,
         takeover: false,
         handoff: false,
+        send: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -96,6 +99,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--fix-pauses" => a.fix_pauses = true,
             "--takeover" => a.takeover = true,
             "--handoff" => a.handoff = true,
+            "--send" => a.send = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
@@ -497,6 +501,22 @@ fn lens_warning(k: &str, missing: &[String]) -> Option<String> {
     Some(format!(
         "warning: {k} has no Lenses line for {n}: {}. It's filed anyway: add one line each under **Lenses:** (what the task must do for it, or \"n/a\" and why) with muster edit {k}, or skip a lens for the whole project with its reason (muster help shape).",
         missing.join(", ")
+    ))
+}
+
+/// What `muster file` warns, task `k` filed, when its body still has `[NEEDS CLARIFICATION: …]`
+/// markers (mu-103), naming them; None when it has none.
+fn marker_warning(k: &str, markers: &[String]) -> Option<String> {
+    if markers.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "warning: {k} has {} in its write-up: {}. It's filed anyway, but it can't pass to Ready until each is decided (under ## Questions, \"Decided by <you>, overrule any time: …\") or asked (muster ask {k} …, the marker replaced with \"(see Q<n>)\") with muster edit {k}.",
+        match markers.len() {
+            1 => "1 [NEEDS CLARIFICATION] marker".to_string(),
+            n => format!("{n} [NEEDS CLARIFICATION] markers"),
+        },
+        markers.join("; ")
     ))
 }
 
@@ -2218,6 +2238,42 @@ fn run_on(
             }
             Ok(0)
         }
+        "clarify" => {
+            if a.pos.len() > 1 {
+                return Err("clarify takes no task: it lists every Shaping and Ready task's open questions (muster help clarify)".into());
+            }
+            if !a.send {
+                let b = crate::clarify::read(root);
+                if a.json {
+                    print_json(&b)?;
+                } else {
+                    print!("{}", crate::clarify::text(&b));
+                }
+                return Ok(0);
+            }
+            let sent = crate::clarify::send(root, &label(), stamp)?;
+            let n: usize = sent.iter().map(|t| t.questions.len()).sum();
+            if a.json {
+                print_json(&sent)?;
+            } else if sent.is_empty() {
+                println!("nothing to send: no open question on a Shaping or Ready task that isn't blocked is waiting to go to the owner");
+            } else {
+                let each: Vec<String> = sent
+                    .iter()
+                    .map(|t| {
+                        let qs: Vec<String> =
+                            t.questions.iter().map(|q| format!("Q{}", q.n)).collect();
+                        format!("{} {}", t.key, qs.join(", "))
+                    })
+                    .collect();
+                println!(
+                    "sent {} to the owner as one batch ({}); they wait in Waiting for you. Add them to WAITING-FOR-OWNER.md.",
+                    crate::clarify::counted(n, sent.len()),
+                    each.join("; ")
+                );
+            }
+            Ok(0)
+        }
         "inbox" => {
             let mail = queue::take_mail(root, &session(a, env), a.keep)?;
             if mail.is_empty() {
@@ -2257,6 +2313,9 @@ fn run_on(
             }
             // On stderr, so stdout stays the one line (or the JSON) a script reads.
             if let Some(w) = lens_warning(&key(&f.id), &f.missing_lenses) {
+                eprintln!("{w}");
+            }
+            if let Some(w) = marker_warning(&key(&f.id), &f.markers) {
                 eprintln!("{w}");
             }
             Ok(0)
@@ -4017,6 +4076,60 @@ mod tests {
     }
 
     #[test]
+    fn clarify_lists_and_sends_the_batch_on_the_command_line() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        assert_eq!(code(&["new", "Asked", "--as", "owner"]), 0);
+        assert_eq!(code(&["stage", "0001", "shaping", "--as", "owner"]), 0);
+        let s = ["--session", "abcd1234-full"];
+        assert_eq!(
+            code(&[
+                "ask",
+                "--as",
+                "shapour",
+                s[0],
+                s[1],
+                "--option",
+                "8080",
+                "--option",
+                "9090",
+                "--pick",
+                "a",
+                "--no-answer",
+                "a",
+                "--",
+                "0001",
+                "Which port?"
+            ]),
+            0
+        );
+        assert_eq!(code(&["clarify"]), 0);
+        assert_eq!(code(&["clarify", "--json"]), 0);
+        assert_eq!(code(&["clarify", "0001"]), 1, "takes no task");
+        let before = queue::read_body(d.path(), "0001").unwrap();
+        assert_eq!(code(&["clarify", "--send", "--as", "shapour"]), 0);
+        let after = queue::read_body(d.path(), "0001").unwrap();
+        assert!(
+            after.contains("  **Escalated to owner (shapour, "),
+            "{after}"
+        );
+        assert!(after.contains(" shapour: escalated Q1 to the owner (muster clarify)\n"));
+        // Sent once: a second send writes nothing.
+        assert_eq!(code(&["clarify", "--send", "--as", "shapour"]), 0);
+        assert_eq!(queue::read_body(d.path(), "0001").unwrap(), after);
+        assert_ne!(before, after);
+        // The defaulted question doesn't hold Shaping; the task has no criteria, which does.
+        let e = code(&["pass", "0001", "--from", "shaping", "--as", "shapour"]);
+        assert_eq!(e, 1);
+    }
+
+    #[test]
     fn ask_escalate_and_inbox_on_the_command_line() {
         let d = v2_queue();
         let q = d.path().to_string_lossy().to_string();
@@ -4521,6 +4634,7 @@ mod tests {
             path: "todo/0031-x.md".into(),
             attachment: "n.md".into(),
             missing_lenses: vec!["Themes".into(), "Docs".into()],
+            markers: vec!["[NEEDS CLARIFICATION: which port?]".into()],
         };
         let base = tempfile::tempdir().unwrap();
         let (q, _) = project(base.path(), "drover");
@@ -4537,6 +4651,15 @@ mod tests {
             .unwrap()
             .contains(" for 1 lens: Docs. "));
         assert_eq!(lens_warning("dr-31", &[]), None);
+        // So is one with a marker left (mu-103), named.
+        assert_eq!(
+            marker_warning("dr-31", &f.markers).as_deref(),
+            Some("warning: dr-31 has 1 [NEEDS CLARIFICATION] marker in its write-up: [NEEDS CLARIFICATION: which port?]. It's filed anyway, but it can't pass to Ready until each is decided (under ## Questions, \"Decided by <you>, overrule any time: …\") or asked (muster ask dr-31 …, the marker replaced with \"(see Q<n>)\") with muster edit dr-31.")
+        );
+        assert!(marker_warning("dr-31", &["[a]".into(), "[b]".into()])
+            .unwrap()
+            .contains(" has 2 [NEEDS CLARIFICATION] markers in its write-up: [a]; [b]. "));
+        assert_eq!(marker_warning("dr-31", &[]), None);
     }
 
     #[test]

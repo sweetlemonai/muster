@@ -35,7 +35,7 @@ describe("pick-one questions in the task pane (0049)", () => {
   it("shows every option as a chip that answers, the pick marked and the fallback named", () => {
     const html = pane([LEASE]);
     expect(chips(html)).toEqual(["(a) 1 h to 7 d pick", "(b) Any length", "(c) No lease"]);
-    expect(text(pickPart(html))).toContain("with no answer: c");
+    expect(text(pickPart(html))).toContain("going with (c) unless you answer");
     expect(html).toContain('aria-label="Options for Q2"');
   });
   it("shows the question without its option lines, still orange as needs you, with the box below for something else", () => {
@@ -66,7 +66,7 @@ describe("pick-one questions in Waiting for you (0049)", () => {
     expect(chips(html)).toEqual(["(a) 1 h to 7 d pick", "(b) Any length", "(c) No lease"]);
     const item = text(/<article[^>]*>([\s\S]*?)<\/article>/.exec(html)?.[1] ?? "");
     expect(item).toBe(
-      "0007 · T Q2 How long may a lease be? **Escalated to owner (capture, 2026-10-13 09:05).** (a) 1 h to 7 d pick (b) Any length (c) No lease with no answer: c Q1 Which port? Open to answer",
+      "0007 · T Q2 How long may a lease be? **Escalated to owner (capture, 2026-10-13 09:05).** (a) 1 h to 7 d pick (b) Any length (c) No lease going with (c) unless you answer Q1 Which port? Open to answer",
     );
   });
 });
