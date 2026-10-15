@@ -963,7 +963,9 @@ mod tests {
             "{readme}"
         );
         let from = fs::read_to_string(q.join("migrated-from.txt")).unwrap();
-        assert!(from.contains(&old.display().to_string()), "{from}");
+        // Migrate names the path it resolved, so a `//` or `/./` in TMPDIR isn't in it.
+        let resolved = fs::canonicalize(&old).unwrap();
+        assert!(from.contains(&resolved.display().to_string()), "{from}");
         assert!(
             from.contains(&format!("Its last commit: {head}\n")),
             "{from}"
@@ -1350,12 +1352,14 @@ mod tests {
             ],
         );
         let mode = |p: &Path, m: u32| fs::set_permissions(p, fs::Permissions::from_mode(m));
+        // Migrate names the folder under the path it resolved, not the one it was given.
+        let resolved = fs::canonicalize(&old).unwrap();
         for rel in ["done", "attachments/0001"] {
             mode(&old.join(rel), 0o000).unwrap();
             let e = migrate(&old, &main, &Options::default(), &tools(), T);
             mode(&old.join(rel), 0o755).unwrap();
             let e = e.unwrap_err();
-            assert!(e.contains(&old.join(rel).display().to_string()), "{e}");
+            assert!(e.contains(&resolved.join(rel).display().to_string()), "{e}");
             assert!(!main.join(layout::DIR).exists());
         }
     }

@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Two migrate tests compare the canonical path (mu-211)
+**Fixed:** with TMPDIR ending in `//` or `/./`, `copies_a_v2_queue_…` and
+`an_unreadable_folder_stops_it_naming_the_folder` failed → they looked for the given path in what
+migrate wrote, but migrate names `fs::canonicalize(old)`; on macOS the canonical `/private/tmp/…` held
+the given `/tmp/…` only by substring luck → both compare against `fs::canonicalize(&old)` (joined with
+the folder in the second). Test code only; `testkit` unchanged.
+**Verified:** red on main with `TMPDIR="$T//"` (2 failed at migrate.rs:966, :1358). After: `cargo test
+--lib migrate` 24/24 with `/`, `//` and `/./`; `cargo test --no-fail-fast` with `//`, hermetic: lib 1140
+passed, every integration test file green. `bin/gate` green.
+
 ## 2026-10-15 — mu-113 rebased onto main 2730c13 (mu-131, mu-172, mu-191, mu-208)
 **Did (Akbar_41, builder):** conflicts in cli.rs, help.rs, App.tsx, commands/mu.md and muster.md,
 AS_BUILT.md, glossary-fa.md and docs/now/sidebar.md resolved keeping both sides. mu-113's tests build
