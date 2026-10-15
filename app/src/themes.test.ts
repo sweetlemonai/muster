@@ -186,6 +186,33 @@ describe("the holder ribbon (0097): neutral, readable, apart from the stages and
   });
 });
 
+describe("the session's state on the holder ribbon (mu-171): readable, waiting for input apart from the You gold", () => {
+  const rule = (selector: string) => {
+    const i = css.indexOf(`\n${selector} {`);
+    expect(i, selector).toBeGreaterThanOrEqual(0);
+    return css.slice(i, css.indexOf("}", i));
+  };
+  for (const t of THEMES) {
+    it(`${t.name}: working, waiting for input and ended read at 4.5:1 with every accent`, () => {
+      for (const a of ACCENTS) {
+        const v = variables(t, a);
+        expect(contrast(v["--accent-text"], v["--panel"]), `working on ${a.name}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(v["--on-status"], v["--st-needs"]), `waiting for input on ${a.name}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(v["--text"], v["--panel"]), `ended on ${a.name}`).toBeGreaterThanOrEqual(4.5);
+        // The needs-you block beside the You ribbon's gold never reads as the owner's own task.
+        expect(colourDistance(v["--st-needs"], v["--st-human"]), `needs you vs You on ${a.name}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+      }
+    });
+  }
+  it("colours only the state, with existing tokens: the accent's words, the needs-you block, the text", () => {
+    expect(rule(".holder-state.working")).toContain("color: var(--accent-text);");
+    expect(rule(".holder-state.needs-input")).toContain("background: var(--st-needs); color: var(--on-status);");
+    expect(rule(".holder-state.ended")).toContain("color: var(--text);");
+    // The ribbon itself stays neutral when it carries a state.
+    expect(rule(':root[data-cards="top"] .board .card .holder-ribbon.stated, .look-top .card .holder-ribbon.stated, .card .holder-ribbon.stated')).not.toMatch(/color|background|--st-|--accent/);
+  });
+});
+
 describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human cards patterned)", () => {
   // A stripe is the gold mixed by HUMAN_HATCH into the card's own background: the surface, or in
   // the Tint look the card washed in its colour (blocked, needs you), which stays under the stripes.

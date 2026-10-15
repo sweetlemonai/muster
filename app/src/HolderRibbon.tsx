@@ -3,13 +3,15 @@ import { LiveDot } from "./CardLook";
 import { isHuman } from "./human";
 import { agoText, leaseRunOut, minutesSince, nameOf, shownHolder, splitHolder } from "./lib";
 import { useLook } from "./modes";
+import { ribbonStateWords, sessionWords } from "./sessionState";
 import { Machine, RoleNamesContext, spanText } from "./settingsData";
 import type { Note, Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
 // The holder ribbon (0097): who holds a task, or is shaping a note, in the card's top-right
-// corner, the You ribbon's spot (0022). An identity, not a state: neutral, never a stage colour.
-// It names the holder; the card's who line keeps the rest (session, since when, its state).
+// corner, the You ribbon's spot (0022). The name is an identity: neutral, never a stage colour.
+// After it, what Claude Code says the holder's session is doing (mu-171, 0048), in words, the
+// state alone in its colour. The card's who line keeps the rest (session, since when).
 
 /** The stages a card wears its holder's ribbon in: where a session holds it while it works. */
 const RIBBON_STAGES = new Set(["shaping", "building", "testing"]);
@@ -36,6 +38,11 @@ export function cardRibbon(t: Pick<Task, "stage" | "claimedBy" | "heldBy" | "for
   return who ? "holder" : null;
 }
 
+/** The card's ribbon says its holder's session waits for input (mu-171), in the needs-you colour,
+ *  so the card's own "needs you" badge would say it twice. */
+export const ribbonWaits = (t: Pick<Task, "stage" | "claimedBy" | "heldBy" | "forWho" | "sessionState" | "paused">) =>
+  cardRibbon(t) === "holder" && t.sessionState === "needs-input" && ribbonStateWords(t, false) !== "";
+
 /** The card's ribbon says who holds it, so its who line leaves the name out. The owner's own task
  *  wears You for being theirs, so a name in its claim isn't on the ribbon. */
 export function ribbonNames(t: Pick<Task, "stage" | "claimedBy" | "heldBy" | "forWho">): boolean {
@@ -51,41 +58,100 @@ export function noteQuiet(n: Pick<Note, "heldBy" | "heartbeat">, now: number, le
   return m !== null && m > leaseMinutes;
 }
 
+/** A holder's name in two, for a narrow ribbon (mu-171 R1): `tail`, the number it ends in, its last
+ *  three digits at most, is what tells two sessions of one role apart (asghar_16, asghar_13), so
+ *  CSS cuts `head`, never the tail: "as…16". A name without a number, or that is only one, has no
+ *  tail and is cut at its end as before. Any script's digits count (قلی_۳۱). */
+export function nameEnds(name: string): { head: string; tail: string } {
+  const m = /\p{Nd}+$/u.exec(name);
+  if (!m || m.index === 0) return { head: name, tail: "" };
+  const tail = [...m[0]].slice(-3).join("");
+  return { head: name.slice(0, name.length - tail.length), tail };
+}
+
+/** The name as the ribbon shows it: whole where it fits, else its head ends in … and its number
+ *  stays (styles.css `.holder-name.tail-N`, the tail's length in digits). `dir="auto"` keeps a
+ *  right-to-left name's head and number in its own reading order. The two parts are flex items,
+ *  which a screen reader may read apart, so it hears the name whole instead. */
+function HolderName({ name }: { name: string }) {
+  const { head, tail } = nameEnds(name);
+  if (!tail) return <span className="holder-name" dir="auto">{name}</span>;
+  return (
+    <span className={`holder-name tail-${tail.length}`} dir="auto">
+      <span className="sr-only">{name}</span>
+      <span aria-hidden="true" className="holder-head">{head}</span>
+      <span aria-hidden="true" className="holder-tail">{tail}</span>
+    </span>
+  );
+}
+
 const quietTip = (lease: number) => `. Quiet: no heartbeat for over ${spanText(lease)}, its lease ran out`;
 
 /** The ribbon itself: `spoken` before the name for a screen reader, `shown` and a "·" before it
  *  on screen, the short name cut by CSS with the whole label in the tooltip, and "quiet" in words.
  *  Where it's narrow, `shown` gives way first, the "·" stays, and the name keeps a few characters
- *  (styles.css). Not a
+ *  (styles.css). `children` follow the name (a card's session state, its live dot). Not a
  *  control: the card is the button, and the keyboard order stays the card's. */
-function Ribbon({ who, spoken, shown, tip, quiet, children }: { who: string; spoken: string; shown?: string; tip: string; quiet: boolean; children?: ReactNode }) {
+function Ribbon({ who, spoken, shown, tip, quiet, state = "", children }: { who: string; spoken: string; shown?: string; tip: string; quiet: boolean; state?: string; children?: ReactNode }) {
   const names = useContext(RoleNamesContext);
+  const cls = ["holder-ribbon", state && `stated ${state}`, quiet && "quiet"].filter(Boolean).join(" ");
   return (
-    <span className={quiet ? "holder-ribbon quiet" : "holder-ribbon"} title={tip}>
+    <span className={cls} title={tip}>
       <span className="sr-only">{`${spoken} `}</span>
       {shown && <span aria-hidden="true" className="holder-prefix">{shown}</span>}
       {shown && <span aria-hidden="true" className="holder-sep"> · </span>}
-      <span className="holder-name" dir="auto">{nameOf(who, names)}</span>
+      <HolderName name={nameOf(who, names)} />
       {children}
       {quiet && <span className="holder-quiet"> · quiet</span>}
     </span>
   );
 }
 
-/** A held card's ribbon (`cardRibbon` says "holder"): the name, the live dot while a session on it
- *  works (0025, moved here from the top row), and quiet once the lease runs out, judged as the
- *  card's flag judges it. Every mode shows it. */
+/** What Claude Code says the holder's session is doing (mu-171), after the name: the full words,
+ *  and the short ones a narrow card shows instead (styles.css picks by the ribbon's room), both
+ *  hidden from a screen reader, which hears `sessionWords`' full words after the name. Waiting
+ *  for input is a needs-you block running to the card's edge, which separates it from the name,
+ *  so it has no "·". */
+function RibbonState({ t }: { t: Task }) {
+  const full = ribbonStateWords(t, false);
+  const short = ribbonStateWords(t, true);
+  if (!full) return null;
+  const state = t.sessionState ?? "unknown";
+  return (
+    <>
+      <span className="sr-only">{`, ${sessionWords(t)}`}</span>
+      {state !== "needs-input" && <span aria-hidden="true" className="holder-sep"> · </span>}
+      <span aria-hidden="true" className={`holder-state ${state}`}>
+        {full === short ? full : <><span className="holder-full">{full}</span><span className="holder-short">{short}</span></>}
+      </span>
+    </>
+  );
+}
+
+/** A held card's ribbon (`cardRibbon` says "holder"): the name, its session's state (mu-171), the
+ *  live dot while a session on it works (0025, moved here from the top row; not beside waiting
+ *  for input or ended, where Claude Code's word wins, as the sidebar's working now judges it), and
+ *  quiet once the lease runs out, judged as the card's flag judges it. Waiting for input is the owner's turn, so
+ *  quiet goes to the tooltip there (the card's flag line says it too). The ribbon sits in its
+ *  room, the strip above the card's top row less 8px at the start, which picks the full or short
+ *  words by its width. Every mode shows it. */
 export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
   const on = useLook("holder-ribbon");
   const lease = useContext(Machine).leaseMinutes;
   const names = useContext(RoleNamesContext);
   const who = ribbonHolder(t);
   if (on !== "show" || !who) return null;
+  const stated = ribbonStateWords(t, false) !== "";
+  const state = stated ? (t.sessionState ?? "") : "";
   const quiet = leaseRunOut(t, now, lease);
+  const tip = `Held by ${shownHolder(who, names)}${stated ? `, ${sessionWords(t)}` : ""}${quiet ? quietTip(lease) : ""}`;
   return (
-    <Ribbon who={who} spoken="held by" tip={`Held by ${shownHolder(who, names)}${quiet ? quietTip(lease) : ""}`} quiet={quiet}>
-      <LiveDot t={t} />
-    </Ribbon>
+    <span className="holder-room">
+      <Ribbon who={who} spoken="held by" tip={tip} quiet={quiet && state !== "needs-input"} state={state}>
+        <RibbonState t={t} />
+        {(state === "" || state === "working") && <LiveDot t={t} />}
+      </Ribbon>
+    </span>
   );
 }
 

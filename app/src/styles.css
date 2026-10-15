@@ -200,13 +200,12 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .card-done { color: var(--muted); }
 .card-checkin { color: var(--text); opacity: 0.8; }
 .card-quiet { color: var(--bad); font-weight: 600; }
-/* What Claude Code says the session is doing (0048): working in the Building accent with its dot,
-   waiting for input in the needs-you orange (as Your turn), ended in weight only. Where it says
-   something, the no-check-in flag stays under it, quiet. */
-.card-session { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-session.working, .session-state.working { color: var(--accent-text); }
-.card-session.needs-input, .session-state.needs-input { background: var(--st-needs); color: var(--on-status); font-weight: 600; border-radius: 4px; padding: 0 6px; align-self: flex-start; }
-.card-session.ended, .session-state.ended { color: var(--text); font-weight: 600; }
+/* What Claude Code says the session is doing (0048), in the task pane: working in the Building
+   accent, waiting for input in the needs-you orange (as Your turn), ended in weight only. On a
+   card it's on the holder ribbon (mu-171), and the no-check-in flag stays, quiet. */
+.session-state.working { color: var(--accent-text); }
+.session-state.needs-input { background: var(--st-needs); color: var(--on-status); font-weight: 600; border-radius: 4px; padding: 0 6px; align-self: flex-start; }
+.session-state.ended { color: var(--text); font-weight: 600; }
 .card-quiet.calm { color: var(--muted); font-weight: 400; }
 .ui-badge.ui-badge--blocked { background: var(--st-blocked); color: var(--on-status); }
 .column h2 .role { display: block; margin-top: 2px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
@@ -228,23 +227,73 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 /* Both ribbons sit in the card's corner on the side the text ends (top-left right to left), in the
    card itself, not over its content: a card that can wear the holder ribbon (.card.holdable) and
    every note keep a strip the ribbon's height above their top row, held or not. */
-.card .you-ribbon, .card .holder-ribbon, .note-card .you-ribbon, .note-card .holder-ribbon { position: absolute; inset-block-start: 0; inset-inline-end: 0; z-index: 1; border-radius: 0; border-end-start-radius: 6px; border-block-start: none; border-inline-end: none; }
+.card .you-ribbon, .card .holder-room, .note-card .you-ribbon, .note-card .holder-ribbon { position: absolute; inset-block-start: 0; inset-inline-end: 0; z-index: 1; }
+.card .you-ribbon, .card .holder-ribbon, .note-card .you-ribbon, .note-card .holder-ribbon { border-radius: 0; border-end-start-radius: 6px; border-block-start: none; border-inline-end: none; }
 /* The holder ribbon (0097): who holds the task, or is shaping the note. An identity, not a state:
    neutral tokens only, never a stage colour or the You gold (themes.test.ts), with the You
    ribbon's size and weight but the name as written. It has the strip above the top row to itself,
    so it may run nearly the card's width, clipped there (half of it where the stage band shares
    the strip): "shaping" gives way first, its "·" stays, then the name ends in … with about four
-   characters kept; the whole label is in the tooltip. A lease run out turns the words the
+   characters kept (a name ending in a number keeps the number, below); the whole label is in the tooltip. A lease run out turns the words the
    attention colour, with "quiet", which never shrinks. */
 .holder-ribbon { display: inline-flex; align-items: center; gap: 4px; max-width: calc(100% - 12px); overflow: hidden; background: var(--panel); color: var(--text); border: 1px solid var(--line); font-size: 9.5px; font-weight: 800; line-height: 1.4; padding: 0 6px; border-radius: 4px; white-space: nowrap; }
 .holder-ribbon.quiet { color: var(--warn); }
 .holder-name { flex: 1 1 auto; min-width: 4ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A name that ends in a number keeps the number, which tells asghar_16 from asghar_13 (mu-171 R1):
+   only the head before it gives way, down to 1.5ch, room for its … (9.7px of a 6.81px ch). The
+   name's floor is that and the number's digits, a ch each at most: "as…16 needs you" at the
+   owner's 106px cards, "g…22 needs you" at the 820px window's 100px ones. */
+.holder-name.tail-1, .holder-name.tail-2, .holder-name.tail-3 { display: inline-flex; }
+.holder-name.tail-1 { min-width: 2.5ch; }
+.holder-name.tail-2 { min-width: 3.5ch; }
+.holder-name.tail-3 { min-width: 4.5ch; }
+.holder-head { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.holder-tail { flex: none; }
 .holder-prefix { flex: 0 100000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-:root[data-cards="top"] .board .card .holder-ribbon, .look-top .card .holder-ribbon { max-width: 50%; }
 .holder-quiet { flex: none; }
 .holder-sep { flex: none; }
 /* Nor does the live dot: beside a long name it stays round. */
 .holder-ribbon .live-dot { flex: none; }
+/* On a card the ribbon sits in its room (mu-171): the strip above the top row, less 8px at the
+   start, which it may fill when it says the session's state. The room is the size container that
+   picks the state's full or short words. Without a state the ribbon keeps 0097's reach, the card's
+   width less 12px (half beside the Top bar band). */
+.card .holder-room { inset-inline-start: 8px; display: flex; justify-content: flex-end; container: holder / inline-size; }
+.card .holder-ribbon { max-width: calc(100% - 4px); }
+:root[data-cards="top"] .board .card .holder-ribbon, .look-top .card .holder-ribbon { max-width: calc(50% + 4px); }
+/* The session's state after the name (mu-171), never cut: the name gives way first (its head, where
+   it ends in a number), and "quiet" before it. Only the state carries a colour, the one it has in the pane: working in the
+   Building accent, ended in the words' own colour and weight, waiting for input a needs-you block
+   (--st-needs, --on-status) running to the card's edge, the owner's turn as the colour code says;
+   its edge parts it from the name, so it has no "·". The ribbon grows to its room, in the Top bar
+   look too: the band shows past its start. */
+:root[data-cards="top"] .board .card .holder-ribbon.stated, .look-top .card .holder-ribbon.stated, .card .holder-ribbon.stated { max-width: 100%; padding-inline: 2px 3px; gap: 3px; }
+.holder-ribbon.stated .holder-quiet { flex: 0 100000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.holder-state { flex: none; }
+.holder-state.working { color: var(--accent-text); }
+.holder-state.ended { color: var(--text); }
+.holder-state.needs-input { align-self: stretch; display: flex; align-items: center; margin-inline: -3px -3px; padding-inline: 3px; background: var(--st-needs); color: var(--on-status); }
+.holder-short { display: none; }
+/* The full words show where they fit beside 5ch of name, four letters and the … (34px); else the
+   short ones, and the name gives way down to its 4ch. The widths are the room's, in px because the
+   ribbon's font is (a query's ch isn't the ribbon's in WebKit), measured in WebKit for the 9.5px
+   heavy system font (6.81px a ch), with about 1px to spare: waiting for input is 5ch + 3px + 82.7px
+   + the ribbon's 6px of edges, 125.8px; session ended 5ch + 3px · 3px + 71.7px + 6px, 121.4px. The
+   live dot gives way where working, it and 5ch of name don't fit, 100.1px: the word says it. At the
+   owner's 1400px window (106px cards, a 95.8px room) that's needs you, ended and working without
+   the dot, each beside about four characters of the name, its number whole ("gh…22 needs you",
+   "asgh…15 · ended"); Focus's 133px cards say session ended. */
+@container holder (width < 128px) {
+  .holder-ribbon.needs-input .holder-full { display: none; }
+  .holder-ribbon.needs-input .holder-short { display: inline; }
+}
+@container holder (width < 122px) {
+  .holder-ribbon.ended .holder-full { display: none; }
+  .holder-ribbon.ended .holder-short { display: inline; }
+}
+@container holder (width < 101px) {
+  .holder-ribbon.working .live-dot { display: none; }
+}
 /* A card clips its ribbon to its rounded corner (overflow: clip); a note doesn't, so the ribbon
    rounds that corner itself, just inside the note's 1px dashed border. */
 .note-card .you-ribbon, .note-card .holder-ribbon { border-start-end-radius: calc(var(--radius) - 1px); }

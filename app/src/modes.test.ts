@@ -113,7 +113,10 @@ describe("the holder ribbon in the modes' table (0097)", () => {
     for (const m of ALL) expect(look("holder-ribbon", m), m).toBe("show");
     expect(ELEMENTS["holder-ribbon"].label).toBe("Holder ribbon");
     for (const m of ALL) expect(ELEMENTS["holder-ribbon"][m].says, m).toMatch(/Shaping, Building or Testing.*backlog note/);
-    expect(ELEMENTS["holder-ribbon"].standard.says).toContain("the one place the holder shows");
+    expect(ELEMENTS["holder-ribbon"].standard.says).toContain("the one place the holder and the session's state show");
+    // mu-171: the session's state is on the ribbon in every mode, and the card lines say so.
+    for (const m of ALL) expect(ELEMENTS["holder-ribbon"][m].says, m).toContain("what Claude Code says its session is doing (working, waiting for input, session ended)");
+    for (const m of ["standard", "focus"] as const) expect(ELEMENTS["card-lines"][m].says, m).toContain("what Claude Code says the session is doing is on the holder ribbon");
     // Nothing folded, so nothing to get back.
     for (const m of ALL) expect(ELEMENTS["holder-ribbon"][m].reach, m).toBeUndefined();
   });

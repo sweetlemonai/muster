@@ -578,7 +578,7 @@ its own agent id is another holder, 0090) and logged `(tested under
 > a stamp with no account, or an account not on the list, reads nothing, and `~/.claude` never is.
 > Each run is an argument array with its usage reporting off,
 > off the window's thread, at most every 15 s while the window shows, and not at all while no task
-> in Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session, and doesn't count as its session's hold, so that session's next claim gets the state). A run stops at 10 s
+> in Shaping, Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session, and doesn't count as its session's hold, so that session's next claim gets the state). A run stops at 10 s
 > and reads at most 1 MB; for the cards only each session's short id and state are kept. (The app's
 > Sessions view, 0098 and decision 0017, runs the same command the same way for every allowed
 > account, only while the view is open, and also keeps each session's name, start, `waitingFor`
@@ -586,11 +586,13 @@ its own agent id is another holder, 0090) and logged `(tested under
 > in the core and never reaches the window, and nothing of it is written to queue files, logs or
 > disk.) A state applies to a
 > task when the session id and account match the holder's stamp **and the session holds nothing
-> else**, counted across every queue Muster knows: in Building, no other claim (Ready or Building);
+> else**, counted across every queue Muster knows: in Shaping and Building, no other claim (Ready,
+> Shaping or Building);
 > in Testing (whose `held-by:` is the builder that passed it), no claim and no other Testing hold.
 > A coordinator's subagents share its id, so their tasks fall back; a builder that passed a task to
-> Testing and claimed the next gets the new claim's state. `working` shows "working"; `blocked` (a
-> permission prompt or a question) shows "waiting for input in Claude Code" in orange, counts as
+> Testing and claimed the next gets the new claim's state. On the card the state is on the holder
+> ribbon after the name (mu-171). `working` shows "working"; `blocked` (a
+> permission prompt or a question) shows "waiting for input" in orange, counts as
 > needing the owner, and Ask for a check-in waits ("answer it there first"); `done`, `completed` or
 > `ready for review` shows "session ended, task still in Building", in Building only (in Testing the
 > builder's session ending is the normal course). An interactive session, which has no `state`, is

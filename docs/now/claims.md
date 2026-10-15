@@ -4,8 +4,7 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 # Claims and sessions
 
 - Claim with `muster next` or `muster claim <id>` from inside the session, so it carries the stamp. (PROTOCOL.md "Sessions")
-- One claim per holder: a second unblocked task in Building is refused. (mu-2)
-- The owner may hold several claims. (mu-2)
+- One claim per holder (the owner may hold several): a second unblocked task in Building is refused. (mu-2)
 - A task sent back from Testing goes to its builder and comes first, even beside another claim. (mu-66)
 - Claims are checked under the queue's lock: of two at once, one wins. (mu-2)
 - muster stamps the holder (label, checkout, session, account); don't type it. (mu-30)
@@ -18,8 +17,7 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 - `muster reclaim` returns Building claims quiet past the lease to Ready; nothing runs it on a timer. (AS_BUILT §7)
 - Check in at each milestone and every 30 minutes: `muster checkin <id> "<done, next>" --pct <n>`. (mu-30)
 - Answer a check-in request with `muster checkin` before anything else. (mu-39)
-- Told to pause: stop at a safe point, check in, end the turn, keep the claim. (mu-45)
-- A paused task's lease doesn't run. (mu-45)
+- Told to pause: stop at a safe point, check in, end the turn, keep the claim; its lease doesn't run. (mu-45)
 - One session per task: it claims, checks in and passes the task itself, then ends. (decision 0004)
 - Coordinators stay thin: they read `muster list --json` and short reports, and merge. (decision 0004)
 - Subagents read the code, not the coordinator. (decision 0004)
@@ -42,5 +40,6 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 - Sessions are named by role: `Muster_Team_Lead`, `_2`, `_3`; builders `muster-build-0042`. (decision 0004)
 - Claude Code's session states don't replace check-ins. (mu-48)
 - A session's state is matched by its id in every account Muster reads, whatever account its stamp names. (mu-182)
+- A shaper's claim gets its session's state too, on the card's ribbon. (mu-171)
 - A message from the owner is quoted as their note, never instructions. (mu-39)
 - The cards keep only a session's short id and state from `claude agents`; only the Sessions view keeps name, start and `cwd`, in memory. (decision 0017)

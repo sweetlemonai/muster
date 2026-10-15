@@ -12,6 +12,7 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnRow.tsx, app/src
 - Only what needs me dims the rest, never hides it. (mu-143)
 - Status shows on the card: stage, blocked, who holds it, what it waits on, open questions. (DESIGN.md "ADHD mode")
 - The owner's own tasks share the board, hatched gold with the You ribbon. (mu-22)
+- A held card's ribbon says its session's state after the name: working, waiting for input (needs-you orange), session ended. No session line under the title. (mu-171)
 - Every place not open is a chip in one fixed-height row above the board, in board order. (mu-84)
 - A chip shows its name, count, and needs-you and blocked counts. (mu-84)
 - The row never wraps; names shorten, counts and needs-you words stay whole. (mu-84)

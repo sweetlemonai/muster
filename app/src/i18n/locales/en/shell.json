@@ -624,9 +624,9 @@
       "cardLines": {
         "label": "Card lines",
         "adhd": "Who and since when, the check-in, branch, tags, parent, estimate, files and age on every card",
-        "standard": "Title, kind, priority, age, anything wrong and what Claude Code says the session is doing; who, the check-in, tags, estimate and the rest on the selected card",
+        "standard": "Title, kind, priority, age and anything wrong (what Claude Code says the session is doing is on the holder ribbon); who, the check-in, tags, estimate and the rest on the selected card",
         "standardReach": "Select the card",
-        "focus": "Title and one status line, and blocked, paused, quiet, needs you or what Claude Code says the session is doing, when it is",
+        "focus": "Title and one status line, and blocked, paused, quiet or needs you, when it is (what Claude Code says the session is doing is on the holder ribbon)",
         "focusReach": "Open the card: the task pane has it all"
       },
       "doneLine": {
@@ -637,9 +637,9 @@
       },
       "holderRibbon": {
         "label": "Holder ribbon",
-        "adhd": "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner",
-        "standard": "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: on the brief card it's the one place the holder shows",
-        "focus": "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: who's on it is status"
+        "adhd": "Who holds a task in Shaping, Building or Testing and what Claude Code says its session is doing (working, waiting for input, session ended), and who is shaping a backlog note, in the card's corner",
+        "standard": "Who holds a task in Shaping, Building or Testing and what Claude Code says its session is doing (working, waiting for input, session ended), and who is shaping a backlog note, in the card's corner: on the brief card it's the one place the holder and the session's state show",
+        "focus": "Who holds a task in Shaping, Building or Testing and what Claude Code says its session is doing (working, waiting for input, session ended), and who is shaping a backlog note, in the card's corner: who's on it and its session's state are status"
       },
       "columns": {
         "label": "Board columns",

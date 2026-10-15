@@ -1160,8 +1160,8 @@ fn with_key(mut v: serde_json::Value, key: String) -> serde_json::Value {
 }
 
 /// `muster list --json`'s `sessionState` (0048): Claude Code's word on each holder's session, read
-/// now from every allowed account once a stamp in Building or Testing names one (0182), matched
-/// by session id in any of them, under the caller's `$HOME`.
+/// now from every allowed account once a stamp in Shaping, Building or Testing names one (0182),
+/// matched by session id in any of them, under the caller's `$HOME`.
 /// What each session holds is counted across this queue and `others` (every other queue Muster
 /// knows), as the app counts across all of them. Unknown without a home or a stamped holder (then
 /// nothing runs, and `others` isn't read). Only this read runs it, never a write.

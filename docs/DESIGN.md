@@ -165,24 +165,46 @@ project here).
 - **What needs you is always in view:** a visible count and a highlighted place for anything
   waiting on the owner (Your check, escalated questions, blocked on owner, human tasks), on every
   screen, plus the Dock badge, and one Mac notification when something new comes in (0052).
-- **Status on the card:** stage, blocked, who holds it, waiting-on and open questions show on the
-  card or row itself, not only in the task panel.
+- **Status on the card:** stage, blocked, who holds it, what its session is doing, waiting-on and
+  open questions show on the card or row itself, not only in the task panel. What Claude Code says
+  the holder's session is doing (0048) is on the holder ribbon after the name, in words (mu-171:
+  "working needs a ribbon not a tag"), so a working card, and one waiting on the owner in Claude
+  Code, is seen from across the board.
 - **Who holds it is in the card's corner** (task 0097), the YOU ribbon's spot: a task held in
   Shaping, Building or Testing wears a **holder ribbon** with the holder's short name ("Shapour",
   "Asghar_7"), and a backlog note a session is shaping says "shaping · Shapour". The owner's own
   task, and one the owner holds, wears the gold YOU ribbon instead: never two ribbons on a card.
-  - The ribbon has the name; the who line under the title keeps the rest (the session, since
-    when, what it's doing), so the name isn't said twice. In Standard's brief card the ribbon is
-    the one place the holder shows; ADHD, Standard and Focus all show it (`modes.ts`).
-  - An identity, not a state: the panel fill, the line border and the text colour, the YOU
-    ribbon's size and weight, never a stage colour or the gold. A working session's dot sits in
-    it beside the name (its state is Claude Code's, matched by session id in every account Muster
-    reads, so a builder resumed on another account than its stamp's still shows working, 0182); a lease run out turns its words the attention colour with "quiet", as the
-    card's flag says it.
+  - The ribbon has the name and the session's state; the who line under the title keeps the rest
+    (the session, since when), so neither is said twice. In Standard's brief card the ribbon is
+    the one place the holder and the state show; ADHD, Standard and Focus all show it (`modes.ts`).
+  - The name is an identity, not a state: the panel fill, the line border and the text colour,
+    the YOU ribbon's size and weight, never a stage colour or the gold. After it comes the
+    session's state in words, and only the state carries a colour, the one it has in the task
+    pane (mu-171): "Asghar_7 · working" with "working" in the Building accent, "Asghar_7 · session
+    ended" in the words' own colour (Building only), and **waiting for input in the needs-you
+    orange**: a block of `--st-needs` with `--on-status` words, from after the name to the card's
+    edge, because it is the owner's turn in Claude Code and the colour code's orange means exactly
+    that; its edge parts it from the name, so it has no "·", and the card's own "needs you" badge
+    doesn't come with it. Unknown and paused say nothing. The state is Claude Code's, matched by
+    session id in every account Muster reads, so a builder resumed on another account than its
+    stamp's still shows working (0182); a shaper's claim gets one too ("Shapour_3 · working").
+    The live dot follows the words while a working session's transcript changes, and gives way
+    where it doesn't fit, or beside waiting for input or ended, where Claude Code's word wins. A
+    lease run out turns the name the attention colour with "quiet", as the card's flag says it;
+    beside a state, "quiet" gives way first, and beside waiting for input it's in the tooltip and
+    the card's flag line only.
   - In place, no hover-only words: the ribbon has the strip above the top row to itself, so it
-    may run nearly the card's width (half of it when the stage band shares the strip). Where
-    that's tight, "shaping" gives way first while its "·" stays, so what's left never reads as two
-    names; then the name ends in "…" but keeps about four characters; "quiet" never shrinks.
+    may run nearly the card's width (half of it when the stage band shares the strip), and the
+    card's width less 8px when it says a state, over the band too. Where that's tight, "shaping"
+    gives way first while its "·" stays, so what's left never reads as two names; then the name
+    ends in "…" but keeps about four characters; "quiet" never shrinks without a state. A name
+    that ends in a number keeps the number, its last three digits at most, since that's what tells
+    asghar_16 from asghar_13: only the part before it gives way ("as…16"). The state's
+    words are never cut: where they and about four letters of the name don't fit, the short forms
+    show ("needs you", "ended"; "working" is already short), with the full words in the tooltip
+    and read out ("held by Asghar_7, waiting for input in Claude Code"). At the owner's 1400px
+    window (106px cards) that's "gh…22 needs you", "asg…16 · working", "asgh…15 · ended"; at
+    the 820px window's 100px cards, "g…22 needs you".
     A note the owner shapes says "You · quiet" once its lease ran out, since reclaim ends it too. The whole label is in the tooltip and read out with the card
     ("held by Shapour", "being shaped by Shapour"). It isn't a control, so the keyboard order is the
     card's. Right to left, it sits top-left, like the YOU ribbon.
@@ -299,7 +321,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 | red | Blocked, and errors (a wait on other tasks alone clears by itself: neutral, with a small red mark, 0060) | a task's type (a bug is the word "bug") |
 | magenta | High priority (a filled chip); normal is an outlined grey chip, low faint text | stages |
 | neutral grey, outlined | tags and types: labels, not states | |
-| the panel, outlined, in the text colour | Who holds a task or is shaping a note (the holder ribbon, 0097): an identity, not a state | stages, the YOU gold |
+| the panel, outlined, in the text colour | Who holds a task or is shaping a note (the holder ribbon, 0097): an identity, not a state; the session's state after the name keeps its own colour (working in the accent, waiting for input in the orange, mu-171) | stages, the YOU gold |
 | muted text grey, outlined, with ⏸ | Paused (0045): a calm state, never a stage's fill or the blocked red | |
 | lime · orchid · pink · tan · mint, a small dot | A project's own colour (0057), by its name wherever it's named: an identity, not a state | stages, priority, needs you, blocked (a test keeps each 30 apart from all of them in every theme) |
 

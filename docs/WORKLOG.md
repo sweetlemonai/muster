@@ -4,6 +4,49 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Working is a ribbon, not a tag: the holder ribbon says the session's state (mu-171)
+**Did (Gholi_31, builder):** the owner: "working needs a ribbon not a tag". A held card's ribbon
+now reads "Asghar_7 · working" (accent), "Asghar_7 · session ended" (Building only) or the name
+then a needs-you block "waiting for input" to the card's edge; unknown and paused say nothing.
+Words from `sessionState.ts` `ribbonStateWords` (full and short); read out with `sessionWords`'
+full words. The `.card-session` line under the title and its CSS are gone; the pane's
+`.session-state` stays. `agents.rs` `stamp_of` takes Shaping and `holds` counts Shaping claims,
+so a shaper shows a state. The card leaves out its "needs you" badge when the ribbon says it, so
+a poll that brings waiting for input moves nothing on the card. The modes' says texts (en and fa `shell.json`, mu-146), DESIGN,
+AS_BUILT, PROTOCOL, manual 02 and 04, docs/now/board.md and claims.md.
+**Decided:** the brief's V1 resolution over Details item 2: the name stays neutral and only the
+state is coloured (waiting for input a needs-you block from after the name to the edge, no "·",
+which also saves the room "needs you" needs at 106px). Full or short words are picked by CSS: the
+ribbon sits in a `.holder-room` (the strip less 8px) that is a size container, with px widths
+measured in headless WebKit (128px, 122px; a query's `ch` isn't the ribbon's there). Short shows
+where the full words and 5ch of name (about four letters and the …) don't fit, so the owner's
+106px cards keep four letters; the name still gives way to 4ch, never the words. The live dot
+goes beside waiting for input and ended (Claude Code's word wins, as the sidebar's working now
+judges it) and where working and it don't fit (under 101px, the owner's 106px cards). Beside a
+state, quiet gives way first; beside waiting for input it's in the tooltip and flag line only.
+**Verified:** vitest HolderRibbon, CardStatus, sessionState, themes, modes; `cargo test agents::`
+(hermetic HOME) with two new tests; headless WebKit (mocked IPC, mu-97's harness) on the built
+app: 96 stated ribbons over ADHD/Standard/Focus × dark/light × 1400/2000 and RTL, every state's
+words whole, none past its room, name ≥ 4ch; a working → waiting for input poll leaves every
+line's box on the card identical. Gate below.
+**Fixed (review round 1, R1; Gholi_36):** at the owner's 1400px window a ribbon with a state
+cut the name to about four letters, so asghar_16 and asghar_13 read the same (mu-97's AC4) →
+the name gave way from its end, where the number is → `HolderRibbon.tsx` `nameEnds` splits a
+name before the number it ends in (any script's digits, the last three at most); only the head
+ends in "…", the number never shrinks (`.holder-name.tail-N` floor: 1.5ch for the … plus a ch a
+digit), and a screen reader hears the name whole. The needs-you block's start padding went 4px →
+3px, so 106px cards show "gh…22 needs you". Headless WebKit, 286 stated ribbons over
+ADHD/Standard/Focus × dark/light × 1400/820/2000 px and RTL at 1400/820, holders sharing a
+prefix and Persian names (قلی_۳۱): every number and state word whole, at least four characters
+of the name; 1400px reads "asg…16 · working" vs "asg…13", "gh…22" vs "gh…18 needs you", 100px
+cards "as…16", "g…22 needs you".
+**Open:** at the narrowest (100px) cards a waiting-for-input ribbon keeps one letter and the
+number ("g…22"); the head's "…" can leave up to a letter's gap before the number ("asgh… 15").
+The container widths were measured for the English words; mu-147 measures again. A Shaping claim now counts as one of its session's holds, so a session
+holding two (a shaper on two tasks, a builder also shaping) shows no state on either, by 0048's
+"holds nothing else" rule. Card.tsx, ProjectList.test.ts (its no-`@container` check now means the
+sidebar's), cli.rs (a comment) and docs outside the touches list changed.
+
 ## 2026-10-15 — The shaping brief shows estimates measured on the queue (mu-168)
 **Did (Akbar_28, builder):** the owner asked whether estimates are any good; 80+ finished tasks
 took p50 0.39x their estimate. New pure `measured.rs`: from each task's stage history, agent wall

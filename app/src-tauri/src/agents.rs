@@ -544,10 +544,12 @@ impl Snapshot {
 }
 
 /// The stamp of the holder a session state can apply to: someone other than the owner holding
-/// the task in Building or Testing, stamped with a session (0030). Not while the task is paused
-/// (0045): its session was told to stop, so it's neither working nor waiting on the owner for it.
+/// the task in Shaping (0097's claim, mu-171), Building or Testing, stamped with a session (0030).
+/// Not while the task is paused (0045): its session was told to stop, so it's neither working nor
+/// waiting on the owner for it.
 fn stamp_of(t: &Task) -> Option<session::Stamp> {
-    let works = matches!(t.stage.as_str(), "building" | "testing") && t.paused.is_empty();
+    let works =
+        matches!(t.stage.as_str(), "shaping" | "building" | "testing") && t.paused.is_empty();
     if !works || session::is_owner(t.holder()) {
         return None;
     }
@@ -567,8 +569,8 @@ fn stamped(tasks: &[Task]) -> Vec<String> {
     out
 }
 
-/// The accounts to read: every one of `allowed`, in its order, once some task in Building or
-/// Testing has a holder (`stamp_of`) stamped with one of them; empty otherwise, and then nothing
+/// The accounts to read: every one of `allowed`, in its order, once some task in Shaping,
+/// Building or Testing has a holder (`stamp_of`) stamped with one of them; empty otherwise, and then nothing
 /// runs. Every allowed account, not only the stamp's (0182): a session keeps its id and claim
 /// when it's resumed on another account, so its state may be on any of them. A stamp with no
 /// account, or one not on the list, never causes a run (0099).
@@ -646,8 +648,8 @@ pub fn account_of(t: &Task) -> Option<String> {
     stamp_of(t).map(|s| s.account)
 }
 
-/// Who holds what, by session id: the claims (Ready and Building) and the Testing holds (`held-by`
-/// there is the builder that passed it).
+/// Who holds what, by session id: the claims (Ready, Shaping and Building) and the Testing holds
+/// (`held-by` there is the builder that passed it).
 #[derive(Debug, Default)]
 pub struct Holds {
     claims: HashMap<String, usize>,
@@ -665,7 +667,7 @@ pub fn holds<'a>(tasks: impl IntoIterator<Item = &'a Task>) -> Holds {
             continue;
         };
         let count = match t.stage.as_str() {
-            "ready" | "building" => &mut h.claims,
+            "ready" | "shaping" | "building" => &mut h.claims,
             "testing" => &mut h.testing,
             _ => continue,
         };
@@ -681,7 +683,7 @@ pub fn apply(tasks: &mut [Task], snap: &Snapshot, allowed: &[Account]) {
 }
 
 /// Give each task its session's state. One applies when the holder's stamp (`stamp_of`) names
-/// the session, and the session holds nothing else (`holds`): in Building, no
+/// the session, and the session holds nothing else (`holds`): in Shaping and Building, no
 /// other claim; in Testing, no claim and no other Testing hold. A coordinator's subagents share
 /// its id, and a builder that passed a task to Testing and claimed the next is working on that
 /// one, so its state says nothing about the others. Ended shows only in Building: in Testing the
@@ -696,11 +698,12 @@ pub fn apply_with(tasks: &mut [Task], holds: &Holds, snap: &Snapshot, allowed: &
     let n = |m: &HashMap<String, usize>, id: &str| m.get(id).copied().unwrap_or(0);
     for t in tasks.iter_mut() {
         let building = t.stage == "building";
+        let claimed = building || t.stage == "shaping";
         let found = match stamp_of(t) {
             Some(s)
                 if crate::accounts::is_allowed(&s.account, allowed)
-                    && ((building && n(&holds.claims, &s.id) == 1)
-                        || (!building
+                    && ((claimed && n(&holds.claims, &s.id) == 1)
+                        || (!claimed
                             && n(&holds.claims, &s.id) == 0
                             && n(&holds.testing, &s.id) == 1)) =>
             {
@@ -842,10 +845,11 @@ impl Monitor {
     pub fn summary(&self) -> String {
         let g = lock(&self.inner);
         if g.wanted.is_empty() && g.stamped {
-            return "not read now: no task in Building or Testing has a session of an account Muster reads".into();
+            return "not read now: no task in Shaping, Building or Testing has a session of an account Muster reads".into();
         }
         if g.wanted.is_empty() {
-            return "not read now: no task in Building or Testing has a session stamp".into();
+            return "not read now: no task in Shaping, Building or Testing has a session stamp"
+                .into();
         }
         if g.last.is_none() || (g.running && g.snapshot.accounts.is_empty()) {
             return "reading…".into();
@@ -1506,20 +1510,21 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         assert_eq!(runs(), "", "no run");
         assert_eq!(
             m.summary(),
-            "not read now: no task in Building or Testing has a session of an account Muster reads"
+            "not read now: no task in Shaping, Building or Testing has a session of an account Muster reads"
         );
         // An empty allowlist reads nothing.
         assert!(wanted(&tasks, &[]).is_empty());
     }
 
-    /// A task as the queue reads it, in `stage`, held by `who` (the claim in Building, `held-by`
-    /// in Testing and Your check).
+    /// A task as the queue reads it, in `stage`, held by `who` (the claim in Shaping and
+    /// Building, `held-by` in Testing and Your check).
     fn task(id: &str, stage: &str, who: &str) -> Task {
         let d = tempfile::tempdir().unwrap();
+        let claims = matches!(stage, "shaping" | "building");
         let text = format!(
             "---\nid: {id}\nstage: {stage}\nstatus: doing\nclaimed-by: {}\nheld-by: {}\nheartbeat:\nwaiting_on:\n---\n\n# T\n",
-            if stage == "building" { who } else { "" },
-            if stage == "building" { "" } else { who },
+            if claims { who } else { "" },
+            if claims { "" } else { who },
         );
         let path = d.path().join(format!("doing/{id}-t.md"));
         queue::parse_task("q", d.path(), "doing", &path, &text, 0).unwrap()
@@ -1866,6 +1871,72 @@ esac"#,
         assert_eq!(states(&testing), [Unknown, Working]);
     }
 
+    /// mu-171: a shaper's claim (0097) gets its session's state as a builder's does, so the card's
+    /// ribbon says "shapour_3 · working"; not while paused, never the owner's, and ended reads
+    /// unknown outside Building.
+    #[test]
+    fn a_shaping_claim_gets_its_sessions_state_not_a_paused_or_the_owners() {
+        use SessionState::*;
+        let allowed = allowed();
+        let shaper = "shapour_3 (main · session 61c84bc9 · cc-hg)";
+        for (state, want) in [
+            (Working, Working),
+            (NeedsInput, NeedsInput),
+            (Ended, Unknown),
+        ] {
+            let mut tasks = vec![task("0171", "shaping", shaper)];
+            apply(&mut tasks, &snap(&[("hg", "61c84bc9", state)]), &allowed);
+            assert_eq!(states(&tasks), [want], "{state:?}");
+            assert_eq!(tasks[0].waiting_for_owner, want == NeedsInput, "{state:?}");
+            assert_eq!(
+                tasks[0].session_account,
+                if want == Unknown { "" } else { "hg" },
+                "{state:?}"
+            );
+        }
+        // A stamped shaper is a reason to read: wanted() reads every allowed account for it.
+        assert_eq!(
+            labels(&wanted(&[task("0171", "shaping", shaper)], &allowed)),
+            ["mg", "hg"]
+        );
+        // Paused (0045): its session was told to stop.
+        let mut paused = vec![task("0171", "shaping", shaper)];
+        paused[0].paused = "2026-10-14 21:00".into();
+        apply(
+            &mut paused,
+            &snap(&[("hg", "61c84bc9", NeedsInput)]),
+            &allowed,
+        );
+        assert_eq!(states(&paused), [Unknown]);
+        assert!(!paused[0].waiting_for_owner);
+        assert!(wanted(&paused, &allowed).is_empty());
+        // The owner shaping it: the You ribbon says so, and no state is read for it.
+        let owner = "owner (main · session 61c84bc9 · cc-hg)";
+        let mut own = vec![task("0171", "shaping", owner)];
+        apply(&mut own, &snap(&[("hg", "61c84bc9", Working)]), &allowed);
+        assert_eq!(states(&own), [Unknown]);
+        assert!(wanted(&own, &allowed).is_empty());
+        // An unclaimed Shaping task has no holder at all.
+        let mut nobody = vec![task("0171", "shaping", "")];
+        apply(&mut nobody, &snap(&[("hg", "61c84bc9", Working)]), &allowed);
+        assert_eq!(states(&nobody), [Unknown]);
+    }
+
+    /// mu-171: a Shaping claim is a claim: a session that holds one and a Building task too is
+    /// doing one of them, so its state is about neither.
+    #[test]
+    fn a_shaping_claim_counts_as_one_of_the_sessions_claims() {
+        use SessionState::*;
+        let allowed = allowed();
+        let s = snap(&[("hg", "7b5e8856", Working)]);
+        let mut tasks = vec![task("0001", "building", A), task("0002", "shaping", A)];
+        apply(&mut tasks, &s, &allowed);
+        assert_eq!(states(&tasks), [Unknown, Unknown]);
+        let mut one = vec![task("0002", "shaping", A)];
+        apply(&mut one, &s, &allowed);
+        assert_eq!(states(&one), [Working]);
+    }
+
     #[test]
     fn holds_count_across_every_queue_given() {
         use SessionState::*;
@@ -2124,7 +2195,7 @@ esac"#,
         let m = Monitor::new(fetch, inline);
         assert_eq!(
             m.summary(),
-            "not read now: no task in Building or Testing has a session stamp"
+            "not read now: no task in Shaping, Building or Testing has a session stamp"
         );
         m.poll(&[task("0001", "building", A)], &allowed(), 1000);
         assert_eq!(

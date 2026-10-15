@@ -9,7 +9,9 @@ import { waitingOnYou } from "./paneData";
 import { StatusLine } from "./PaneHeader";
 import { CardPing, QuietPing } from "./Ping";
 import { cantAsk } from "./reach";
-import { ANSWER_FIRST, sessionStatesLine, sessionWords } from "./sessionState";
+import Card from "./Card";
+import { ANSWER_FIRST, ribbonStateWords, sessionStatesLine, sessionWords } from "./sessionState";
+import css from "./styles.css?raw";
 import type { Task } from "./types";
 import WaitingList from "./WaitingList";
 
@@ -56,20 +58,49 @@ describe("the words for each state", () => {
   });
 });
 
-describe("the card", () => {
-  it("says what Claude Code says under who's on it, with the check-in flag kept, quiet, under it", () => {
+describe("the ribbon's words for each state (mu-171)", () => {
+  it("full: working, waiting for input, session ended in Building only; nothing for unknown or paused", () => {
+    expect(ribbonStateWords(task({ sessionState: "working" }), false)).toBe("working");
+    expect(ribbonStateWords(task({ sessionState: "needs-input" }), false)).toBe("waiting for input");
+    expect(ribbonStateWords(task({ sessionState: "ended" }), false)).toBe("session ended");
+    expect(ribbonStateWords(task({ stage: "testing", sessionState: "ended" }), false)).toBe("");
+    expect(ribbonStateWords(task({ stage: "shaping", sessionState: "ended" }), false)).toBe("");
+    expect(ribbonStateWords(task({ sessionState: "unknown" }), false)).toBe("");
+    expect(ribbonStateWords(task({}), false)).toBe("");
+    // Paused (0045): its session was told to stop, so whatever was read says nothing.
+    expect(ribbonStateWords(task({ sessionState: "working", paused: "2026-10-13 10:00" }), false)).toBe("");
+  });
+  it("short, for a narrow card: working, needs you, ended", () => {
+    expect(ribbonStateWords(task({ sessionState: "working" }), true)).toBe("working");
+    expect(ribbonStateWords(task({ sessionState: "needs-input" }), true)).toBe("needs you");
+    expect(ribbonStateWords(task({ sessionState: "ended" }), true)).toBe("ended");
+    expect(ribbonStateWords(task({ stage: "testing", sessionState: "ended" }), true)).toBe("");
+    expect(ribbonStateWords(task({ sessionState: "unknown" }), true)).toBe("");
+  });
+  it("says something exactly where the pane's words do, so the two can't drift", () => {
+    for (const stage of ["shaping", "building", "testing"])
+      for (const sessionState of ["working", "needs-input", "ended", "unknown"] as const) {
+        const t = task({ stage, sessionState });
+        expect(ribbonStateWords(t, false) !== "", `${stage} ${sessionState}`).toBe(sessionWords(t) !== "");
+      }
+  });
+});
+
+describe("the card (mu-171: the state is on the ribbon, not a line)", () => {
+  it("has no session line; the check-in flag stays, quiet, while a state is known", () => {
     expect(lines({ ...quiet, sessionState: "working" })).toEqual([
       ["card-who", "wt-a · wt-0048 · 7b5e8856 · started 2 h ago"],
-      ["card-session working", "working"],
       ["card-quiet calm", "no check-in for 45 min"],
     ]);
     expect(lines(waiting)).toEqual([
       ["card-who", "wt-a · wt-0048 · 7b5e8856 · started 2 h ago"],
-      ["card-session needs-input", "waiting for input in Claude Code"],
       ["card-quiet calm", "no check-in for 45 min"],
     ]);
-    expect(lines({ ...quiet, sessionState: "ended" })[1]).toEqual(["card-session ended", "session ended, task still in Building"]);
-    expect(lines({ stage: "testing", heldBy: A, sessionState: "ended" }).map(([c]) => c)).toEqual(["card-who"]);
+    expect(lines({ ...quiet, sessionState: "ended" }).map(([c]) => c)).toEqual(["card-who", "card-quiet calm"]);
+    for (const sessionState of ["working", "needs-input", "ended", "unknown"] as const) {
+      const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ ...quiet, sessionState }), now: NOW }));
+      expect(html, sessionState).not.toContain("card-session");
+    }
   });
   it("with no state from Claude Code reads exactly as before", () => {
     const before = lines(quiet);
@@ -79,26 +110,31 @@ describe("the card", () => {
     ]);
     expect(lines({ ...quiet, sessionState: "unknown" })).toEqual(before);
   });
-  it("working shows the Building dot; waiting for input is in the needs-you colour's class", () => {
-    const html = (over: Partial<Task>) => renderToStaticMarkup(createElement(CardStatus, { t: task(over), now: NOW }));
-    expect(html({ ...quiet, sessionState: "working" })).toContain('<span class="card-session working"><i class="dot" aria-hidden="true"></i>working</span>');
-    expect(html(waiting)).toContain('<span class="card-session needs-input">waiting for input in Claude Code</span>');
+  it("leaves no .card-session rule in the styles; the pane's .session-state stays", () => {
+    expect(css).not.toContain(".card-session");
+    expect(css).toMatch(/\.session-state\.needs-input[^{]*\{[^}]*background: var\(--st-needs\); color: var\(--on-status\)/);
   });
 });
 
 describe("in every display mode (0038)", () => {
-  it("the session-state line shows, beside 0047's needs a tester and 0051's Done line", () => {
+  it("the state shows on the ribbon, beside 0047's needs a tester and 0051's Done line", () => {
     for (const { id: mode } of MODES) {
       for (const active of [false, true]) {
         const card = (over: Partial<Task>) => {
+          const el = createElement(Card, { t: task(over), now: NOW, multi: false, parent: "", onOpen: () => {}, active, words: [] });
+          return renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, el));
+        };
+        const status = (over: Partial<Task>) => {
           const el = createElement(CardStatus, { t: task(over), now: NOW, lines: cardLines(look("card-lines", mode), active) });
           return renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, el));
         };
         const where = `${mode}${active ? ", selected" : ""}`;
-        expect(card(waiting), where).toContain('<span class="card-session needs-input">waiting for input in Claude Code</span>');
-        expect(card({ ...quiet, sessionState: "working" }), where).toContain("working</span>");
-        expect(card({ stage: "testing", heldBy: A, builtBy: A, gatedBy: A, stageSince: "2026-10-13 13:00" }), where).toContain(">needs a tester</span>");
-        expect(card({ stage: "done", doneAt: "2026-10-13 14:01" }), where).toContain("done 4 min ago");
+        expect(card(waiting), where).toContain('<span aria-hidden="true" class="holder-state needs-input">');
+        expect(card(waiting), where).toContain(">waiting for input</span>");
+        expect(card({ ...quiet, sessionState: "working" }), where).toContain('<span aria-hidden="true" class="holder-state working">');
+        expect(card(waiting), where).not.toContain("card-session");
+        expect(status({ stage: "testing", heldBy: A, builtBy: A, gatedBy: A, stageSince: "2026-10-13 13:00" }), where).toContain(">needs a tester</span>");
+        expect(status({ stage: "done", doneAt: "2026-10-13 14:01" }), where).toContain("done 4 min ago");
       }
     }
   });

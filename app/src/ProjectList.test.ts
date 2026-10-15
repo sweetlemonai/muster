@@ -405,7 +405,8 @@ describe("a heading's line: the name gives way first, what needs you is always w
     expect(all(".side-cat-rest").get("contain")).toBe("inline-size");
     // No mode or width hides the words some other way (round 2 dropped them at 150px).
     expect(css).not.toMatch(/\.side-cat-needs(-words)? \{[^}]*display: none/);
-    expect(css).not.toContain("@container");
+    // No container query reaches the sidebar (the card's holder ribbon has its own, mu-171).
+    for (const q of css.matchAll(/@container[^{]*\{([\s\S]*?)\n\}/g)) expect(q[1]).not.toContain("side-cat");
   });
   it("lets the name give way first, down to about 4em with an ellipsis, and never grows it past itself", () => {
     const name = all(".side-cat-name");

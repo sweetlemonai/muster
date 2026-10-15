@@ -30,5 +30,21 @@ export function sessionWords(t: Pick<Task, "stage" | "sessionState">): string {
   }
 }
 
+/** The holder ribbon's words for the state (mu-171), full and `short` for a narrow card: "working",
+ *  "waiting for input" or "needs you", "session ended" or "ended"; "" exactly where `sessionWords`
+ *  says nothing, and while the task is paused (0045: its session was told to stop). The ribbon
+ *  reads `sessionWords` out, so a screen reader always hears the full words. */
+export function ribbonStateWords(t: Pick<Task, "stage" | "sessionState" | "paused">, short: boolean): string {
+  if (t.paused || !sessionWords(t)) return "";
+  switch (t.sessionState) {
+    case "working":
+      return "working";
+    case "needs-input":
+      return short ? "needs you" : "waiting for input";
+    default:
+      return short ? "ended" : "session ended";
+  }
+}
+
 /** Settings > Agents' line (0036): whether the states are read, from the core's summary. */
 export const sessionStatesLine = (summary: string) => tn("shell", "agents.sessionStates", { summary });

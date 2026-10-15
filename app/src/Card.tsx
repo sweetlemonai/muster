@@ -3,7 +3,7 @@ import { CardBand, cardClass, LiveDot } from "./CardLook";
 import CardStatus from "./CardStatus";
 import { estimateText } from "./fields";
 import { Hl, HlId } from "./FilterBar";
-import { CardHolderRibbon, cardRibbon, ribbonNames, ribbonStage } from "./HolderRibbon";
+import { CardHolderRibbon, cardRibbon, ribbonNames, ribbonStage, ribbonWaits } from "./HolderRibbon";
 import { isHuman } from "./human";
 import { ago } from "./lib";
 import { cardLines, useLook } from "./modes";
@@ -34,14 +34,17 @@ export default function Card(props: CardProps) {
  *  Testing wears their ribbon (0097), and one the owner holds the You ribbon, in the same corner,
  *  whose room the top row keeps where one can come. Why it's blocked is 0024's one sentence (by
  *  tasks too: an agent's task waiting on the owner's unfinished one says "After 0041");
- *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission)
- *  is a needs-you card. */
+ *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission,
+ *  its session waiting for input) is a needs-you card. */
 function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps) {
   const priority = t.priority || "normal";
   // The display mode (0038): every line, Standard's brief card, or Focus's title and status line.
   const lines = cardLines(useLook("card-lines"), active);
   const all = lines === "all";
   const ribbon = cardRibbon(t);
+  // A session waiting for input says needs you on the ribbon (mu-171), so the poll that brings it
+  // moves nothing on the card: no badge comes with it.
+  const ribbonSaysNeedsYou = useLook("holder-ribbon") === "show" && ribbonWaits(t);
   return (
     <button className={`${cardClass(t, active)}${ribbonStage(t) ? " holdable" : ""}`} onClick={onOpen}>
       {ribbon === "you" && (isHuman(t) ? <YouRibbon /> : <YouRibbon title="You hold it" spoken="held by" />)}
@@ -67,7 +70,7 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
       <CardStatus t={t} now={now} lines={lines} named={ribbonNames(t)} />
       <span className="card-bottom">
         <BlockWhy t={t} short />
-        {t.waitingForOwner && <Badge variant="warn">needs you</Badge>}
+        {t.waitingForOwner && !ribbonSaysNeedsYou && <Badge variant="warn">needs you</Badge>}
         {lines !== "status" && t.openQuestions > 0 && <Badge>{t.openQuestions} open Q</Badge>}
         {all && t.attachments.length > 0 && <Badge>{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</Badge>}
         {all && estimateText(t) && <Badge variant="est" title="Estimated agent time, test time and tokens">{estimateText(t)}</Badge>}

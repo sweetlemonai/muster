@@ -844,7 +844,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (`old_pauses`, `fix_old_pauses`, `set_old_pauses_offered`; the setting `old-pauses-offered`).
 - **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
   `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` set for each account on the
-  allowlist (0012), every one of them, each once per read, as soon as a stamp in Building or Testing
+  allowlist (0012), every one of them, each once per read, as soon as a stamp in Shaping, Building or Testing
   names one of them (0182); a stamp with no account or an unlisted one causes no run and reads
   nothing, so its card is unknown and the heartbeats judge, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
   started by the window's state poll (or the Dock badge's own read while the window is hidden,
@@ -861,10 +861,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the account it was found on is kept on the task (`session_account`, not sent to the window) and
   names it for the notifications. The live dot, the Work rows and the transcript already look the
   id up in every allowed account's folders (`transcripts::Reader`), so they follow it too. Holding
-  nothing else means, in Testing, no claim and one Testing hold; a paused task (0045) gets none and isn't counted as a hold. The card's who lines add
-  "working" (accent, with the Building dot), "waiting for input in Claude Code" (orange pill, and
-  the task counts as needs you: the core sets `waitingForOwner`) or "session ended, task still in
-  Building" (Building only), with "no check-in for N min" kept under it in muted text; the pane's status
+  nothing else means, in Testing, no claim and one Testing hold; a paused task (0045) gets none and isn't counted as a hold. A Shaping claim (0097) is a claim:
+  `stamp_of` takes Shaping, Building and Testing, and `holds` counts a Shaping claim with the
+  others (mu-171). On the card the state is on the holder ribbon after the name (mu-171, it was a
+  line under it): `HolderRibbon.tsx` `CardHolderRibbon` adds "working" (accent), "waiting for
+  input" (a needs-you block, `--st-needs` with `--on-status` words, to the card's edge; the task
+  counts as needs you: the core sets `waitingForOwner`, and the card leaves out its "needs you"
+  badge, `ribbonWaits`) or "session ended" (Building only), from `sessionState.ts`
+  `ribbonStateWords(t, short)`, short "needs you" and "ended". Both forms are in the markup and
+  the ribbon's room (`.holder-room`, the strip less 8px, a size container) picks one by
+  `@container holder` widths measured in WebKit (128px, 122px; the live dot goes under 101px).
+  The card's accessible name reads `sessionWords`' full words ("held by Asghar_7, waiting for
+  input in Claude Code"). "no check-in for N min" stays on the card in muted text; the pane's status
   line says the same and "Waiting on you: input in Claude Code"; the sidebar's working now takes
   Claude Code's word over the transcript and heartbeat; Ask for a check-in is disabled with
   "waiting for input in Claude Code: answer it there first", and Ask all leaves those out and
@@ -1307,6 +1315,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     sits on the owner's own; never both. Neutral (`--panel`, `--line`, `--text`; `--warn` and
     "quiet" when the lease ran out), the LiveDot inside it when the session is working, the name
     cut with "…" only when it doesn't fit nearly the card's width (half beside the stage band),
+    a name ending in a number cut before the number, which stays (`nameEnds`, mu-171: "as…16"),
     whole in the tooltip, and "held by …" in the card's accessible name. A held note in the
     Backlog says "shaping · <name>" ("shaping" gives way first, the "·" stays), or wears the You
     ribbon when the owner shapes it, with "· quiet" once the lease ran out. The space is reserved
