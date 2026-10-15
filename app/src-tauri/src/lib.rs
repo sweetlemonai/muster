@@ -24,6 +24,7 @@ pub mod lessons;
 pub mod merge_log;
 pub mod migrate;
 pub mod notify;
+pub mod now;
 pub mod old_pause;
 pub mod ops;
 pub mod parallel;
@@ -456,6 +457,7 @@ async fn pass_task(
                 commit: pass.commit,
                 summary: pass.summary,
                 from: Some(pass.from),
+                now_unchanged: String::new(),
             };
             ops::pass_task(root, &id, "owner", &stamp, &opts)
         })

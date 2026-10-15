@@ -25,6 +25,35 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — What's true now: a short page per area in docs/now/ (mu-102)
+**Did:** `docs/now/<area>.md` pages (front matter `covers: <globs>`, one cited rule per line, 60
+lines and 4 KB at most) and `now.rs`, which reads them (plain `*.md` only, bounded, symlinks
+warned about) and matches them to a task's `touches:` with `parallel::touches_overlap`.
+`muster pass --from building` is refused while a covered page is unchanged on the task's branch
+(`git diff --name-only <merge-base>..<tip> -- docs/now/`), unless `--now-unchanged "<why>"`; the
+log names the pages either way. `muster vision` quotes the task's pages as data (names only
+without `touches:`) and looks for broken page rules; `--all` lists every page; `muster shape`
+names the pages its matched tasks cover; `muster check` warns about over-cap, coverless,
+duplicate-covers and symlinked pages. Muster's seven pages are seeded from decisions 0001–0011,
+PROTOCOL.md, DESIGN.md and AS_BUILT. PROTOCOL, AS_BUILT, VISION, the manual (02, 05, 07) and
+help.rs say so.
+**Decided:** a task not started on its own branch has no diff to read, so a covered one needs
+`--now-unchanged` (say where the page was updated) rather than passing unchecked; only committed
+branch changes count, since the merge takes commits; a page the branch adds counts as updated.
+The app's Pass sends no reason, so a covered task leaves Building from the command line or the
+owner's track move, and the owner's refusal says so.
+**Fixed (review round 1):** a branch that updated a Persian-named page was refused as unchanged →
+`git diff --name-only` octal-quotes non-ASCII names, which never matched `read`'s names → the
+diff runs with `-z` and splits on NUL (R1). The worktree-gone path (the branch read from the
+project's checkout, or named missing), a `docs/now` linked inside the repo, and the AC1 citation
+check (now a task key, decision, or doc section, with a negative case) got tests (R2–R4); the
+owner's refusal adds "or move it to Testing on the track" (R5).
+**Verified:** gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati)); 20
+tests in `now.rs`, 5 in `vision.rs`, 1 in `backlog.rs`, 5 in `tests/now_pages.rs` (the built
+binary, and Muster's own pages checked in the gate). The R2 and R4 tests fail on the reviewer's
+mutants (`tip = None`, `!is_link` dropped).
+**Open:** AC9, the owner's read of the board and claims pages.
+
 ## 2026-10-14 — Research: visual-QA drivers, capture and walkthroughs per app stack (mu-130)
 **Did (Pouya, then Pouya_2 for review round 1):** `docs/research/2026-10-14-visual-qa-drivers.md`
 answers the six questions and the 19:43 scope (iOS via simctl and XCUITest, the Playwright overlay

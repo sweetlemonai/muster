@@ -524,7 +524,29 @@ its own agent id is another holder, 0090) and logged `(tested under
 > the Vision section or `vision:` by hand:** `muster check` reports a count that doesn't match the
 > section. Once a task is checked, `muster edit` and the app's Edit leave the section out of the
 > write-up and keep it as it is, and refuse a write-up that adds a `## Vision` line (a
-> description's own `## Vision` from before the first check stays editable). `muster vision --all` lists every open task's inputs for a whole-queue check.
+> description's own `## Vision` from before the first check stays editable). `muster vision --all` lists every open task's inputs for a whole-queue check, and every now page once. The brief also lists the task's **now pages** (below): those whose `covers:` overlap its `touches:`, quoted as data, or every page's name when it has no `touches:`; a rule on one that the task breaks without saying so is a conflict, recorded like any other with the page's `file:line` as its other side.
+>
+> **What's true now (Muster 0102, 2026-10-14).** `docs/now/<area>.md` in the repo, committed with
+> the code, says which rules hold right now for one part of the product: front matter
+> `covers: <globs>` (the syntax and overlap rule of a task's `touches:`), a title, then one rule
+> per bullet line in the present tense, each ending with the task key or decision that made it
+> true (`(mu-86)`, `(decision 0011)`, `(PROTOCOL.md "Sessions")`). A page is 60 lines and 4 KB at
+> most; it isn't a second AS_BUILT, which keeps how things were built. A task's pages are those
+> whose `covers:` overlap its `touches:`. **The builder keeps them true in the task's branch:**
+> `muster pass <id> --from building` is refused, naming the page, while a page the task covers is
+> unchanged on its branch (`git diff --name-only <merge-base>..<tip> -- docs/now/`, committed
+> work only; a page the branch adds counts), unless `--now-unchanged "<why>"` says why it still
+> holds (one line, 500 characters). Either way the log says which: `now pages updated:
+> docs/now/board.md` or `now pages unchanged: docs/now/board.md (<why>)`. The pages and the diff
+> come from the task's worktree while it exists, else from the project's checkout against the
+> branch's tip; a task not started on its own branch has no diff to read, so it needs
+> `--now-unchanged` (say where you updated the page). A task without `touches:`, one no page
+> covers, and a project without `docs/now/` pass as before; `muster init` makes no `docs/now/`, a
+> project opts in by adding a page. `muster vision` quotes a task's pages (above), `muster shape`
+> names the pages its matched open tasks cover, and `muster check` warns, without failing, about a
+> page over the cap, one without `covers:`, two with the same `covers:`, and a symlink in
+> `docs/now/` (only plain `*.md` files directly in it are read). Testing checks a page against the
+> code like any criterion.
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are

@@ -29,6 +29,8 @@ budgeted; no terms risk: one person's use per account, pinned by hand
 - Live state (stage, claim, lease, blocked, questions, comments, lock) in the repo's shared git
   folder, one copy for every worktree. The write-up (spec, criteria) on the claimant's branch.
 - Today's `<project>/tasks` queues with status folders are the old layout until 0005 migrates them.
+- `docs/now/<area>.md` in the repo: what's true now for one area, a short page of rules each citing
+  the task or decision behind it, kept true by the builder in the task's branch (mu-102).
 
 ## The spine: one task, start to finish
 

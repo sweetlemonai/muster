@@ -1,0 +1,33 @@
+---
+covers: app/src/App.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/TaskPanel, app/src/StageTrack.tsx, app/src/Recent, app/src/modes.ts
+---
+# The board and the task pane
+
+- No overlays: a task, a note and New task open in a pane docked beside the board, which stays live. (DESIGN.md "ADHD mode")
+- Modals only to confirm something destructive. (DESIGN.md "ADHD mode")
+- One column per stage; a blocked card stays in its stage and says what it waits for. (mu-60)
+- Status shows on the card: stage, blocked, who holds it, what it waits on, open questions. (DESIGN.md "ADHD mode")
+- The owner's own tasks share the board, hatched gold with the You ribbon. (mu-22)
+- Every place not open is a chip in one fixed-height row above the board, in board order. (mu-84)
+- A chip shows its name, count, and needs-you and blocked counts. (mu-84)
+- The row never wraps; names shorten, counts and needs-you words stay whole. (mu-84)
+- Open columns are at most 400px; a card never stretches. (mu-84)
+- The owner's column opens and folds are kept per display mode. (mu-84)
+- Columns scroll without scrollbars, with "+N above" and "+N below". (AS_BUILT "Columns scroll without scrollbars")
+- A paused task sits in the Paused lane, left of Backlog. (mu-59)
+- What needs you never folds, in any mode. (DESIGN.md "In every mode")
+- Switching display modes moves no control. (DESIGN.md "In every mode")
+- Every element that differs by mode is in `app/src/modes.ts`; components read only that. (mu-38)
+- One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")
+- A field shows its value as one chip; a click lays out the options in place. (DESIGN.md "ADHD mode")
+- Screens draw buttons and chips with the `app/src/ui` atoms, never a plain `<button>`. (mu-53)
+- One primary action per place, the next step. (DESIGN.md "Out of the way")
+- The pane leads with title and status, then the stage track, then the stage's work beside the next step. (mu-21)
+- The stage track refuses a move if the task moved since. (mu-21)
+- Only one action runs at a time. (AS_BUILT "Board")
+- The app never claims a task; its changes are logged as "owner". (AS_BUILT "What the app writes")
+- Edit is refused while someone else holds the task in Building. (mu-20)
+- Files open at the pane's full width, no lightbox. (mu-91)
+- Recently finished is docked at the board's right, or under it when narrow, never hidden. (mu-51)
+- Your check cards say Your turn and the next step, grouped by effort. (mu-43)
+- The window polls every 2 s while visible, never while hidden. (AS_BUILT "Live")

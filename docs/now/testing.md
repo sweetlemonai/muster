@@ -1,0 +1,31 @@
+---
+covers: app/src-tauri/src/review.rs, app/src-tauri/src/review_cmds.rs, app/src-tauri/src/lessons.rs, app/src-tauri/src/check_limit.rs, app/src/yourCheck, app/src/Review, app/src/OwnerChecklist, app/src/EffortGroups
+---
+# Testing and the review of record
+
+- A session that didn't build the task tests it, or the owner does. (mu-47)
+- The builder is whoever claimed it, every holder a takeover chained, and who passed it into Testing. (mu-47)
+- The owner's pass out of Testing is always accepted, logged as an override. (mu-47)
+- A Testing card says "needs a tester" while a builder holds it. (mu-47)
+- The tester ticks each criterion with its proof: `- [x] AC2: … — verify: … — proof: …`. (PROTOCOL.md "Parallel sessions")
+- A screenshot named `attachments/<id>/<file>` in a proof shows under it in Your check. (mu-78)
+- A criterion whose verify starts with `owner` is the owner's: agents don't tick it. (PROTOCOL.md "Task file")
+- "command (test) and owner" isn't the owner's alone: tick it with the command's proof. (PROTOCOL.md "Task file")
+- Builders run the gate, not a second full review. (mu-27)
+- Muster runs no agent: `muster review <id>` prints the brief, the tester runs `/deep-review`. (decision 0005)
+- The result is recorded with `muster review <id> --record -`. (decision 0005)
+- `head` must be the branch's tip; a finding needs a `kind` and a confidence of 75 or more. (mu-27)
+- Nits never hold anything. (decision 0005)
+- Other open findings send it back to its builder in rounds 1 and 2. (decision 0005)
+- Round 3 still open blocks it on the owner instead of a fourth round. (decision 0005)
+- The builder answers every finding with `--fixed` or `--dispute` before passing again. (mu-27)
+- The owner may settle any finding at any time with `--settle`. (mu-27)
+- `reviews/<id>.json` is the truth, written only by muster. (decision 0005)
+- A kind on 2 tasks is proposed as a lesson; none applies until the owner accepts it. (decision 0005)
+- At most 40 lessons are live; one unseen for 60 days expires. (mu-27)
+- Your check to Done needs the owner's criteria ticked. (PROTOCOL.md "Stages")
+- Accept all refuses a task with an agent's criterion unticked. (mu-78)
+- Your check groups by effort: Just accept, One look, Needs a session. (mu-43)
+- Each project limits agents' tasks waiting in Your check: 5, or 1 to 50, or Off. (mu-50)
+- Past the limit, commands warn on stderr and still do their work. (mu-50)
+- Goals, features and the owner's own tasks don't count toward it. (mu-50)

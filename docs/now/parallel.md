@@ -1,0 +1,33 @@
+---
+covers: app/src-tauri/src/parallel.rs, app/src-tauri/src/merge_log.rs, .gitattributes, bin/gate
+---
+# Parallel worktrees and the merge
+
+- Several sessions work one queue at once, each on its own task in its own worktree. (mu-23)
+- `muster ready --parallel` lists up to 3 tasks safe side by side; `--parallel <n>` for more. (mu-23)
+- A task says where it works in `touches:`, set at shaping. (mu-23)
+- Two entries overlap when one's part before its first wildcard starts the other's. (mu-23)
+- A task without `touches:` never pairs. (mu-23)
+- `muster start <id> --as <you>` claims it and makes branch `task/<key>-<slug>` and its worktree. (mu-23)
+- The branch starts from the local main's commit; a dirty main checkout is fine. (mu-23)
+- Work in that worktree only and commit on the task's branch. (PROTOCOL.md "Parallel sessions")
+- Nothing is pushed and no PR is opened while building. (PROTOCOL.md "Parallel sessions")
+- `muster pass <id> --from testing` is the merge of a started task, run from outside its worktree. (mu-23)
+- The merge is refused without a review clean at the branch's tip, unless the owner overrides. (decision 0005)
+- The builder can't run the merge. (mu-47)
+- One merge at a time per repo, under `<git common dir>/muster/merge.lock`. (mu-23)
+- It rebases on local main; a conflict aborts and returns the task to Building, files named. (mu-23)
+- It runs the project's gate in the worktree; red returns the task with the gate line. (mu-23)
+- With no gate set for the project, nothing merges. (mu-23)
+- If main moved during the gate, it rebases and gates again, twice at most. (mu-23)
+- Main only ever gets a tree the gate saw. (mu-23)
+- Main is fast-forwarded, never given a merge commit, and only if the main checkout is clean and on main. (mu-23)
+- Main is pushed plainly, never forced; if origin moved, it stops. (mu-23)
+- The app's Pass is refused for a started task in Testing. (mu-23)
+- A started task reaches Your check or Done by a stage change only once its branch is in main. (mu-64)
+- `docs/WORKLOG.md` merges through `muster merge-log`: both sides' new entries kept whole, newest first. (decision 0009)
+- `muster start` and `muster init` set the driver in git config only where it's missing. (decision 0009)
+- The merge passes the driver itself with `git -c`. (decision 0009)
+- `muster release <id> --clean` gives a task up: Ready again, worktree and branch removed. (mu-23)
+- Never delete a worktree or branch by hand while its task is in Building or Testing. (mu-23)
+- No PR per task for now; nothing is posted to GitHub. (decision 0005)

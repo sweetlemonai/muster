@@ -259,6 +259,14 @@ muster vision 0031 --resolve V2 "0019 keeps depends:; 0024 derives blocked by ta
 
 See [muster vision](05-commands.md#muster-vision) (task 0029).
 
+## What's true now
+
+The rules in force for each part of a project live in short pages in its repo, `docs/now/<area>.md`: one rule per line, in the present tense, each ending with the task or decision that made it true, like `(mu-86)` or `(decision 0011)`. A page starts with `covers:` and the folders and files it's about, written like a task's `touches:`. It's 60 lines and 4 KB at most, short enough to read in a minute. The long story of how things were built stays in AS_BUILT.
+
+A task's pages are the ones whose `covers:` overlap its `touches:`. Whoever builds the task keeps them true in its branch: when the task changes a rule, the page changes with it and reaches main in the same merge. Passing it from Building to Testing is refused while one of its pages is unchanged on the branch, unless the builder says why it still holds with `--now-unchanged "<why>"`. Either way the task's log names the pages. A task without `touches:`, one no page covers, and a project without `docs/now/` pass as before.
+
+The vision check reads them too: `muster vision` quotes the task's pages, and a task that breaks a rule on one without saying so gets a conflict quoting that line. `muster shape` names the pages the note's matching tasks cover, and `muster check` warns about a page that's too long, has no `covers:`, has the same `covers:` as another, or is a symlink. A project opts in by adding a page; `muster init` doesn't make the folder (task 0102).
+
 ## The review of record
 
 A task started on its own branch (`muster start`) is reviewed in Testing by your own review engine, the one `/deep-review` runs: its lenses and verifiers, with its scan picking the tier (light unless the diff is big or risky). It's the one review that counts: builders run the gate, not a second review of their own. Nothing goes to GitHub; it runs on this Mac, on the branch, before the merge.

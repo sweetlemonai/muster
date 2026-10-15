@@ -7,9 +7,9 @@
 //! Note text is untrusted data: read with caps, never executed, shown through the app's
 //! sanitized Markdown. Every change holds the queue's lock and writes atomically, like `ops`.
 
-use crate::lenses;
 use crate::ops::{self, NewTask};
 use crate::queue::{self, actor, with_lock, write_atomic, MAX_TASK_BYTES};
+use crate::{lenses, now};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -636,6 +636,9 @@ pub struct Brief {
     /// The project's rules and design docs that exist, as absolute paths.
     pub docs: Vec<String>,
     pub related: Vec<Related>,
+    /// The now pages (mu-102) the related tasks' `touches:` cover, each with those tasks: the
+    /// rules in force where the note would work. Names only; `shape` fills it in.
+    pub now: Vec<now::Listed>,
     /// The command that files the result, with the body (`template`) on stdin.
     pub command: String,
     pub template: String,
@@ -673,6 +676,7 @@ pub fn brief(
         notice: NOTE_IS_DATA.to_string(),
         title: note_title(&text),
         related: related(&text, tasks),
+        now: Vec::new(),
         text,
         roles: ROLES.to_vec(),
         template: template(&active),
@@ -753,6 +757,17 @@ pub fn brief_text(b: &Brief) -> String {
             r.shared.join(", ")
         ));
     }
+    if !b.now.is_empty() {
+        out.push_str("\nNow pages those tasks cover (read them before you write the task: the rules in force there):\n");
+        for p in &b.now {
+            out.push_str(&format!(
+                "  {} (covers {}; {})\n",
+                one_line_name(&p.path),
+                one_line_name(&p.covers.join(", ")),
+                p.tasks.join(", ")
+            ));
+        }
+    }
     out.push_str(&format!(
         "\nFile it (the task starts in Shaping, and the note moves into its attachments, so nothing is lost):\n  {}\nwith this body on stdin, filled in:\n{}\nOnce it has criteria, hand it to Ready:\n  {}\nNot worth a task:\n  {}\n",
         b.command, b.template, b.then, b.drop
@@ -801,6 +816,33 @@ pub(crate) fn project_places(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The now pages the `related` tasks cover (their `touches:` against each page's `covers:`), in
+/// page order, each with the ids of the related tasks that cover it. Names only.
+pub(crate) fn now_for(
+    related: &[Related],
+    tasks: &[queue::Task],
+    pages: &[now::Page],
+) -> Vec<now::Listed> {
+    pages
+        .iter()
+        .filter_map(|p| {
+            let ids: Vec<String> = related
+                .iter()
+                .filter(|r| {
+                    tasks.iter().any(|t| {
+                        t.id == r.id && now::covered(std::slice::from_ref(p), &t.touches).len() == 1
+                    })
+                })
+                .map(|r| r.id.clone())
+                .collect();
+            (!ids.is_empty()).then(|| now::Listed {
+                tasks: ids,
+                ..now::Listed::of(p, false)
+            })
+        })
+        .collect()
+}
+
 /// `muster shape`: the brief for a note, read whole. Writes nothing.
 pub fn shape(root: &Path, note: &str) -> Result<Brief, String> {
     let name = note_name(note)?;
@@ -813,7 +855,7 @@ pub fn shape(root: &Path, note: &str) -> Result<Brief, String> {
         &[("q".into(), root.to_path_buf())],
         &mut queue::Cache::default(),
     );
-    Ok(brief(
+    let mut b = brief(
         &crate::projects::default_name(root),
         root,
         &name,
@@ -821,7 +863,9 @@ pub fn shape(root: &Path, note: &str) -> Result<Brief, String> {
         project_docs(root),
         &state.tasks,
         &lenses::read(root).skipped,
-    ))
+    );
+    b.now = now_for(&b.related, &state.tasks, &now::for_queue(root).pages);
+    Ok(b)
 }
 
 #[cfg(test)]
@@ -1690,6 +1734,82 @@ mod tests {
             .unwrap_err()
             .contains("no backlog note gone.md"));
         assert!(shape(&root, "0004-x.md").unwrap_err().contains("is a task"));
+    }
+
+    #[test]
+    fn shape_names_the_now_pages_its_matched_tasks_cover() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("proj/tasks");
+        for f in STATUS_FOLDERS {
+            fs::create_dir_all(root.join(f)).unwrap();
+        }
+        fs::write(root.join("README.md"), "q").unwrap();
+        let now = base.path().join("proj/main/docs/now");
+        fs::create_dir_all(base.path().join("proj/main/.git")).unwrap();
+        fs::create_dir_all(&now).unwrap();
+        fs::write(now.join("board.md"), "---\ncovers: app/src/Board*\n---\n# Board\n- The +N cue walks chips in board order. (mu-86)\n").unwrap();
+        fs::write(
+            now.join("claims.md"),
+            "---\ncovers: app/src-tauri/src/session.rs\n---\n# Claims\n",
+        )
+        .unwrap();
+        put(
+            &root,
+            "inbox/n.md",
+            b"Board chips should wrap on a narrow board",
+            5,
+        );
+        let task = |id: &str, title: &str, touches: &str| {
+            format!(
+                "---\nid: {id}\nstage: ready\nstatus: todo\ntouches: {touches}\n---\n\n# {title}\n"
+            )
+        };
+        // 0004 shares "board" and "chips" and touches the board: its page is named.
+        put(
+            &root,
+            "todo/0004-x.md",
+            task("0004", "Board chips in order", "app/src/BoardView.tsx").as_bytes(),
+            5,
+        );
+        // 0005 shares words but touches what no page covers; 0006 touches claims but shares nothing.
+        put(
+            &root,
+            "todo/0005-x.md",
+            task("0005", "Narrow board chips", "bin/").as_bytes(),
+            5,
+        );
+        put(
+            &root,
+            "todo/0006-x.md",
+            task("0006", "Claims expire", "app/src-tauri/src/session.rs").as_bytes(),
+            5,
+        );
+        let b = shape(&root, "n.md").unwrap();
+        let ids: Vec<&str> = b.related.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["0005", "0004"], "most shared first");
+        let board = now
+            .canonicalize()
+            .unwrap()
+            .join("board.md")
+            .display()
+            .to_string();
+        assert_eq!(b.now.len(), 1, "{:?}", b.now);
+        assert_eq!(
+            (b.now[0].path.as_str(), b.now[0].tasks.as_slice()),
+            (board.as_str(), &["0004".to_string()][..])
+        );
+        assert!(
+            b.now[0].text.is_none(),
+            "names only: the shaper reads the page"
+        );
+        let t = brief_text(&b);
+        assert!(t.contains(&format!("Now pages those tasks cover (read them before you write the task: the rules in force there):\n  {board} (covers app/src/Board*; 0004)\n")), "{t}");
+        assert!(!t.contains("+N cue"));
+        // No page matched: the section isn't there.
+        fs::remove_dir_all(&now).unwrap();
+        let b = shape(&root, "n.md").unwrap();
+        assert!(b.now.is_empty());
+        assert!(!brief_text(&b).contains("Now pages"));
     }
 
     fn listing(dir: &Path) -> Vec<(PathBuf, u64)> {

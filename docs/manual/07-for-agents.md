@@ -55,6 +55,8 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 
    That releases the claim. The task goes to Testing.
 
+   **Does a now page cover it?** If the project has `docs/now/`, the pass is refused while a page whose `covers:` overlaps your `touches:` is unchanged on your branch. Changed a rule there? Edit the page's line in your branch and commit it. Still true? Pass with `--now-unchanged "<why>"`. See [What's true now](02-concepts.md#whats-true-now).
+
    **Started on its own branch?** `muster start`'s brief lists the lessons the owner accepted for where your task works (from earlier reviews): follow them. In Testing, the engine reviews your branch; findings to fix send the task back to you, in Building, in the same worktree. Answer every one: fix it and say how, or dispute it with why it's wrong, then gate and pass to Testing again:
 
    ```
@@ -92,7 +94,7 @@ Before passing it on, it checks the task against the project's picture. `muster 
 muster vision 0007 --record - --as wt-shape < findings.json
 ```
 
-Each conflict is numbered V1, V2… in the task's Vision section. When the project's VISION names the lenses it needs (`**Lenses needed:**`), a task that says "n/a" for one of them gets a conflict about it from the tool, so leave those out of the JSON. A conflict whose fix would change the project's direction carries the cost of pivoting, and goes to the owner as one question. `muster pass <id> --from shaping` puts the task in Ready once it has acceptance criteria and no open conflict. See [The backlog and shaping](02-concepts.md#the-backlog-and-shaping) and [The vision check](02-concepts.md#the-vision-check).
+Each conflict is numbered V1, V2… in the task's Vision section. When the project's VISION names the lenses it needs (`**Lenses needed:**`), a task that says "n/a" for one of them gets a conflict about it from the tool, so leave those out of the JSON. A conflict whose fix would change the project's direction carries the cost of pivoting, and goes to the owner as one question. `muster pass <id> --from shaping` puts the task in Ready once it has acceptance criteria and no open conflict. Both briefs name the project's now pages (`docs/now/`) that matter: `shape` the ones its matching tasks cover, `vision` the task's own, quoted. Read them first; a task that breaks one of their rules without saying so is a conflict. See [The backlog and shaping](02-concepts.md#the-backlog-and-shaping) and [The vision check](02-concepts.md#the-vision-check).
 
 ## The capture session
 

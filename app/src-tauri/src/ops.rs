@@ -2,6 +2,7 @@
 //! used by the app's window and by the `muster` command line alike. Every change holds the
 //! queue's lock, writes atomically, stamps the time itself and logs who did it.
 
+use crate::now;
 use crate::queue::{
     self, actor, append_log, find_task, front_matter, mirror_status, with_lock, write_atomic,
     STATUS_FOLDERS, SUMMARY_MAX,
@@ -1647,6 +1648,9 @@ pub struct PassOpts {
     /// The stage the caller saw the task in. When given, the pass is refused if the task has
     /// moved on since (a double click, a stale window), so one click never moves two stages.
     pub from: Option<String>,
+    /// Why the now pages a task covers (mu-102) are still true though its branch doesn't change
+    /// them: needed to pass such a task out of Building, and logged.
+    pub now_unchanged: String,
 }
 
 /// A git commit id: 7 to 64 hex characters (a SHA-1 or a SHA-256 repo's), kept lowercase. Empty
@@ -1691,6 +1695,16 @@ pub fn pass_task(
         clean_summary(&opts.summary)?
     };
     let expected = seen_stage(opts.from.as_deref())?;
+    let now_why = if opts.now_unchanged.trim().is_empty() {
+        String::new()
+    } else {
+        one_line(&opts.now_unchanged, now::MAX_WHY, "--now-unchanged")?
+    };
+    // The now pages a task leaving Building covers (mu-102), read before the lock: git runs here.
+    let now_pass = queue::read_task(root, id)
+        .ok()
+        .filter(|t| t.stage == "building" && t.level == "task" && !t.is_human())
+        .map_or(now::Pass::Free, |t| now::pass_check(root, &t));
     change(root, id, &who, stamp, |t| {
         if t.stage == "testing" && !t.branch.is_empty() {
             return Err(started_pass(id, &t.branch));
@@ -1703,6 +1717,26 @@ pub fn pass_task(
             return Err(format!(
                 "--summary is only for a task passing Building → Testing; muster set {id} summary \"<line>\" writes or fixes it in any stage"
             ));
+        }
+        if !now_why.is_empty() && !out_of_building {
+            return Err(
+                "--now-unchanged is only for a task passing Building → Testing".to_string(),
+            );
+        }
+        // Its now pages are updated on its branch, or it says why they still hold (mu-102).
+        if out_of_building {
+            // The app's Pass sends no reason: the owner's way past is the track.
+            let line = now::pass_line(id, &now_pass, &now_why).map_err(|e| {
+                if is_owner(&who) {
+                    format!("{e}, or move it to Testing on the track")
+                } else {
+                    e
+                }
+            })?;
+            if let Some(text) = line {
+                let line = free_text_line(format!("{stamp} {who}: {text}"), "--now-unchanged")?;
+                c.log.insert(0, line);
+            }
         }
         if out_of_building
             && t.level == "task"

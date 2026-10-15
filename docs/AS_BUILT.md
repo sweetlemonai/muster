@@ -120,6 +120,7 @@ here):
 | `key.rs` | Task keys (`mu-12`): the project's prefix, stored with the queue |
 | `search.rs` | `muster list`'s search, filters and sort, held to the app's by a shared fixture |
 | `vision.rs` | The vision check: the brief, the agent's result recorded, conflicts resolved |
+| `now.rs` | What's true now (mu-102): the `docs/now/` pages read and matched to a task's `touches:`, the building pass's page check, `check`'s warnings |
 | `review.rs` | The review of record: the brief, the result recorded, rounds, the merge check |
 | `lessons.rs` | Lessons from reviews: proposed from repeated findings, accepted or rejected by the owner |
 | `pause.rs` | Pause and Resume: a task keeps its stage and claim, nobody works it |
@@ -279,6 +280,7 @@ Elsewhere:
 | Transcripts | `~/.claude-<label>/projects/<folder key>/<session>.jsonl`, allowed accounts, keys under `~/playground` and sessions stamped with an allowed account only (0012) | read only, by `transcripts.rs`; never sent anywhere, and the window gets counts, never paths |
 | Session states | `claude agents --json --all`, per allowed account | run by `agents.rs`, read only |
 | The project's picture | `<repo>/docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md` | read only: `vision.rs` (the brief) and `lenses.rs` (VISION's `**Lenses needed:**` line) |
+| What's true now | `<repo>/docs/now/<area>.md`, committed with the code | written by the builder in the task's branch; read only by `now.rs` (the building pass, `check`), `vision.rs` and `backlog.rs` (the briefs) |
 
 ## 3. How a task flows
 
@@ -312,6 +314,7 @@ is in section 6.
 | INDEX.md, and the queue at a glance in this document | Built, tested | mu-18, mu-80 |
 | `tasks.json` (`manifest.py`) | Built, tested; rebuilt only when `manifest.py` runs, so Muster's is as old as its migration | mu-2 |
 | Backlog and shaping, the vision check | Built, tested | mu-15, mu-29 |
+| What's true now: `docs/now/` pages, the building pass's page rule, the pages in the vision and shaping briefs, `check`'s warnings; Muster's seven pages | Built, tested; on its branch, not on main | mu-102 |
 | Shaping lenses: the brief's list, a project's skips with reasons, `file`'s warning, `check`'s problems, VISION's needed lenses | Built, tested; on its branch, not on main | mu-76 |
 | Goals, features and tasks; depends met once merged | Built, tested | mu-16, mu-42 |
 | Blocked says what it waits for (five kinds) | Built, tested | mu-24, mu-60 |
@@ -1821,3 +1824,41 @@ Live claims in the repo's shared git folder (`.git/muster/`), for committed queu
 files have one copy per branch, are the next step of 0005. See
 `docs/decisions/0003-muster-in-the-repo-backlog-and-stages.md`.
 
+### What's true now: `docs/now/` (task 0102)
+
+The rules in force per area live in short pages, one per area, in `docs/now/`; this document keeps
+how things were built. The rules of the queue are in [queue](now/queue.md), claims and sessions in
+[claims](now/claims.md), worktrees and the merge in [parallel](now/parallel.md), Testing and the
+review in [testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md),
+the board and the task pane in [board](now/board.md), and the sidebar and Settings in
+[sidebar](now/sidebar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
+
+- **Reading** (`now.rs`): only plain `*.md` files directly in `docs/now/` (100 at most), each read
+  up to 16 KB, control characters out. A symlinked page is passed over, and so is a `docs/now/`
+  that leads out of its repo; `check` warns about both. `covers:` is read from the front matter
+  with `queue::parse_touches`, and a page is a task's when `parallel::touches_overlap` says its
+  `covers:` and the task's `touches:` overlap. The pages come from `backlog::project_places`, the
+  folders the vision brief reads its picture from.
+- **The building pass** (`ops::pass_task`, `now::pass_check`): before the queue's lock, for a task
+  leaving Building, the pages and the diff come from its worktree while it exists (`HEAD`), else
+  from the project's checkout against `refs/heads/<branch>`. One `git merge-base` and one
+  `git diff --name-only -z --relative --no-renames <base> <tip> -- docs/now/`, as argument
+  arrays; `-z` keeps git from quoting a non-ASCII name, so a page named in Persian matches the
+  name `read` gives it. A page unchanged there needs `--now-unchanged` (cleaned to one line, 500
+  characters), and the log line (`now pages updated: …` / `now pages unchanged: … (<why>)`) goes
+  in with the stage change, under the lock. Without a branch, or when git fails, the pass says it
+  can't see the diff and asks for `--now-unchanged`. The app's Pass sends no reason, so a covered
+  task leaves Building from the command line or by the owner's move on the track (the rule
+  doesn't apply to a track move); the owner's refusal says so.
+- **The briefs:** `muster vision` lists the covered pages (`now` in the JSON: path, covers, text)
+  and quotes their text line by line; a task without `touches:` gets every page's path, no text.
+  `muster vision --all` lists every page's path once. `muster shape` lists the pages its matched
+  open tasks cover, each with those tasks' ids, names only.
+- **`muster check`:** a page over 60 lines or 4096 bytes, without `covers:`, with the same
+  `covers:` as another (in any order), or a symlink is a warning line; the exit code ignores them.
+- **Checked by:** unit tests in `now.rs` (parsing, matching, reading, warnings, the branch diff, the
+  pass in a temp repo with worktrees: refused, page changed, page added, `--now-unchanged`, no
+  branch, no `touches:`, no covering page, no `docs/now/`), `vision.rs` and `backlog.rs` (the
+  briefs, a recorded conflict quoting a page), and `tests/now_pages.rs` (the built binary's `check`,
+  `vision` and `pass`, and Muster's own pages: no warning, each rule cited, every `covers:` naming
+  files that exist).

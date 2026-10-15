@@ -102,7 +102,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
             | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built"
-            | "--agent" => {
+            | "--agent" | "--now-unchanged" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -1796,6 +1796,7 @@ fn run_on(
                 commit: a.flags.get("commit").cloned().unwrap_or_default(),
                 summary: a.flags.get("summary").cloned().unwrap_or_default(),
                 from: a.flags.get("from").cloned(),
+                now_unchanged: a.flags.get("now-unchanged").cloned().unwrap_or_default(),
             };
             let p = ops::pass_task(root, id, &me(), stamp, &opts)?;
             println!("{}", stage_message(root, prefix, id, &p));
@@ -2299,6 +2300,11 @@ fn run_on(
                 .map(|c| vec![c.to_path_buf()])
                 .unwrap_or_default();
             for w in crate::parallel::stale(&s.tasks, &here) {
+                println!("{w}");
+            }
+            // Nor a now page over its cap, without covers:, sharing another's, or a symlink
+            // (mu-102): each says what to do, and none of them stops a command.
+            for w in crate::now::warnings(&crate::now::for_queue(root)) {
                 println!("{w}");
             }
             // Not problems: what waits on the owner's look (0028). The exit code ignores them.
