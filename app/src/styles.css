@@ -92,7 +92,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 :root[data-mode="light"] .brand .logo-dark { display: none; }
 :root[data-mode="light"] .brand .logo-light { display: inline; }
 .queues, .views { display: flex; gap: 4px; }
-.views { margin-left: auto; }
+.views { margin-inline-start: auto; }
 .ui-pill { border: 1px solid transparent; background: none; border-radius: 999px; padding: 3px 10px; color: var(--muted); }
 .ui-pill:hover { background: var(--hover); }
 .ui-pill.ui-pill--on { background: var(--selected); color: var(--text); border-color: var(--accent); }
@@ -667,15 +667,33 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .graph-strip > .legend { padding-inline: 0; margin-block-end: 4px; }
 
 /* Header: never cut off (0113's QA: at a 960 px header the meter, the mode and "live" were).
-   What doesn't fit a line wraps to the next, at its end: the status area (meter, mode, live) as
-   one unit, and only then the views, which wrap last. New task keeps the first line's start. */
+   Two units (mu-202). The start (New task and the views) is never wider than the header and
+   never splits, so the views wrap pill by pill beside New task, not under it. The end (Help,
+   Settings, then the status area: meter, mode, live) never splits either: what doesn't fit beside
+   the start drops whole to a second line, at its inline end; only where it alone is wider than
+   the header (Text size 125% with two accounts) does it wrap inside, the status area under Help
+   and Settings. New task sits on the views' first line, not between their lines. Pure CSS: no
+   measuring, no state. */
 .top { flex-wrap: wrap; justify-content: flex-end; gap: 6px 10px; }
 .top .ui-pill, .top .new, .brand { white-space: nowrap; flex: none; }
 .top .queues { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .top .queues::-webkit-scrollbar { display: none; }
+.top-start { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 auto; min-width: 0; max-width: 100%; }
 .top .views { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
 .top .new { margin-inline-end: auto; }
-.top-status { display: flex; align-items: center; gap: 10px; flex: none; }
+.top-end { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px 4px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.top-status { display: flex; align-items: center; gap: 10px; flex: none; margin-inline-start: 6px; }
+/* A toolbar count (Waiting for you, Problems) keeps three digits' room, empty and hidden at zero,
+   so a poll never changes the toolbar's width, lines or height (mu-202). */
+.count-reserve { min-width: calc(3ch + 10px); text-align: center; font-variant-numeric: tabular-nums; }
+.count-reserve:empty { visibility: hidden; }
+/* An empty inline-block sits on its bottom edge, a filled one on its text: a zero-width space gives
+   the empty one the same line box, so a count appearing doesn't move the line by a fraction. */
+.count-reserve:empty::before { content: "\200b"; }
+/* The quiet count's 1 px outline is inside its box too, so it reserves 2 px more. */
+.count-reserve.quiet { min-width: calc(3ch + 12px); }
+/* Help and Settings, their own labelled nav inside the toolbar's end (mu-202 review R3). */
+.end-views { display: flex; gap: 4px; flex: none; }
 /* The account meter (task 0113), in the header's status area: per account a quiet button, its
    short name, two 3 px bars (5 h over 7 d) and the next reset in words. The use in the accent,
    the warning colour once into the reserve, the track hatched when stale; the reserve's mark a

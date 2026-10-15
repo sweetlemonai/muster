@@ -34,6 +34,7 @@ import { overLimit } from "./yourCheckLimit";
 import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { HelpButton, OpenHelp } from "./HelpButton";
+import { HeadCount, HeadCounts } from "./HeadCount";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import { Machine, machineOf, RoleNamesContext, type SettingsGroup } from "./settingsData";
 import { bandFold, columnClass, loadMode, loadPicks, plainBoard, look, Mode, pickColumn, pickMode, RAIL_ID, storeMode, storePicks, toggleBand, toggleFocus, type BoardLooks, type ColumnFolds, type ColumnPicks, type ModePicks, type ModeState } from "./modes";
@@ -457,34 +458,42 @@ export default function App() {
       <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label={t("app.sidebarWidth")} onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />
       <div className="main-col">
       <header className="top">
-        <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title={t("app.newTaskTitle")}>{t("app.newTask")}</Button>
-        <nav className="views" aria-label={t("app.views")}>
-          <span className="view-group" role="group" aria-label={t("app.projectViews")}>
-            <Pill on={view === "board"} onClick={() => setView("board")}>{t("app.view.board")}</Pill>
-            <Pill on={view === "table"} onClick={() => setView("table")}>{t("app.view.table")}</Pill>
-            <Pill on={view === "timeline"} onClick={() => setView("timeline")}>{t("app.view.timeline")}</Pill>
-            <Pill on={view === "graph"} onClick={() => setView("graph")} title={t("app.view.graphTitle")}>{t("app.view.graph")}</Pill>
-            <Pill on={view === "sessions"} onClick={() => setView("sessions")} title={t("app.view.sessionsTitle")}>{t("app.view.sessions")}</Pill>
-          </span>
-          <Pill on={view === "helper"} onClick={() => setView("helper")}>{t("app.view.helper")}</Pill>
-          <Pill on={view === "waiting"} onClick={() => setView("waiting")} title={t("app.view.waitingTitle")}>
-            {t("app.view.waiting")}{needs ? <b className="count warn">{needs}</b> : null}
-          </Pill>
-          <Pill on={view === "activity"} onClick={() => setView("activity")}>{t("app.view.activity")}</Pill>
-          <Pill on={view === "problems"} onClick={() => setView("problems")}>
-            {t("app.view.problems")}{problems.length ? <b className="count">{problems.length}</b> : null}
-            {unchecked.length ? <small className="count quiet" title={t("app.view.uncheckedTitle")}>{unchecked.length}</small> : null}
-          </Pill>
-          <Pill on={view === "help"} onClick={() => setView("help")}>{t("app.view.help")}</Pill>
-          <Pill on={view === "settings"} onClick={() => setView("settings")} title={t("app.view.settingsTitle")}>{t("app.view.settings")}</Pill>
-        </nav>
-        {/* The status area, one unit: where the header is too narrow for one line it drops whole to
-            a second, never cut (0113). */}
-        <span className="top-status">
-          <AccountMeter onOpen={() => openSettings("accounts")} />
-          <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
-          <span className="live" title={error || t("app.liveTitle")}>
-            {error ? <span className="err">{t("app.cantRead")}</span> : at ? <><i className="dot" /> {t("app.live")}</> : t("app.loading")}
+        {/* Line one: New task and the views, one unit that never splits. Where the views don't fit
+            beside New task they wrap pill by pill inside it, never under it (mu-202). */}
+        <span className="top-start">
+          <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title={t("app.newTaskTitle")}>{t("app.newTask")}</Button>
+          <nav className="views" aria-label={t("app.views")}>
+            <span className="view-group" role="group" aria-label={t("app.projectViews")}>
+              <Pill on={view === "board"} onClick={() => setView("board")}>{t("app.view.board")}</Pill>
+              <Pill on={view === "table"} onClick={() => setView("table")}>{t("app.view.table")}</Pill>
+              <Pill on={view === "timeline"} onClick={() => setView("timeline")}>{t("app.view.timeline")}</Pill>
+              <Pill on={view === "graph"} onClick={() => setView("graph")} title={t("app.view.graphTitle")}>{t("app.view.graph")}</Pill>
+              <Pill on={view === "sessions"} onClick={() => setView("sessions")} title={t("app.view.sessionsTitle")}>{t("app.view.sessions")}</Pill>
+            </span>
+            <Pill on={view === "helper"} onClick={() => setView("helper")}>{t("app.view.helper")}</Pill>
+            <Pill on={view === "waiting"} onClick={() => setView("waiting")} title={t("app.view.waitingTitle")}>
+              {t("app.view.waiting")}<HeadCount n={needs} className="warn" />
+            </Pill>
+            <Pill on={view === "activity"} onClick={() => setView("activity")}>{t("app.view.activity")}</Pill>
+            <Pill on={view === "problems"} onClick={() => setView("problems")}>
+              {t("app.view.problems")}<HeadCounts counts={[{ id: "problems", n: problems.length }, { id: "unchecked", n: unchecked.length, quiet: true, title: t("app.view.uncheckedTitle") }]} />
+            </Pill>
+          </nav>
+        </span>
+        {/* The toolbar's end, one unit: Help, Settings and the status area (meter, mode, live).
+            Where the header is too narrow for one line it drops whole to a second line, at its
+            end, never cut (0113, mu-202). */}
+        <span className="top-end">
+          <nav className="end-views" aria-label={t("app.helpAndSettings")}>
+            <Pill on={view === "help"} onClick={() => setView("help")}>{t("app.view.help")}</Pill>
+            <Pill on={view === "settings"} onClick={() => setView("settings")} title={t("app.view.settingsTitle")}>{t("app.view.settings")}</Pill>
+          </nav>
+          <span className="top-status">
+            <AccountMeter onOpen={() => openSettings("accounts")} />
+            <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
+            <span className="live" title={error || t("app.liveTitle")}>
+              {error ? <span className="err">{t("app.cantRead")}</span> : at ? <><i className="dot" /> {t("app.live")}</> : t("app.loading")}
+            </span>
           </span>
         </span>
       </header>

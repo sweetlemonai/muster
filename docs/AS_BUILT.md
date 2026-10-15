@@ -673,8 +673,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `~/playground/*/*/tasks`, and the repos' `.muster/` at `~/playground/*/.muster` and
   `~/playground/*/*/.muster` in a main checkout, a project with both showing its `.muster/` under
   its name; plus ones added by hand), each with its task count, how many need you (orange) and how many are in progress
-  (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header keeps only the views, New task and
-  the display mode chip (0038), on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
+  (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header (`<header className="top">`)
+  keeps only New task and the views (`.top-start`), then the toolbar's end (`.top-end`: Help,
+  Settings and the status area `.top-status` with the account meter, the display mode chip (0038)
+  and live). The toolbar wraps at its trailing group and never clips (mu-202): `.top-start` is
+  never wider than the header and never splits, so the views wrap pill by pill beside New task;
+  `.top-end` is placed by its whole width, so it drops to a second line at the inline end, and
+  wraps inside only when it alone is wider than the header. Help and Settings are a nav of their
+  own (`.end-views`, "Help and Settings") inside `.top-end`. Waiting for you's and Problems' counts,
+  and Problems' quiet unchecked-visions count, are `HeadCount` (`HeadCount.tsx`): `.count-reserve`,
+  three tabular digits wide (the quiet one 2 px more for its outline), hidden empty at zero with a
+  zero-width strut so it sits on the same line box; `HeadCounts` puts a pill's shown counts before
+  its empty slots. So a poll doesn't change the lines or the board's top. Pure CSS; no measuring. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
   minutes; never in Done, and in Your check only while live), or **stalled** in the attention
   colour (work in Building, not blocked and not the owner's, and nothing in the project for over
@@ -2558,8 +2568,9 @@ review in [testing](now/testing.md), shaping and the vision check in [shaping](n
 the board and the task pane in [board](now/board.md), the row of folded columns above the board
 and its edge cue in [column row](now/column-row.md), the sidebar and Settings in
 [sidebar](now/sidebar.md), the Sessions view and its recap in [sessions](now/sessions.md), the
-Table, Timeline and Graph views in [views](now/views.md), and the account meter in
-[accounts](now/accounts.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
+Table, Timeline and Graph views in [views](now/views.md), the account meter in
+[accounts](now/accounts.md), and the header's toolbar and how it wraps in
+[toolbar](now/toolbar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
 
 - **Reading** (`now.rs`): only plain `*.md` files directly in `docs/now/` (100 at most), each read
   up to 16 KB, control characters out. A symlinked page is passed over, and so is a `docs/now/`

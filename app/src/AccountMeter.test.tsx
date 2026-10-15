@@ -104,7 +104,8 @@ describe("the header's account meter", () => {
 
   it("sits in the header's status area, before the display mode, and opens Settings › Accounts", () => {
     const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
-    expect(header).toMatch(/<\/nav>\s*(?:\{\/\*[^]*?\*\/\}\s*)?<span className="top-status">\s*<AccountMeter onOpen=\{\(\) => openSettings\("accounts"\)\} \/>\s*<ModeChip /);
+    // The status area closes the toolbar's trailing unit, after Help and Settings (mu-202).
+    expect(header).toMatch(/<span className="top-end">[^]*?<\/Pill>\s*<\/nav>\s*<span className="top-status">\s*<AccountMeter onOpen=\{\(\) => openSettings\("accounts"\)\} \/>\s*<ModeChip /);
   });
 
   it("asks the core again on accounts-changed, and never polls", () => {

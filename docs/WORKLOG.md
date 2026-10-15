@@ -3,6 +3,45 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-202: the toolbar wraps at its trailing group and never clips
+**Did (Asghar_46, builder):** the header is two units. `.top-start` (New task and the views) is
+never wider than the header and never splits, so the views wrap pill by pill beside New task.
+`.top-end` (Help, Settings, then the status area: meter, mode, live) drops whole to a second line
+at its inline end, and wraps inside only when it alone is wider than the header. Help and Settings
+left the views nav for it. Waiting for you's and Problems' counts are `HeadCount`
+(`app/src/HeadCount.tsx`): `.count-reserve`, three tabular digits wide, empty and hidden at zero.
+`.views` uses `margin-inline-start`. Tests: `AppToolbar.test.tsx`; AccountMeter's header test
+follows the new nesting, Display's reads `<HeadCount n={needs}`. Docs: DESIGN ("Fixed places", the meter's "Never clipped"), AS_BUILT,
+manual 04, a new `docs/now/toolbar.md` (board.md and accounts.md link it).
+**Fixed:** main (since 0113) no longer cut anything at 1100 px with the 320 px sidebar, but it took
+4 lines: New task alone, the views, Help and Settings with the views, then the status. A poll
+moved the board 0.3 px (a count box appearing). → The views' nav went under New task because a
+wrapping row places items by their whole width → New task and the views share one unit capped at
+the header's width, and the counts keep their room.
+**Verified:** headless WebKit on a synthetic fixture, 44 runs before and after (ADHD, Standard,
+Focus × en, fa × 1100, 1440 × light, dark; the seven themes; 125%; the meter with 0, 1 and 2
+accounts; polls), every control's box inside the header and clickable: `BAD (0)`. 1100: 3 lines
+(118 px). The poll 9 → 275 / 0 → 12 at 1100 and at the one-line width (en 1888, fa 1812) changes no
+height or board top. Shots and scripts in `.muster/attachments/0202/`.
+**Review:** an independent change-reviewer (correctness, a11y/RTL) found that the docs overclaimed
+"a poll never moves the board" (narrowed in DESIGN, now/toolbar.md, manual 04), the AC1 row-three
+gap and the landmark nit.
+**Fixed (Asghar_47, review round 1):** R1: a poll from 0 to 3 unchecked visions took the toolbar
+from one line to two at 1870 px → the quiet count rendered only when non-zero → it's a `HeadCount`
+too (`quiet`: a `<small>`, 2 px more room for its outline), and the empty slot carries a zero-width
+strut, since an empty inline-block sat on its bottom edge and moved the line 0.3 px. R2: the hidden
+Problems slot sat between the label and the quiet count → `HeadCounts` puts shown counts first.
+R3: Help and Settings left the "Views" landmark → their own `<nav>` "Help and Settings"
+(`app.helpAndSettings`, en and fa). DESIGN and now/toolbar.md no longer carve out the quiet count.
+**Decided:** AC1 takes the lead's wording (logged on the task): both widths, nothing cut, the
+trailing unit together at the inline end of the toolbar's last line. 1440 is two lines on main too.
+**Verified (round 2):** 54 headless WebKit runs, `BAD (0)`, plus `pollv-up/down` 0 ↔ 3 unchecked at
+1100 and at the new one-line widths (en 1901, fa 1825): all 12 polls keep the header and board top
+(`.muster/attachments/0202/after-r2/`). `AppToolbar.test.tsx` pins the quiet slot, the order and
+the nav.
+**Open:** the meter's width still follows its data (accounts, "resets 14:20" vs "stale") on
+accounts-changed, not on the 2 s poll.
+
 ## 2026-10-15 — muster merge-log merges entry-wise; a gate test catches conflict markers in docs (mu-209)
 **Fixed:** a fix to an old work-log entry on main (ad8dacb's stray `||||||| base` lines) stopped every
 branch's next rebase → mu-196 took a side only when the base's entries were untouched → `merge_log.rs`

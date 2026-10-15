@@ -4,4 +4,4 @@ covers: app/src/AccountMeter.tsx, app/src/accountsData.ts, app/src-tauri/src/pro
 # Accounts and their usage
 
 - The header shows each account's 5-hour and weekly use as two bars, the reserve marked, "resets 14:20" or "stale"; read, never guessed; clicking opens Settings › Accounts. (DESIGN.md "The account meter")
-- The header wraps instead of clipping: the meter, mode and live move to a second line together. (mu-113)
+- The header wraps instead of clipping: the meter, mode and live move to a second line together, with Help and Settings before them ([toolbar](toolbar.md)). (mu-202)

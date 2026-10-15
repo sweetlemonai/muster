@@ -411,7 +411,8 @@ describe("the sidebar in each mode", () => {
 describe("what needs you, in every mode (AC3)", () => {
   it("the header's Waiting for you count doesn't read the mode", () => {
     const tab = /<Pill on=\{view === "waiting"[\s\S]*?<\/Pill>/.exec(appSource)?.[0] ?? "";
-    expect(tab).toContain("needs ?");
+    // The count keeps its room at zero (mu-202): HeadCount is the same in every mode.
+    expect(tab).toContain("<HeadCount n={needs}");
     expect(tab).not.toMatch(/look\(|modes\./);
   });
 });

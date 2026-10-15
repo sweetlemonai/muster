@@ -457,7 +457,8 @@ Drover's Menu, Modal, Overlay, Select and Lightbox are not taken: they hide or c
   says "no reading"; a paused account says "paused". Each bar's accessible name says it all:
   "cc-mg 5 h: 42% used, resets 14:20; reserve 20%".
 - **Never clipped:** the header wraps instead of hiding. The status unit (meter, mode, live) moves
-  to a second line as one piece when the row is too narrow (the 320 px sidebar at 1280 wide).
+  to a second line as one piece, with Help and Settings before it, when the row is too narrow (the
+  320 px sidebar at 1280 wide). See "Fixed places" for the toolbar's rule (mu-202).
 - No animation; logical CSS, so it mirrors in RTL. The numbers are the same as `muster accounts` gives.
 
 ## Out of the way
@@ -470,6 +471,14 @@ Visible doesn't mean loud. Controls are always there but never between the owner
 - **Fixed places.** Every control lives in the same spot on every task and screen, so the eye
   learns to skip it. Nothing jumps: no layout shift when data loads or a value changes; inline
   forms open in reserved space or push content predictably, never reflow the whole pane.
+  **The toolbar wraps at its trailing group and never clips** (mu-202): line one keeps New task and
+  the views (they wrap pill by pill beside New task when even they don't fit); Help, Settings, the
+  meter, the mode chip and live are the toolbar's end, and on a narrow window that end is a second
+  line, at its inline end, in the same order. No shortening, sideways scroll or "…" menu. The
+  counts in it (Waiting for you, Problems and its quiet count of unchecked visions) keep three
+  digits' room, the empty ones after the shown ones, so a poll that changes them never moves the
+  board's top. The lines follow the width, the language, Text size and how many accounts the meter
+  shows, never the data on a poll.
 - **Edges, not the middle.** Controls sit in a compact strip at the top or side of their area;
   the content (description, cards) gets the bulk of the space. In the task panel the description
   starts above the fold.
