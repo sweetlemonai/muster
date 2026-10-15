@@ -4,6 +4,11 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — gates-build-hg stopped; mu-185 also waits on mu-182
+**Fixed:** gates-build-hg (8fc440e1) had sat on a permission prompt since 21:13 at its "replace the stuck
+tester" step, stale since kia-131 was resumed on cc-hg and mu-131 moved on → stopped (`cc-hg-new stop`);
+its fixture reset had already landed. mu-185 now depends on 0182 as well as 0184 (lead QA_10's ask).
+
 ## 2026-10-14 — Local queues keep a history; muster restore; git clean -x refused (mu-109)
 **Did (asghar_13, builder):** new `history.rs`: a local `.muster/` queue gets a bare git at
 `<git common dir>/muster/history.git` with `.muster/` as its work tree, started by `muster init`
