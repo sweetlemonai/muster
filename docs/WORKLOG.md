@@ -4,6 +4,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Spike: how Claude Code reports 5-hour and weekly use on this Mac (mu-111)
+**Did:** short `claude -p` stream-json runs and interactive sessions with a throwaway status line,
+on Claude Code 2.1.296; findings posted on mu-9 (three comments). Fixtures for mu-113 and mu-117 in
+`app/src-tauri/tests/fixtures/` (`stream/claude-rate-limit-allowed.jsonl`,
+`stream/claude-not-logged-in.jsonl`, `statusline-rate-limits.json`).
+**Decided:** `rate_limit_event` comes on every run with camelCase fields and per-window use under
+`unifiedWindows` (not the research's snake_case); parsers key on that and ignore unknown keys. The
+rejected shape is taken from the binary, not forced live (Shapour's call).
+**Verified:** `grep -rE '/Users/|[0-9a-f]{8}-[0-9a-f]{4}-'` over the new fixtures finds nothing;
+`gate: green (pnpm install, pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Open:** cc-hg isn't logged in; the Codex CLI isn't installed, so the Codex part is mu-126's. A
+rejected run hasn't been seen live.
+
 ## 2026-10-14 — The +N more cue walks every chip in board order at a 400px board (task 0086)
 **Fixed:** at a board of 400px or less the cue's clicks landed on the same chip, or skipped a plain
 chip after a needs-you one → ColumnRow passed the last target to `overflowCue` only while the view
