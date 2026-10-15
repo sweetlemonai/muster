@@ -2567,6 +2567,10 @@ fn run_on(
                 return Ok(0);
             }
             let t = ops::takeover_task(root, id, &me(), stamp, queue::now_secs())?;
+            if let Some(line) = t.rerun_line(&key(id)) {
+                outln!("{line}");
+                return Ok(0);
+            }
             outln!(
                 "{}: took over the claim from {} ({}); heartbeat {stamp} ({})",
                 key(id),

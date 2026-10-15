@@ -915,7 +915,8 @@ and `tasks.json`, which scripts read, keep ids.
     `muster claim <note-file> --takeover --as <the same name>` once it has been quiet 30 minutes
     (a note has no handoff check-in, so its shaper hands off with `muster release <note-file>`),
     or by the owner at any time; `shaping.json` then names the new holder.
-    Every takeover is refused for another label and for the holder itself; while
+    Every takeover is refused for another label and for the holder itself (except a successor
+    running its own takeover again, below, which only moves mail); while
     the old session is still working, the refusal names it, since when, and the two ways out:
     `0042 is held by <old> since 10:00 and was last heard from 5 min ago: ask that session to run
     muster checkin 0042 "<what's done, what's next>" --handoff, or take it over after 10:35, once
@@ -924,7 +925,15 @@ and `tasks.json`, which scripts read, keep ids.
     other tasks') moves to the successor's, notes renumbered after any waiting there, and every
     `mail/asks.json` entry for that task's questions is repointed, so a later `muster answer`
     reaches the successor. The handoff's `muster inbox --session <old id>` still collects other
-    tasks' mail.
+    tasks' mail. A takeover that says its mail "wasn't all moved" has still moved the claim,
+    repointed the questions and moved every file it could: run `muster claim <id> --takeover`
+    again (task mu-156), and it moves what's left (`moved 2 messages from mail/<old>`, or
+    `nothing left to move`) without another log line. The answer hook waits for the takeover: it
+    takes the queue's lock shared, so while any muster write holds it (exclusive) it leaves the
+    mail where it is, and a check-in or pause request sent as the claim moves reaches the
+    successor; the app's reads, shared too, never hold it up. Until the rerun, the old session's
+    hook leaves that task's mail in its mailbox, so a leftover never reaches the old session. A
+    mail file the hook can't move or read is skipped, never the mail beside it.
   - Every holder in the chain counts as its builder, so neither the successor nor the old session
     may test it.
   - A handoff holds no secrets or tokens (name where a credential lives, never its value). Handoffs

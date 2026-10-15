@@ -3076,14 +3076,22 @@ fn answer_with(
 /// a note renumbered to the next free number in `to` (`ping::next_note`), any other name already
 /// waiting in `to` left where it is; and every `mail/asks.json` entry `<id>-Q<n>` naming `from`
 /// made to name `to`, so a later answer reaches the new holder.
-pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<(), String> {
+///
+/// asks.json is repointed first, and a file that can't be moved doesn't stop the others (mu-156):
+/// the error, if any, names asks.json and every file left behind, joined with `; `, and a second
+/// run moves what the first left. Returns how many files it moved.
+pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<usize, String> {
     if !is_mailbox(from) || !is_mailbox(to) {
         return Err(format!("not a mailbox: {from:?} or {to:?}"));
     }
     if from == to {
-        return Ok(());
+        return Ok(0);
     }
     let mail = root.join("mail");
+    let mut failed = Vec::new();
+    if let Err(e) = repoint_asks(&mail, id, from, to) {
+        failed.push(e);
+    }
     let src = mail.join(from);
     let dst = mail.join(to);
     let prefix = format!("{id}-");
@@ -3095,13 +3103,20 @@ pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<(), Stri
             .filter(|n| n.starts_with(&prefix) && n.ends_with(".md"))
             .collect(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(e) => return Err(format!("mail/{from}: {e}")),
+        Err(e) => {
+            failed.push(format!("mail/{from}: {e}"));
+            Vec::new()
+        }
     };
     names.sort();
     if !names.is_empty() {
-        fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+        if let Err(e) = fs::create_dir_all(&dst) {
+            failed.push(format!("mail/{to}: {e}"));
+            names.clear();
+        }
     }
     let note = format!("{id}-note-");
+    let mut moved = 0;
     for name in names {
         let is_note = name
             .strip_prefix(&note)
@@ -3115,13 +3130,22 @@ pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<(), Stri
             name.clone()
         };
         match fs::rename(src.join(&name), dst.join(&dest)) {
-            Ok(()) => {}
+            Ok(()) => moved += 1,
             // The hook delivered it meanwhile.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("mail/{from}/{name}: {e}")),
+            Err(e) => failed.push(format!("mail/{from}/{name}: {e}")),
         }
     }
-    let mut asks = read_asks(&mail)?;
+    if failed.is_empty() {
+        Ok(moved)
+    } else {
+        Err(failed.join("; "))
+    }
+}
+
+/// `move_mail`'s asks.json part: every entry `<id>-Q<n>` naming `from` made to name `to`.
+fn repoint_asks(mail: &Path, id: &str, from: &str, to: &str) -> Result<(), String> {
+    let mut asks = read_asks(mail)?;
     let mut changed = false;
     let q = format!("{id}-Q");
     for (k, v) in asks.iter_mut() {
@@ -3135,7 +3159,8 @@ pub fn move_mail(root: &Path, id: &str, from: &str, to: &str) -> Result<(), Stri
     }
     if changed {
         let reg = serde_json::to_string_pretty(&asks).map_err(|e| e.to_string())?;
-        write_atomic(&mail.join("asks.json"), &format!("{reg}\n"))?;
+        write_atomic(&mail.join("asks.json"), &format!("{reg}\n"))
+            .map_err(|e| format!("mail/asks.json: {e}"))?;
     }
     Ok(())
 }
@@ -5608,6 +5633,120 @@ mod tests {
         symlink(b, b.join("loop")).unwrap();
         symlink(b.join("real"), b.join("zz-alias")).unwrap();
         assert_eq!(found_in(b), vec![("real/tasks".to_string(), String::new())]);
+    }
+
+    /// `chflags uchg` on macOS: the file can't be renamed, as one that fails mid-move (mu-156).
+    #[cfg(target_os = "macos")]
+    fn pin(path: &Path, on: bool) {
+        let flag = if on { "uchg" } else { "nouchg" };
+        let ok = std::process::Command::new("chflags")
+            .arg(flag)
+            .arg(path)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "chflags {flag} {}", path.display());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn move_mail_carries_on_past_a_file_it_cant_move_and_repoints_asks_first() {
+        let d = queue();
+        let mail = d.path().join("mail");
+        let (old, new) = (mail.join("1c6af0d9"), mail.join("d6419719"));
+        fs::create_dir_all(&old).unwrap();
+        for (name, text) in [
+            ("0042-Q1.md", "answer 1"),
+            ("0042-checkin.md", "check in"),
+            ("0042-note-0001.md", "a note"),
+            ("0042-pause.md", "pause"),
+        ] {
+            fs::write(old.join(name), text).unwrap();
+        }
+        fs::write(
+            mail.join("asks.json"),
+            r#"{"0042-Q1": "1c6af0d9", "0042-Q2": "1c6af0d9", "0043-Q1": "1c6af0d9"}"#,
+        )
+        .unwrap();
+        pin(&old.join("0042-checkin.md"), true);
+        let e = move_mail(d.path(), "0042", "1c6af0d9", "d6419719").unwrap_err();
+        pin(&old.join("0042-checkin.md"), false);
+        assert!(e.starts_with("mail/1c6af0d9/0042-checkin.md: "), "{e}");
+        assert!(!e.contains("; "), "{e}");
+        // Every other file moved, the one that failed stayed.
+        let read = |p: PathBuf| fs::read_to_string(p).unwrap_or_default();
+        assert_eq!(read(new.join("0042-Q1.md")), "answer 1");
+        assert_eq!(read(new.join("0042-note-0001.md")), "a note");
+        assert_eq!(read(new.join("0042-pause.md")), "pause");
+        assert_eq!(read(old.join("0042-checkin.md")), "check in");
+        // asks.json names the new mailbox for the task's questions, not another task's.
+        let asks: serde_json::Value = serde_json::from_str(&read(mail.join("asks.json"))).unwrap();
+        assert_eq!(asks["0042-Q1"], "d6419719");
+        assert_eq!(asks["0042-Q2"], "d6419719");
+        assert_eq!(asks["0043-Q1"], "1c6af0d9");
+        // Run again, it moves the rest and says how many.
+        assert_eq!(move_mail(d.path(), "0042", "1c6af0d9", "d6419719"), Ok(1));
+        assert_eq!(read(new.join("0042-checkin.md")), "check in");
+        assert_eq!(move_mail(d.path(), "0042", "1c6af0d9", "d6419719"), Ok(0));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn move_mail_names_every_file_it_couldnt_move() {
+        let d = queue();
+        let old = d.path().join("mail/1c6af0d9");
+        fs::create_dir_all(&old).unwrap();
+        for name in ["0042-Q1.md", "0042-Q2.md", "0042-Q3.md"] {
+            fs::write(old.join(name), name).unwrap();
+        }
+        pin(&old.join("0042-Q1.md"), true);
+        pin(&old.join("0042-Q3.md"), true);
+        let e = move_mail(d.path(), "0042", "1c6af0d9", "d6419719").unwrap_err();
+        pin(&old.join("0042-Q1.md"), false);
+        pin(&old.join("0042-Q3.md"), false);
+        let parts: Vec<&str> = e.split("; ").collect();
+        assert_eq!(parts.len(), 2, "{e}");
+        assert!(parts[0].starts_with("mail/1c6af0d9/0042-Q1.md: "), "{e}");
+        assert!(parts[1].starts_with("mail/1c6af0d9/0042-Q3.md: "), "{e}");
+        assert!(d.path().join("mail/d6419719/0042-Q2.md").is_file());
+    }
+
+    #[test]
+    fn move_mail_moves_the_files_past_a_malformed_asks_json() {
+        let d = queue();
+        let mail = d.path().join("mail");
+        fs::create_dir_all(mail.join("1c6af0d9")).unwrap();
+        fs::write(mail.join("1c6af0d9/0042-Q1.md"), "answer").unwrap();
+        fs::write(mail.join("1c6af0d9/0042-note-0001.md"), "note").unwrap();
+        fs::write(mail.join("asks.json"), "[not an object").unwrap();
+        let e = move_mail(d.path(), "0042", "1c6af0d9", "d6419719").unwrap_err();
+        assert!(e.starts_with("mail/asks.json"), "{e}");
+        assert!(!e.contains("0042-"), "{e}");
+        assert!(mail.join("d6419719/0042-Q1.md").is_file());
+        assert!(mail.join("d6419719/0042-note-0001.md").is_file());
+        assert!(!mail.join("1c6af0d9/0042-Q1.md").exists());
+        // Left as it was: other askers' entries may be in it.
+        assert_eq!(
+            fs::read_to_string(mail.join("asks.json")).unwrap(),
+            "[not an object"
+        );
+    }
+
+    #[test]
+    fn move_mail_refuses_what_isnt_a_mailbox_and_counts_what_it_moved() {
+        let d = queue();
+        assert!(move_mail(d.path(), "0042", "../x", "d6419719").is_err());
+        assert!(move_mail(d.path(), "0042", "1c6af0d9", "d6419719/..").is_err());
+        assert_eq!(move_mail(d.path(), "0042", "1c6af0d9", "d6419719"), Ok(0));
+        assert_eq!(move_mail(d.path(), "0042", "1c6af0d9", "1c6af0d9"), Ok(0));
+        let old = d.path().join("mail/1c6af0d9");
+        fs::create_dir_all(old.join("delivered")).unwrap();
+        fs::write(old.join("0042-Q1.md"), "a").unwrap();
+        fs::write(old.join("0042-note-0002.md"), "b").unwrap();
+        fs::write(old.join("0043-Q1.md"), "other task").unwrap();
+        fs::write(old.join("delivered/0042-Q2.md"), "delivered").unwrap();
+        assert_eq!(move_mail(d.path(), "0042", "1c6af0d9", "d6419719"), Ok(2));
+        assert!(old.join("0043-Q1.md").is_file());
+        assert!(old.join("delivered/0042-Q2.md").is_file());
     }
 
     #[test]

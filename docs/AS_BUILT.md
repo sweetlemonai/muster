@@ -1874,8 +1874,30 @@ before it's written, so a label with `: ` is refused. Logged `<new>: took over t
 to the new one (`queue::move_mail`, notes renumbered) and its `asks.json` entries are repointed.
 A refusal says who holds it, since when, and the two ways out. A note or check-in that would read
 as a takeover or a handoff line is refused.
+The mail move (mu-156) repoints `asks.json` first, then moves each file, carrying on past one it
+can't move; the error names `asks.json` (malformed, or unwritable) and every file left behind,
+and the claim stays moved. Running the takeover again finishes it: the holder whose claim came
+from a takeover (the log's latest takeover line, with no claim into Building or Shaping after
+it, names it as the one who took over: `ops::taken_over_from`) gets the rest moved from the old
+holder that line names, never one given as an argument, and the heartbeat renewed, with no log
+line: `mu-42: you hold it already; moved 2 messages from mail/1c6af0d9`, or `nothing left to
+move`. Any other holder running it gets "you already hold".
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
-is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
+is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed. With mail
+waiting it takes the queue's lock shared without waiting (mu-156: `flock(LOCK_SH | LOCK_NB)` on
+`mail/.lock`, opened with `O_NOFOLLOW`), decides whether each check-in, pause or resume request
+still stands, and only then moves it to `delivered/`. Every muster write locks it exclusive, so a
+write in progress (a takeover among them) or a lock it can't open leaves that queue's mail for the
+next call, and a request racing a takeover is left for the mail move to carry to the successor,
+never retired in between. Shared is enough: the app's settled reads hold it shared every 2 s and
+don't delay the mail, and two hooks never hand a file over twice (the rename happens once; the
+loser skips it). Mail for a task whose claim was taken over from this session (the task in
+Building or Shaping, its latest takeover line naming this session as the old holder, no claim
+after it) stays in the mailbox for the takeover's rerun to move; a task file that can't be read
+(not UTF-8, no permission) or found counts as no takeover, so its mail goes out. Each file is decided, moved and
+read on its own: one that can't be moved stays for the next call, one moved but not UTF-8 is set
+aside in `delivered/`, and the mail beside them still goes out. An empty mailbox returns before
+the lock.
 **Pick-one questions** (task 0049): `muster ask <id> "<question>" --option "<text>"…
 [--pick <a|1>] [--no-answer <a|1>]` writes 2 to 6 options (one line, 200 characters each) under
 the question as plain indented lines (`- (a) … (my pick)`, `With no answer: (a)`), so file

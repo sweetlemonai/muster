@@ -28,6 +28,51 @@ row's aria-label under All names the project. R6 agents.rs header per decision 0
 R9 Focus chips show no count while reading. R10 the recap uses the app's warm queue cache.
 **Verified:** a mutant per fix, each killed except `isdst: 0` in `local_epoch`, which is
 equivalent on macOS (its mktime gives the same answer). The gate line is in the pass.
+## 2026-10-14 — A takeover's mail always reaches the successor (mu-156)
+**Fixed (asghar_27, builder):** mu-90 review R6 and R7. A takeover whose mail move hit one bad file
+stopped there, left asks.json pointing at the old mailbox, and couldn't be retried ("you already
+hold"). `queue::move_mail` now repoints asks.json first, moves every file it can, and names
+asks.json and each file left behind in one error. Running `muster claim <id> --takeover` again as
+the session that took over moves what's left from the old holder named in the log's takeover line
+(`ops::taken_over_from`), renews the heartbeat, logs nothing, and says
+`moved 2 messages from mail/<old>` or `nothing left to move` (`TakenOver::rerun_line`, `cli.rs`).
+The answer hook moved a check-in or pause request into `delivered/` before checking it, so one
+racing a takeover reached nobody. `bin/answer-hook.py` now takes `mail/.lock` with a non-blocking
+flock (`O_NOFOLLOW`; busy or unopenable means try next call), checks, then moves.
+**Decided:** the rerun check comes before the pause and one-claim checks: it moves only mail, and a
+paused task's pause request is exactly the mail that must reach the successor. Tests make one
+rename fail with macOS `chflags uchg` (no per-file failure is portable), so those tests are
+macOS-only; the malformed-asks.json and rerun tests run everywhere. From a review pass: a holder
+with no mailbox (the owner outside a session) still gets "you already hold" on a rerun, rather
+than a false "nothing left to move".
+**Verified:** gate: green (pnpm install, pnpm check, test_task, test_commands, cargo test
+(Kiritimati)); 29 Rust `takeover`/`move_mail` tests; 3 new hook tests, one of them against a real
+`muster ping` waiting on the lock the test holds.
+**Fixed in review round 1 (Asghar_31 as asghar_27):** R1: one mail file the hook couldn't rename
+(uchg) or read (not UTF-8) raised out of `take_mail`, and the mail it had already moved to
+`delivered/` in that call was never handed over. Each file is now decided, moved and read in its
+own `try`; an unmovable one waits for the next call, an unreadable one is set aside. R2: the hook
+takes the lock `LOCK_SH | LOCK_NB` (the lead's call): every muster write locks it exclusive, so
+shared still keeps a takeover out, and the app's 2 s shared reads no longer delay mail. R3: a
+quiet takeover's leftovers could be taken by the still-running old session before the rerun. The
+hook now leaves a task's mail alone while the task is in Building or Shaping, its claim isn't this
+session's, and its latest takeover (no lease stage line after it) names this session as the old
+holder (`taken_from`, the Python twin of `ops::taken_over_from`).
+**Verified (round 1):** 3 new hook tests (a shared reader doesn't hold mail up, an exclusive one
+does; a uchg file and a non-UTF-8 file between good ones; a takeover's leftovers wait, the rerun
+moves them to the successor, and a fresh claim lets mail flow again); all 71 `bin/test_task.py`
+tests pass.
+**Fixed in review round 2 (Asghar_32 as asghar_27):** R4: none of `taken_from`'s guards had a test.
+One test now ends the takeover four ways (task moved on to Testing, a fresh claim into Building
+by a third session, the claim back with this session, a takeover line quoted in a message) and
+checks the mail goes out each time. R5: a task file `taken_from` couldn't read (not UTF-8, no
+permission) raised, and the per-file catch then held that task's mail back on every call; it now
+counts as no takeover, as the docstring said.
+**Verified (round 2):** 2 new hook tests; each guard removed in turn (stage check, lease reset,
+holds(), the ': ' guard, the read catch) turns its own case red, and restored turns it green.
+**Docs:** AS_BUILT (Takeover, Questions), PROTOCOL "Sessions", help.rs claim text and the manual's
+Commands page, docs/now/claims.md.
+
 ## 2026-10-14 — mu-98: Sessions view, cc-mg and cc-hg sessions grouped like Claude Code's agents list, with a recap per session
 **Did:** a Sessions project view (`Sessions.tsx`, `sessionsData.ts`), for All or one project:
 Needs input, Working and Completed with counts, one line per session, Completed older than a day in

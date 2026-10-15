@@ -3163,13 +3163,53 @@ pub fn reclaim_task(
 pub const TAKEOVER_QUIET: u64 = 30;
 
 /// A claim `takeover_task` moved: the task's path, who held it, and why it could be taken
-/// ("handed off", "quiet 42 min" or "owner's override").
+/// ("handed off", "quiet 42 min" or "owner's override"). For a takeover run again by the holder
+/// it made (mu-156), `moved` is how many of the task's messages it moved now from `from`'s
+/// mailbox, and `why` is "".
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TakenOver {
     pub path: String,
     pub from: String,
     pub why: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moved: Option<usize>,
+}
+
+impl TakenOver {
+    /// What `muster claim <key> --takeover` says when it was run again (mu-156): each case one
+    /// whole sentence, so it translates whole. None for a takeover.
+    pub fn rerun_line(&self, key: &str) -> Option<String> {
+        let n = self.moved?;
+        let Some(from) = crate::session::split(&self.from).1.map(|s| s.mailbox()) else {
+            return Some(format!(
+                "{key}: you hold it already; its old holder had no mailbox, so there's nothing to move"
+            ));
+        };
+        Some(match n {
+            0 => format!("{key}: you hold it already; nothing left to move from mail/{from}"),
+            1 => format!("{key}: you hold it already; moved 1 message from mail/{from}"),
+            n => format!("{key}: you hold it already; moved {n} messages from mail/{from}"),
+        })
+    }
+}
+
+/// The holder a claim held by `claimed_by` was taken over from (mu-156): the old holder in the
+/// log's latest takeover line, when that line is the claim's latest start (no stage line into
+/// Building or Shaping after it) and names `claimed_by` as the one who took over. None for a
+/// claim that didn't come from a takeover.
+fn taken_over_from(body: &str, claimed_by: &str) -> Option<String> {
+    let mut from = None;
+    for line in queue::log_section(body).unwrap_or("").lines() {
+        if let Some((s, _)) = queue::stage_line(line) {
+            if queue::has_lease(&s.to) {
+                from = None;
+            }
+        } else if let Some((_, by, old)) = queue::takeover_line(line) {
+            from = same_holder(&by, claimed_by).then_some(old);
+        }
+    }
+    from
 }
 
 /// When the claim in `body` was made or last taken over: the last stage line into Building or
@@ -3230,6 +3270,18 @@ pub fn takeover_task(
                     "{id} is in {}, not Building or Shaping; only a claim there can be taken over",
                     stage_label(&t.stage)
                 ));
+            }
+            // Run again by the session it made the holder (mu-156): only the mail moves, from the
+            // old holder the log names (never an argument), so a move that failed partway can be
+            // finished. The heartbeat is renewed; nothing is logged.
+            // A holder without a mailbox (the owner outside a session) has nowhere to move it to.
+            let has_box = crate::session::split(&who).1.is_some();
+            if has_box && !t.claimed_by.is_empty() && same_holder(&t.claimed_by, &who) {
+                let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
+                if let Some(from) = taken_over_from(body, &t.claimed_by) {
+                    out = Some((from, String::new(), true));
+                    return Ok((set_front(&text, "heartbeat", stamp)?, None));
+                }
             }
             // One claim per holder in Building; a shaper's claim in Shaping doesn't count (0097).
             if !owner && t.stage == "building" {
@@ -3326,19 +3378,29 @@ pub fn takeover_task(
             }
             let new = set_front(&text, "claimed-by", &who)?;
             let new = set_front(&new, "heartbeat", stamp)?;
-            out = Some((old, why));
+            out = Some((old, why, false));
             Ok((append_log(&new, &line), None))
         })?;
-        let (from, why) = out.ok_or("the takeover wasn't written")?;
+        let (from, why, rerun) = out.ok_or("the takeover wasn't written")?;
         // The mail follows the claim, under the same lock. The claim is moved either way, so a
-        // failure here says so rather than undoing it.
+        // failure here says so rather than undoing it, and running the takeover again finishes it.
         let mailbox = |h: &str| crate::session::split(h).1.map(|s| s.mailbox());
+        let mut moved = 0;
         if let (Some(old_box), Some(new_box)) = (mailbox(&from), mailbox(&who)) {
-            queue::move_mail(root, id, &old_box, &new_box).map_err(|e| {
-                format!("{id} is taken over, but its mail in mail/{old_box} wasn't moved: {e}")
+            moved = queue::move_mail(root, id, &old_box, &new_box).map_err(|e| {
+                if rerun {
+                    format!("{id} still has mail in mail/{old_box} that wasn't moved: {e}; run muster claim {id} --takeover again to move the rest")
+                } else {
+                    format!("{id} is taken over, but its mail in mail/{old_box} wasn't all moved: {e}; run muster claim {id} --takeover again to move the rest")
+                }
             })?;
         }
-        Ok(TakenOver { path, from, why })
+        Ok(TakenOver {
+            path,
+            from,
+            why,
+            moved: rerun.then_some(moved),
+        })
     })
 }
 
@@ -8764,8 +8826,11 @@ mod tests {
                 path: "doing/0001-t.md".into(),
                 from: OLD.into(),
                 why: "handed off".into(),
+                moved: None,
             }
         );
+        assert_eq!(t.rerun_line("mu-1"), None);
+        assert!(serde_json::to_value(&t).unwrap().get("moved").is_none());
         let text = file_0001(d.path());
         assert!(
             text.ends_with(&format!(
@@ -9138,6 +9203,195 @@ mod tests {
             takeover_task(d.path(), "0001", NEW, "2026-10-14 11:00", 0).unwrap_err(),
             "you already hold 0002; pass, return or block it first"
         );
+    }
+
+    #[test]
+    fn takeover_run_again_by_its_successor_moves_the_mail_left_behind() {
+        // mu-156: the first move left mail behind; the successor's rerun moves it, logs nothing.
+        let d = queue();
+        claimed_by_old(d.path());
+        crate::queue::ask(
+            d.path(),
+            "0001",
+            "Port?",
+            "asghar",
+            OLD_ID,
+            "2026-10-14 10:02",
+        )
+        .unwrap();
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        let mail = d.path().join("mail");
+        let (old, new) = (mail.join("1c6af0d9"), mail.join("d6419719"));
+        // Mail that the move didn't carry (as one that failed), and the asks entry it didn't repoint.
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("0001-checkin.md"), "check in").unwrap();
+        fs::write(old.join("0001-note-0001.md"), "a note").unwrap();
+        fs::write(old.join("0002-note-0001.md"), "another task's").unwrap();
+        fs::write(mail.join("asks.json"), r#"{"0001-Q1": "1c6af0d9"}"#).unwrap();
+        let before = file_0001(d.path());
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:30", 0).unwrap();
+        assert_eq!(
+            t,
+            TakenOver {
+                path: "doing/0001-t.md".into(),
+                from: OLD.into(),
+                why: String::new(),
+                moved: Some(2),
+            }
+        );
+        assert_eq!(
+            t.rerun_line("mu-1").as_deref(),
+            Some("mu-1: you hold it already; moved 2 messages from mail/1c6af0d9")
+        );
+        assert_eq!(
+            fs::read_to_string(new.join("0001-checkin.md")).unwrap(),
+            "check in"
+        );
+        assert!(new.join("0001-note-0001.md").is_file());
+        assert!(old.join("0002-note-0001.md").is_file());
+        let asks: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(mail.join("asks.json")).unwrap()).unwrap();
+        assert_eq!(asks["0001-Q1"], "d6419719");
+        // No log line, the claim the same; only the heartbeat moves.
+        let after = file_0001(d.path());
+        assert_eq!(
+            after,
+            before.replace("heartbeat: 2026-10-14 10:06", "heartbeat: 2026-10-14 10:30")
+        );
+        assert_ne!(after, before);
+        // Nothing left: it says so.
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:31", 0).unwrap();
+        assert_eq!(t.moved, Some(0));
+        assert_eq!(
+            t.rerun_line("mu-1").as_deref(),
+            Some("mu-1: you hold it already; nothing left to move from mail/1c6af0d9")
+        );
+        fs::write(old.join("0001-pause.md"), "pause").unwrap();
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:32", 0).unwrap();
+        assert_eq!(
+            t.rerun_line("mu-1").as_deref(),
+            Some("mu-1: you hold it already; moved 1 message from mail/1c6af0d9")
+        );
+        assert_eq!(serde_json::to_value(&t).unwrap()["moved"], 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn takeover_whose_mail_move_fails_partway_says_so_and_a_rerun_finishes_it() {
+        let d = queue();
+        claimed_by_old(d.path());
+        crate::queue::ask(
+            d.path(),
+            "0001",
+            "Port?",
+            "asghar",
+            OLD_ID,
+            "2026-10-14 10:02",
+        )
+        .unwrap();
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        let mail = d.path().join("mail");
+        let (old, new) = (mail.join("1c6af0d9"), mail.join("d6419719"));
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("0001-checkin.md"), "check in").unwrap();
+        fs::write(old.join("0001-note-0001.md"), "a note").unwrap();
+        let chflags = |flag: &str, name: &str| {
+            let ok = std::process::Command::new("chflags")
+                .arg(flag)
+                .arg(old.join(name))
+                .status()
+                .is_ok_and(|s| s.success());
+            assert!(ok, "chflags {flag} {name}");
+        };
+        chflags("uchg", "0001-checkin.md");
+        let e = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap_err();
+        chflags("nouchg", "0001-checkin.md");
+        assert!(
+            e.starts_with("0001 is taken over, but its mail in mail/1c6af0d9 wasn't all moved: mail/1c6af0d9/0001-checkin.md: "),
+            "{e}"
+        );
+        assert!(
+            e.ends_with("; run muster claim 0001 --takeover again to move the rest"),
+            "{e}"
+        );
+        // The claim moved, the note moved, the question's answer goes to the successor.
+        assert_eq!(only(d.path()).claimed_by, NEW);
+        assert!(new.join("0001-note-0001.md").is_file());
+        let asks: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(mail.join("asks.json")).unwrap()).unwrap();
+        assert_eq!(asks["0001-Q1"], "d6419719");
+        // Run again, the rest moves.
+        let t = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:07", 0).unwrap();
+        assert_eq!(t.moved, Some(1));
+        assert_eq!(
+            fs::read_to_string(new.join("0001-checkin.md")).unwrap(),
+            "check in"
+        );
+        // A rerun that fails too says so, and that it can be run again.
+        fs::write(old.join("0001-pause.md"), "pause").unwrap();
+        chflags("uchg", "0001-pause.md");
+        let e = takeover_task(d.path(), "0001", NEW, "2026-10-14 10:08", 0).unwrap_err();
+        chflags("nouchg", "0001-pause.md");
+        assert!(
+            e.starts_with("0001 still has mail in mail/1c6af0d9 that wasn't moved: "),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn takeover_run_again_without_a_takeover_behind_the_claim_still_refuses() {
+        let d = queue();
+        claimed_by_old(d.path());
+        let refusal = "you already hold 0001; there's nothing to take over";
+        assert_eq!(
+            takeover_task(d.path(), "0001", OLD, "2026-10-14 10:01", 0).unwrap_err(),
+            refusal
+        );
+        // Taken over, then returned to Ready and claimed again by the same session: that claim
+        // didn't come from the takeover.
+        checkin_task_with(d.path(), "0001", "bye", "", true, OLD, "2026-10-14 10:05").unwrap();
+        takeover_task(d.path(), "0001", NEW, "2026-10-14 10:06", 0).unwrap();
+        let text = file_0001(d.path());
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &format!("{text}- 2026-10-14 10:20 {NEW}: stage building → ready (released)\n- 2026-10-14 10:21 {NEW}: stage ready → building (claimed)\n"),
+        );
+        let before = file_0001(d.path());
+        assert_eq!(
+            takeover_task(d.path(), "0001", NEW, "2026-10-14 10:22", 0).unwrap_err(),
+            refusal
+        );
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+        // A takeover by another session of this one's label doesn't make it this one's.
+        assert_eq!(taken_over_from(&before, OLD), None);
+        let line =
+            format!("- 2026-10-14 10:06 {NEW}: took over the claim from {OLD} (handed off)\n");
+        assert_eq!(
+            taken_over_from(&format!("## Log\n{line}"), NEW),
+            Some(OLD.to_string())
+        );
+        assert_eq!(taken_over_from(&format!("## Log\n{line}"), OLD), None);
+    }
+
+    #[test]
+    fn takeover_run_again_by_a_holder_without_a_mailbox_still_refuses() {
+        // The owner outside a session took over: it has no mailbox to move mail into, so a
+        // second run doesn't claim there's nothing left (mu-156 review).
+        let d = queue();
+        claimed_by_old(d.path());
+        takeover_task(d.path(), "0001", "owner", "2026-10-14 10:01", 0).unwrap();
+        let old = d.path().join("mail/1c6af0d9");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("0001-checkin.md"), "check in").unwrap();
+        let before = file_0001(d.path());
+        assert_eq!(
+            takeover_task(d.path(), "0001", "owner", "2026-10-14 10:02", 0).unwrap_err(),
+            "you already hold 0001; there's nothing to take over"
+        );
+        assert_eq!(file_0001(d.path()), before, "nothing written");
+        assert!(old.join("0001-checkin.md").is_file());
     }
 
     #[test]

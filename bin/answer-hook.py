@@ -24,6 +24,7 @@ docs/PROTOCOL.md.
 # Annotations stay text, so this runs on macOS's own python3 (3.9) too.
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -152,6 +153,82 @@ def agent_part(agent_id: str) -> "str | None":
     return short if re.fullmatch(r"[0-9a-f]{8}", short) else None
 
 
+def queue_lock(root: Path) -> "int | None":
+    """The queue's lock (task mu-156): a shared flock on `<queue>/mail/.lock`, the file every
+    muster write locks exclusive (`queue::hold_lock`), taken without waiting. Shared is enough:
+    it keeps out every writer, a takeover's claim and mail move included, while the app's settled
+    reads (shared too) and other hooks go on beside it; two hooks never take the same file, as a
+    rename happens once and the one that loses it skips it. Its descriptor (closing it lets the
+    lock go), or None when a writer holds it or it can't be opened or locked; a symlink there is
+    never followed."""
+    try:
+        fd = os.open(str(root / "mail" / ".lock"), os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW, 0o666)
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+TAKEOVER = re.compile(r"- \d{4}-\d{2}-\d{2} \d{2}:\d{2} (.+?): took over the claim from (.+) "
+                      r"\((?:handed off|owner's override|quiet [^)]*)\)")
+LEASE_STAGE = re.compile(r"- \d{4}-\d{2}-\d{2} \d{2}:\d{2} .+?: stage \S+ → (?:building|shaping)(?: \(.*\))?")
+
+
+def taken_from(root: Path, task: str, short: str, agent: str = "") -> bool:
+    """Was `task`'s claim in Building or Shaping taken over from this session, and does the
+    takeover still stand (task mu-156)? So when the task's latest takeover line, with no claim into
+    Building or Shaping after it, names this session as the holder it was taken from, and the
+    claim isn't this session's again. Mail for it left in this mailbox is the successor's: a
+    takeover whose mail move failed is run again to carry it over (`muster claim --takeover`,
+    ops.rs taken_over_from reads the log the same way). A task file that can't be found or read
+    doesn't count."""
+    files = sorted(root.glob(f"*/{task}-*.md")) + sorted(root.glob(f"{task}-*.md"))
+    for f in files:
+        if f.is_symlink() or not f.is_file():
+            continue
+        try:
+            text = f.read_text(encoding="utf-8").replace("\r\n", "\n")
+        except (OSError, UnicodeDecodeError):
+            return False
+        fm = front_matter(text)
+        stage = fm.get("stage") or ("building" if fm.get("status") == "doing" else "")
+        if stage not in ("building", "shaping") or holds(fm, short, "claimed-by", agent):
+            return False
+        old = None
+        log = text.split("\n## Log\n", 1)[1] if "\n## Log\n" in text else ""
+        for line in log.split("\n"):
+            if line.startswith("## "):
+                break
+            if LEASE_STAGE.fullmatch(line):
+                old = None
+                continue
+            m = TAKEOVER.fullmatch(line)
+            if m and ": " not in m.group(1):
+                old = m.group(2)
+        return old is not None and holds({"claimed-by": old}, short, "claimed-by", agent)
+    return False
+
+
+def stands(root: Path, name: str, short: str, agent: str) -> bool:
+    """Does mail `name` still stand for this session? A check-in request only while it holds the
+    claim (`still_asked`), a stop request or carry-on only while that still holds
+    (`still_paused`); any other mail always. A task file that can't be read doesn't count."""
+    asked = CHECKIN_NAME.fullmatch(name)
+    pause = PAUSE_NAME.fullmatch(name)
+    try:
+        if asked:
+            return still_asked(root, asked.group(1), short, agent)
+        if pause:
+            return still_paused(root, pause.group(1), short, pause.group(2) == "pause", agent)
+    except (OSError, UnicodeDecodeError):
+        return False
+    return True
+
+
 def take_mail(root: Path, session: str, agent: str = "") -> "list[tuple[int, str]]":
     """The mail in this session's mailbox, oldest name first, each moved to delivered/ as it's
     taken and framed. One that another reader moved first is skipped, so mail is handed over
@@ -159,33 +236,49 @@ def take_mail(root: Path, session: str, agent: str = "") -> "list[tuple[int, str
     now, is moved to delivered/ without being handed over: `muster checkin` would refuse it. So is
     a stop request for a task no longer paused, or a carry-on for one paused again, or either one
     for a task this session no longer works on. A teammate (`agent`, task 0090) reads its own
-    mailbox inside its lead's; the lead takes only files, never a teammate's folder."""
+    mailbox inside its lead's; the lead takes only files, never a teammate's folder.
+
+    With mail waiting it holds the queue's lock shared (task mu-156), and decides each one before
+    moving it: a takeover moves the claim and its mail under that lock, exclusive, so a request is
+    handed over, retired, or left in the mailbox for the takeover to carry to the successor, never
+    retired in between. While a muster write holds the lock, all of this queue's mail waits for the
+    next call; the hook never waits for it. Mail for a task taken over from this session stays in
+    the mailbox for the takeover's rerun to move. A file that can't be moved stays for the next
+    call; one moved but unreadable is set aside in delivered/; neither stops the rest."""
     short = session.strip().lower()[:8]
     if not re.fullmatch(r"[0-9a-f]{8}", short):
         return []
     box = root / "mail" / short / agent if agent else root / "mail" / short
     if not box.is_dir():
         return []
+    waiting = [f for f in sorted(box.glob("*.md")) if not f.is_symlink() and f.is_file()]
+    if not waiting:
+        return []
+    lock = queue_lock(root)
+    if lock is None:
+        return []
     out = []
-    for f in sorted(box.glob("*.md")):
-        if f.is_symlink() or not f.is_file():
-            continue
+    successors: "dict[str, bool]" = {}
+    try:
         done = box / "delivered"
         done.mkdir(exist_ok=True)
-        try:
-            f.rename(done / f.name)
-        except FileNotFoundError:
-            continue
-        asked = CHECKIN_NAME.fullmatch(f.name)
-        pause = PAUSE_NAME.fullmatch(f.name)
-        try:
-            if asked and not still_asked(root, asked.group(1), short, agent):
+        for f in waiting:
+            # One file that can't be decided, moved or read is skipped, never the rest: the mail
+            # already moved to delivered/ in this call is still handed over.
+            try:
+                task = f.name[:4] if re.match(r"\d{4}-", f.name) else ""
+                if task and task not in successors:
+                    successors[task] = taken_from(root, task, short, agent)
+                if successors.get(task):
+                    continue  # the successor's: left for the takeover's rerun to move
+                keep = stands(root, f.name, short, agent)
+                f.rename(done / f.name)
+                if keep:
+                    out.append(framed(f.name, (done / f.name).read_text(encoding="utf-8")))
+            except (OSError, UnicodeDecodeError):
                 continue
-            if pause and not still_paused(root, pause.group(1), short, pause.group(2) == "pause", agent):
-                continue
-        except (OSError, UnicodeDecodeError):
-            continue
-        out.append(framed(f.name, (done / f.name).read_text(encoding="utf-8")))
+    finally:
+        os.close(lock)
     return out
 
 

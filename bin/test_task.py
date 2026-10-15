@@ -1143,6 +1143,226 @@ class TaskTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
         return r
 
+    def hold_queue_lock(self, shared: bool = False) -> subprocess.Popen:
+        """Another process holding the queue's lock (`mail/.lock`, flock) until its stdin closes:
+        exclusive as muster's writes take it, or `shared` as the app's settled reads do."""
+        code = ("import fcntl, os, sys\n"
+                "fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT, 0o666)\n"
+                f"fcntl.flock(fd, fcntl.{'LOCK_SH' if shared else 'LOCK_EX'})\n"
+                "print('locked', flush=True)\n"
+                "sys.stdin.read()\n")
+        (self.root / "mail").mkdir(exist_ok=True)
+        p = subprocess.Popen([sys.executable, "-I", "-c", code, str(self.root / "mail" / ".lock")],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(p.stdout.close)
+        self.addCleanup(p.wait)
+        self.addCleanup(p.stdin.close)
+        self.assertEqual(p.stdout.readline(), "locked\n")
+        return p
+
+    def test_mail_waits_while_the_queue_is_locked_and_comes_on_the_next_call(self):
+        # mu-156: the hook never takes or retires mail while a muster write (a takeover) holds the
+        # queue's lock; it leaves it for the next call, without waiting.
+        self.ping("0042", "--as", "owner")
+        (self.root / "mail" / "aaaa1111" / "0042-pause.md").write_text("Pause on task 0042, from owner:\nstop\n")
+        box = self.root / "mail" / "aaaa1111"
+        holder = self.hold_queue_lock()
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertTrue((box / "0042-checkin.md").is_file())
+        self.assertTrue((box / "0042-pause.md").is_file())
+        self.assertFalse((box / "delivered").exists())
+        holder.stdin.close()
+        holder.wait()
+        ctx = json.loads(self.hook("aaaa1111"))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Check-in request on task 0042, from owner.", ctx)
+        self.assertTrue((box / "delivered" / "0042-checkin.md").is_file())
+        # The task isn't paused, so the stop request is retired, not handed over.
+        self.assertNotIn("Pause on task 0042", ctx)
+        self.assertTrue((box / "delivered" / "0042-pause.md").is_file())
+        self.assertEqual(self.hook("aaaa1111"), "")
+
+    def test_a_request_whose_claim_moved_is_retired_only_under_the_lock(self):
+        # mu-156: the claim is another session's now (a takeover wrote it); while the takeover
+        # still holds the lock the request stays where the mail move will find it.
+        self.ping("0042", "--as", "owner")
+        task = self.root / "doing" / "0042-something.md"
+        task.write_text(TASK_FILE.replace("session aaaa1111", "session bbbb2222"))
+        box = self.root / "mail" / "aaaa1111"
+        holder = self.hold_queue_lock()
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertTrue((box / "0042-checkin.md").is_file())
+        self.assertFalse((box / "delivered" / "0042-checkin.md").exists())
+        holder.stdin.close()
+        holder.wait()
+        # Free again, and the request still isn't this session's: retired, not handed over.
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertFalse((box / "0042-checkin.md").exists())
+        self.assertTrue((box / "delivered" / "0042-checkin.md").is_file())
+
+    def test_a_shared_reader_of_the_queue_never_holds_the_mail_up(self):
+        # mu-156 R2: the app's settled read holds the lock shared every 2 s; the hook takes it
+        # shared too, so mail goes out beside it. Only a writer's exclusive lock makes it wait.
+        self.ping("0042", "--as", "owner")
+        box = self.root / "mail" / "aaaa1111"
+        reader = self.hold_queue_lock(shared=True)
+        self.assertIn("Check-in request on task 0042, from owner.", self.hook("aaaa1111"))
+        self.assertTrue((box / "delivered" / "0042-checkin.md").is_file())
+        reader.stdin.close()
+        reader.wait()
+        self.ping("0042", "--as", "owner")
+        writer = self.hold_queue_lock()
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertTrue((box / "0042-checkin.md").is_file())
+        writer.stdin.close()
+        writer.wait()
+        self.assertIn("Check-in request on task 0042", self.hook("aaaa1111"))
+
+    def test_a_mail_file_the_hook_cant_take_never_loses_the_ones_beside_it(self):
+        # mu-156 R1: a file that can't be moved (uchg) or read (not UTF-8) is skipped; the mail
+        # before and after it in the same call is still handed over.
+        box = self.root / "mail" / "aaaa1111"
+        box.mkdir(parents=True)
+        (box / "0042-Q1.md").write_text("Answer to Q1 on task 0042, from owner:\nAnswer: one\n")
+        (box / "0042-Q2.md").write_text("Answer to Q2 on task 0042, from owner:\nAnswer: two\n")
+        (box / "0042-Q3.md").write_bytes(b"Answer to Q3 on task 0042, from owner:\n\xff\xfe bad\n")
+        (box / "0042-Q4.md").write_text("Answer to Q4 on task 0042, from owner:\nAnswer: four\n")
+        pinned = box / "0042-Q2.md"
+        # A file that can't be renamed: pinned (uchg) on macOS, read-only to its owner elsewhere
+        # needs root to dodge, so there the check covers only the unreadable one.
+        pin = sys.platform == "darwin"
+        if pin:
+            subprocess.run(["chflags", "uchg", str(pinned)], check=True)
+        try:
+            ctx = json.loads(self.hook("aaaa1111"))["hookSpecificOutput"]["additionalContext"]
+        finally:
+            if pin:
+                subprocess.run(["chflags", "nouchg", str(pinned)], check=True)
+        self.assertIn("Answer: one", ctx)
+        self.assertIn("Answer: four", ctx)
+        self.assertNotIn("bad", ctx)
+        # The unreadable one is set aside in delivered/, not handed over or retried.
+        self.assertTrue((box / "delivered" / "0042-Q3.md").is_file())
+        self.assertTrue((box / "delivered" / "0042-Q1.md").is_file())
+        self.assertTrue((box / "delivered" / "0042-Q4.md").is_file())
+        if pin:
+            # The pinned one waited in the mailbox and goes out on the next call.
+            self.assertNotIn("Answer: two", ctx)
+            self.assertTrue(pinned.is_file())
+            self.assertIn("Answer: two", self.hook("aaaa1111"))
+        self.assertEqual(self.hook("aaaa1111"), "")
+
+    def test_mail_a_takeover_left_behind_waits_for_the_successor(self):
+        # mu-156 R3: the task was taken over from this session and some of its mail wasn't moved.
+        # The old session's hook leaves that task's mail where the rerun of the takeover finds it.
+        self.ping("0042", "--as", "owner")
+        box = self.root / "mail" / "aaaa1111"
+        (box / "0042-Q1.md").write_text("Answer to Q1 on task 0042, from owner:\nAnswer: 5173\n")
+        (box / "0043-Q1.md").write_text("Answer to Q1 on task 0043, from owner:\nAnswer: other\n")
+        task = self.root / "doing" / "0042-something.md"
+        took = ("- 2026-10-14 10:06 wt-a (session bbbb2222): took over the claim from "
+                "wt-a (session aaaa1111) (quiet 31 min)\n")
+        task.write_text(TASK_FILE.replace("session aaaa1111", "session bbbb2222") + took)
+        ctx = json.loads(self.hook("aaaa1111"))["hookSpecificOutput"]["additionalContext"]
+        # Another task's mail still goes out; this one's waits, neither handed over nor retired.
+        self.assertIn("Answer: other", ctx)
+        self.assertNotIn("0042", ctx)
+        self.assertTrue((box / "0042-Q1.md").is_file())
+        self.assertTrue((box / "0042-checkin.md").is_file())
+        # The rerun moves it to the successor, who gets it.
+        r = subprocess.run([str(MUSTER), "claim", "0042", "--takeover", "--as", "wt-a (session bbbb2222)",
+                            "--queue", str(self.root)], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("moved 2 messages from mail/aaaa1111", r.stdout)
+        self.assertIn("Answer: 5173", self.hook("bbbb2222"))
+        # Once the task is claimed afresh, the takeover no longer stands: its mail goes out again.
+        task.write_text(task.read_text().replace("session bbbb2222", "session aaaa1111")
+                        + "- 2026-10-14 11:00 wt-a (session aaaa1111): stage ready → building (claimed)\n")
+        (box / "0042-Q2.md").write_text("Answer to Q2 on task 0042, from owner:\nAnswer: again\n")
+        self.assertIn("Answer: again", self.hook("aaaa1111"))
+
+    def test_mail_flows_once_a_takeover_no_longer_stands(self):
+        # mu-156 R4: each of taken_from's guards on its own. The task was taken over from this
+        # session, then something changed that ends the takeover; its mail goes out again.
+        box = self.root / "mail" / "aaaa1111"
+        box.mkdir(parents=True, exist_ok=True)
+        task = self.root / "doing" / "0042-something.md"
+        took = ("- 2026-10-14 10:06 wt-a (session bbbb2222): took over the claim from "
+                "wt-a (session aaaa1111) (quiet 31 min)\n")
+        taken = TASK_FILE.replace("session aaaa1111", "session bbbb2222") + took
+        cases = {
+            # The task moved on to Testing: no rerun can move its mail, so it isn't held back.
+            "testing": taken.replace("status: doing", "stage: testing"),
+            # A fresh claim into Building after the takeover, by a third session.
+            "reclaimed": taken.replace("session bbbb2222", "session cccc3333")
+            + "- 2026-10-14 11:00 wt-c (session cccc3333): stage ready → building (claimed)\n",
+            # The claim is this session's again, with no stage line.
+            "held again": TASK_FILE + took,
+            # A takeover line quoted inside a message is no takeover.
+            "quoted": TASK_FILE.replace("session aaaa1111", "session bbbb2222") + (
+                "- 2026-10-14 10:06 wt-b (session bbbb2222): messaged wt-a: x: took over the claim "
+                "from wt-a (session aaaa1111) (handed off)\n"),
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                task.write_text(text)
+                (box / "0042-Q1.md").write_text(f"Answer to Q1 on task 0042, from owner:\nAnswer: {name}\n")
+                self.assertIn(f"Answer: {name}", self.hook("aaaa1111"))
+                self.assertFalse((box / "0042-Q1.md").exists())
+        # The takeover itself, unchanged, still holds the mail back.
+        task.write_text(taken)
+        (box / "0042-Q1.md").write_text("Answer to Q1 on task 0042, from owner:\nAnswer: held\n")
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertTrue((box / "0042-Q1.md").is_file())
+
+    def test_a_task_file_the_hook_cant_read_never_holds_its_mail_back(self):
+        # mu-156 R5: a task file that isn't UTF-8, can't be read, or is gone counts as no
+        # takeover, so the task's mail goes out as it did before the takeover check.
+        box = self.root / "mail" / "aaaa1111"
+        box.mkdir(parents=True, exist_ok=True)
+        task = self.root / "doing" / "0042-something.md"
+        took = ("- 2026-10-14 10:06 wt-a (session bbbb2222): took over the claim from "
+                "wt-a (session aaaa1111) (quiet 31 min)\n")
+        taken = (TASK_FILE.replace("session aaaa1111", "session bbbb2222") + took).encode()
+        task.write_bytes(taken.replace(b"synthetic", b"synth\xffetic"))
+        (box / "0042-Q1.md").write_text("Answer to Q1 on task 0042, from owner:\nAnswer: not utf-8\n")
+        self.assertIn("Answer: not utf-8", self.hook("aaaa1111"))
+        task.write_bytes(taken)
+        task.chmod(0)
+        try:
+            (box / "0042-Q2.md").write_text("Answer to Q2 on task 0042, from owner:\nAnswer: unreadable\n")
+            self.assertIn("Answer: unreadable", self.hook("aaaa1111"))
+        finally:
+            task.chmod(0o644)
+        task.unlink()
+        (box / "0042-Q3.md").write_text("Answer to Q3 on task 0042, from owner:\nAnswer: missing\n")
+        self.assertIn("Answer: missing", self.hook("aaaa1111"))
+
+    def test_the_hook_takes_the_same_lock_muster_does_and_never_follows_a_symlink(self):
+        # The lock the test holds is the one muster's writes wait for: a ping waits until it's free.
+        holder = self.hold_queue_lock()
+        p = subprocess.Popen([str(MUSTER), "ping", "0042", "--as", "owner", "--queue", str(self.root)],
+                             env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            p.wait(timeout=1)
+        holder.stdin.close()
+        holder.wait()
+        out, err = p.communicate(timeout=30)
+        self.assertEqual(p.returncode, 0, err)
+        self.assertIn("asked session aaaa1111 for a check-in", out)
+        # A symlink in the lock's place counts as busy: the mail waits.
+        lock = self.root / "mail" / ".lock"
+        lock.unlink()
+        lock.symlink_to(self.root / "elsewhere")
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertTrue((self.root / "mail" / "aaaa1111" / "0042-checkin.md").is_file())
+        self.assertFalse((self.root / "elsewhere").exists())
+        lock.unlink()
+        self.assertIn("Check-in request on task 0042", self.hook("aaaa1111"))
+        # An empty mailbox returns before the lock: none is made.
+        lock.unlink()
+        self.assertEqual(self.hook("aaaa1111"), "")
+        self.assertFalse(lock.exists())
+
     def test_a_check_in_request_reaches_the_holders_session_on_its_next_tool_call(self):
         # 0039: the owner asks from the app (or `muster ping`); the hook hands it over.
         r = self.ping("0042", "--as", "owner")
