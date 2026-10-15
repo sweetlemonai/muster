@@ -960,7 +960,7 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
     let e = match merged {
         Ok(None) => return Ok(0),
         Ok(Some(why)) => {
-            eprintln!("muster merge-log: {why}");
+            say(&format!("muster merge-log: {why}"));
             return Ok(1);
         }
         Err(e) => e,
@@ -972,11 +972,13 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
         .output();
     match out.as_ref().map(|o| o.status.code()) {
         Ok(Some(0)) => {
-            eprintln!("muster merge-log: {e}; git merge-file merged it");
+            say(&format!("muster merge-log: {e}; git merge-file merged it"));
             Ok(0)
         }
         Ok(Some(1..=127)) => {
-            eprintln!("muster merge-log: {e}; git merge-file left the conflict markers");
+            say(&format!(
+                "muster merge-log: {e}; git merge-file left the conflict markers"
+            ));
             Ok(1)
         }
         _ => {
@@ -984,12 +986,18 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
                 Ok(o) => String::from_utf8_lossy(&o.stderr).trim().to_string(),
                 Err(e) => e.to_string(),
             };
-            eprintln!(
+            say(&format!(
                 "muster merge-log: {e}; git merge-file failed too ({why}), so it's as it was"
-            );
+            ));
             Ok(2)
         }
     }
+}
+
+/// A line on stderr for the person merging, its controls shown as the CLI shows them
+/// (`i18n::escape_controls`, mu-221): it can quote a file's path or git's own words.
+fn say(line: &str) {
+    eprintln!("{}", crate::i18n::escape_controls(line));
 }
 
 /// Write the driver to the repo's own config (`.git/config`, which every worktree reads) for

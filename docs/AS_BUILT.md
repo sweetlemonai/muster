@@ -149,7 +149,7 @@ here):
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
 | `check_limit.rs` | The limit on Your check per project |
 | `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer, the Claude accounts Muster reads (`claude_accounts`), the language |
-| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window (the Digits setting, mu-151); the command line's text from `cli.json` (mu-152), and `escape_bidi` for what it prints |
+| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window (the Digits setting, mu-151); the command line's text from `cli.json` (mu-152), and `escape_controls` for what it prints (bidi and terminal controls, mu-221) |
 | `jalali.rs` | Jalali (Solar Hijri) dates for the command line in Persian (mu-152): a port of mu-151's `jalali.ts` (from @dastafzar/calendar, MIT), conversions only, and a stamp as `22 مهر 1405 23:40` |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count, in the language in effect |
@@ -2830,6 +2830,19 @@ for you's Lessons block and the Dock badge (`badge::dock_count`); `muster check`
   show every `index::is_bidi_control` character as `<U+202E>` in both languages. `print_json`
   writes raw. Under `--lang fa`, `TERM_PROGRAM=vscode` gets one stderr note (xterm.js has no RTL;
   `docs/research/2026-10-15-terminal-bidi.md`).
+- **Terminal controls (mu-221):** the same `i18n::escape_controls` in `out_str` and `err_str`
+  (and merge-log's `say`) shows every terminal control from queue text as an escape: ESC `\e`,
+  a lone CR `\r`, the rest of C0, DEL and C1 `\xNN`. CSI, OSC 8 links and OSC 52 clipboard writes
+  in a title, body, note or log line print as text. Newline and tab stay for the layout, and a CR
+  before a newline is dropped (CRLF files). `--json` is unchanged (`tests/fixtures/
+  terminal-controls.json`, made by the muster before mu-221). `tests/terminal_controls.rs` runs the
+  binary over a task carrying every kind and refuses any byte in 0x00-0x08, 0x0B-0x1F, 0x7F or
+  U+0080-U+009F. `cli::tests::no_read_command_prints_a_terminal_control` sweeps 18 read commands
+  in both languages. The source check (`every_print_goes_through_the_escaping`, which replaces
+  broken_pipe's `cli_rs_has_no_bare_print`) scans every module outside its tests for `print!`,
+  `println!`, `eprint!`, `eprintln!`, `stdout()`, `stderr()` and `out_raw(`, allowing only the
+  writers themselves, `print_json`, `main`'s failure line, `record_statusline`'s pass-through,
+  merge-log's `say` and two count-only warnings (`profiles::load`, `settings::account_labels`).
 - **Isolation (AC9):** `i18n::isolate_in` drops all 12 bidi controls from a value before
   wrapping it, in every language. The core's one nesting (a notification line inside
   `notify.inProject`) goes through `text_with`, which keeps made text's own isolates. The window

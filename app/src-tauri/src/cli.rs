@@ -112,11 +112,14 @@ fn reads_only(a: &Args) -> bool {
     }
 }
 
-/// One piece of a command's output for a person, through `out_raw`, every bidi control in it
-/// shown as `<U+XXXX>` (mu-152), in every language: a title, a note or a body can't reorder
-/// the line it's printed in.
+/// One piece of a command's output for a person, through `out_raw`, every control in it shown
+/// (`i18n::escape_controls`), in every language: a bidi control as `<U+XXXX>` (mu-152), so a
+/// title, a note or a body can't reorder the line it's printed in, and a terminal control as
+/// `\e`, `\r` or `\xNN` (mu-221), so it can't clear the screen, hide a line or write the
+/// clipboard. Every human print goes through here or `err_str` (`tests/terminal_controls.rs`
+/// refuses any other).
 fn out_str(s: &str) {
-    out_raw(&crate::i18n::escape_bidi(s));
+    out_raw(&crate::i18n::escape_controls(s));
 }
 
 /// One piece of a command's output, through `STDOUT`, as it is: `print_json`'s, which a script
@@ -133,11 +136,11 @@ fn out_raw(s: &str) {
     STDOUT.write(&mut std::io::stdout().lock(), s);
 }
 
-/// A line for a person on stderr (a warning, a refusal, a note), its bidi controls shown as
-/// `<U+XXXX>` as on stdout (mu-152): a title, a body's marker or what was typed can't reorder it.
-/// A failed write is let go, as `eprintln!` would have panicked on it.
+/// A line for a person on stderr (a warning, a refusal, a note), its controls shown as on stdout
+/// (`<U+XXXX>`, mu-152; `\e`, `\r`, `\xNN`, mu-221): a title, a body's marker or what was typed
+/// can't reorder it or drive the terminal. A failed write is let go, as `eprintln!` would have panicked on it.
 fn err_str(s: &str) {
-    let s = crate::i18n::escape_bidi(s);
+    let s = crate::i18n::escape_controls(s);
     #[cfg(test)]
     if capture::keep_err(&s) {
         return;
@@ -2587,10 +2590,10 @@ fn main_with(argv: &[String], env: Env) -> i32 {
     }
 }
 
-/// The stderr line of a refusal or failure. It may name a title: its bidi controls are shown
-/// (`<U+202E>`), as on stdout.
+/// The stderr line of a refusal or failure. It may name a title: its controls are shown
+/// (`<U+202E>`, `\e`), as on stdout.
 fn error_line(e: &str) -> String {
-    format!("muster: {}", crate::i18n::escape_bidi(e))
+    format!("muster: {}", crate::i18n::escape_controls(e))
 }
 
 fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
@@ -10401,6 +10404,94 @@ mod tests {
         }
         let (p, _) = run(&["shape", &note, "--peek", "--json"]);
         assert!(p.text.contains("یادداشت \u{202e}x"), "{}", p.text);
+    }
+
+    /// mu-221 AC1: no command prints a terminal control from queue text, in either language, on
+    /// stdout or stderr: a task's title, body and log, a backlog note and a question each hold
+    /// ESC, CSI, OSC 52, CR, BEL, DEL and a C1 CSI, written into their files by hand.
+    #[test]
+    fn no_read_command_prints_a_terminal_control() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let home = crate::testkit::tempdir().unwrap();
+        let h = home.path().to_string_lossy().to_string();
+        let env = vars_env(&[("HOME", &h)]);
+        let run = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            capture::output(|| run_with(&v, &env))
+        };
+        let payload = "\x1b[2J\x1b]52;c;ZXZpbA==\x07lone\rCR\x7f\u{9b}31m";
+        assert_eq!(run(&["new", "Evil one", "--body", "Evil two"]).1, Ok(0));
+        assert_eq!(run(&["note", "1", "Evil three"]).1, Ok(0));
+        let (p, added) = run(&["add", "Evil four"]);
+        assert_eq!(added, Ok(0));
+        let note = p.text.trim().to_string();
+        assert_eq!(run(&["new", "Shaped"]).1, Ok(0));
+        assert_eq!(run(&["stage", "2", "shaping"]).1, Ok(0));
+        let asked = ["ask", "2", "Evil five?", "--session", "aaaa1111"];
+        assert_eq!(run(&asked).1, Ok(0));
+        let mut written = 0;
+        let mut dirs = vec![d.path().to_path_buf()];
+        while let Some(dir) = dirs.pop() {
+            for f in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = f.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|x| x == "md") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    written += text.matches("Evil ").count();
+                    let evil = text.replace("Evil ", &format!("Evil {payload} "));
+                    std::fs::write(&path, evil).unwrap();
+                }
+            }
+        }
+        assert!(written >= 5, "{written}");
+        assert_eq!(run(&["index"]).1, Ok(0));
+        let shown = r"Evil \e[2J\e]52;c;ZXZpbA==\x07lone\rCR\x7f\x9b31m ";
+        let cmds: [&[&str]; 18] = [
+            &["list"],
+            &["list", "--all"],
+            &["show", "1"],
+            &["show", "2"],
+            &["ready"],
+            &["ready", "--parallel"],
+            &["history"],
+            &["check"],
+            &["index", "--check"],
+            &["lessons"],
+            &["ledger"],
+            &["shape", &note, "--peek"],
+            &["vision", "1"],
+            &["vision", "--all"],
+            &["clarify"],
+            &["team"],
+            &["projects"],
+            &["show", "Evil"],
+        ];
+        let is_terminal_control = |c: &char| c.is_control() && *c != '\n' && *c != '\t';
+        let mut printed = 0;
+        for cmd in cmds {
+            for l in ["en", "fa"] {
+                let mut a = cmd.to_vec();
+                a.extend(["--lang", l]);
+                let (p, _) = run(&a);
+                let bad: Vec<_> = p
+                    .text
+                    .chars()
+                    .chain(p.err.chars())
+                    .filter(is_terminal_control)
+                    .collect();
+                assert!(bad.is_empty(), "{a:?}: {bad:?}\n{}\n{}", p.text, p.err);
+                if p.text.contains(shown) || p.err.contains(shown) {
+                    printed += 1;
+                }
+            }
+        }
+        assert!(
+            printed >= 14,
+            "only {printed} runs printed the queue's text"
+        );
     }
 
     /// What a test's run printed, and how it ended.

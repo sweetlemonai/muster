@@ -441,7 +441,7 @@ fn cli_file(locale: &str) -> Option<&'static Value> {
 /// The command line's text for `key` in `locale`, falling back to English, then to the key.
 /// Unlike `text_in`, `{{count}}` and `args` go in as they are: Latin digits (a count or a key is
 /// copied into the next command) and no isolates (a terminal shows them as boxes). What reaches
-/// the terminal has its bidi controls escaped at the output (`escape_bidi`).
+/// the terminal has its controls escaped at the output (`escape_controls`).
 pub fn cli_text(locale: &str, key: &str, count: Option<u64>, args: &[(&str, &str)]) -> String {
     let in_file = |l: &str| cli_file(l).and_then(|f| pick_in(f, l, key, count));
     let template = in_file(locale).or_else(|| in_file("en")).unwrap_or(key);
@@ -466,19 +466,32 @@ pub fn cli_has(locale: &str, key: &str) -> Option<&'static str> {
     dig(cli_file(locale)?, key)
 }
 
-/// `s` with every bidi control (`index::is_bidi_control`) written as `<U+XXXX>` (mu-152): what a
-/// command prints for a person shows a title's override instead of obeying it, so a crafted title
-/// can't reorder the line (Trojan Source).
-pub fn escape_bidi(s: &str) -> String {
-    if !s.chars().any(crate::index::is_bidi_control) {
+/// `s` as a terminal may be given it: what a command prints for a person shows a control in queue
+/// text instead of obeying it. Every bidi control (`index::is_bidi_control`) is `<U+XXXX>`
+/// (mu-152), so a crafted title can't reorder the line (Trojan Source). Every terminal control
+/// (mu-221), C0 but newline and tab, DEL and C1, is a visible escape: ESC `\e`, CR `\r`, the rest
+/// `\xNN` (BEL `\x07`, DEL `\x7f`, the C1 CSI `\x9b`), so a title can't clear the screen, hide a
+/// line, set the window's title, make a link or write the clipboard (CSI, OSC 8, OSC 52). Newline
+/// and tab stay: the output's own layout uses them. A CR before a newline goes, so a file with
+/// CRLF line ends prints as plain lines.
+pub fn escape_controls(s: &str) -> String {
+    let shown_as_is = |c: char| c == '\n' || c == '\t';
+    let escaped = |c: char| crate::index::is_bidi_control(c) || (c.is_control() && !shown_as_is(c));
+    if !s.chars().any(escaped) {
         return s.to_string();
     }
     let mut out = String::with_capacity(s.len() + 16);
-    for c in s.chars() {
-        if crate::index::is_bidi_control(c) {
-            out.push_str(&format!("<U+{:04X}>", u32::from(c)));
-        } else {
-            out.push(c);
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' if chars.peek() == Some(&'\n') => {}
+            '\r' => out.push_str(r"\r"),
+            '\x1b' => out.push_str(r"\e"),
+            c if crate::index::is_bidi_control(c) => {
+                out.push_str(&format!("<U+{:04X}>", u32::from(c)));
+            }
+            c if escaped(c) => out.push_str(&format!(r"\x{:02x}", u32::from(c))),
+            c => out.push(c),
         }
     }
     out
@@ -758,7 +771,7 @@ pub(crate) mod tests {
         assert_eq!(cli_text("de", "terminal.vscode", None, &[]), en);
         assert_eq!(cli_text("fa", "no.such", Some(3), &[("a", "b")]), "no.such");
         // Counts and values as they are: Latin digits, no isolates, a value's controls kept for
-        // the output's own escaping (`escape_bidi`).
+        // the output's own escaping (`escape_controls`).
         let file: Value = serde_json::from_str(
             r#"{"n_one": "{{count}} تسک {{id}}", "n_other": "{{count}} تسک: {{id}}"}"#,
         )
@@ -802,15 +815,43 @@ pub(crate) mod tests {
 
     /// mu-152 D3: each bidi control as `<U+XXXX>`, the rest as it is.
     #[test]
-    fn escape_bidi_names_every_control() {
+    fn escape_controls_names_every_bidi_control() {
         for c in bidi_cases().controls {
             let name = format!("<U+{:04X}>", u32::from(c));
-            assert_eq!(escape_bidi(&format!("a{c}b")), format!("a{name}b"));
+            assert_eq!(escape_controls(&format!("a{c}b")), format!("a{name}b"));
         }
-        assert_eq!(escape_bidi("Pay \u{202e}ecivni"), "Pay <U+202E>ecivni");
-        assert_eq!(escape_bidi("\u{61c}"), "<U+061C>");
-        assert_eq!(escape_bidi("تسک mu-1 ~/.ssh\n"), "تسک mu-1 ~/.ssh\n");
-        assert_eq!(escape_bidi(""), "");
+        assert_eq!(escape_controls("Pay \u{202e}ecivni"), "Pay <U+202E>ecivni");
+        assert_eq!(escape_controls("\u{61c}"), "<U+061C>");
+        assert_eq!(escape_controls("تسک mu-1 ~/.ssh\n"), "تسک mu-1 ~/.ssh\n");
+        assert_eq!(escape_controls(""), "");
+    }
+
+    /// mu-221: every terminal control as a visible escape, newline and tab as they are.
+    #[test]
+    fn escape_controls_shows_every_terminal_control() {
+        let c0 = (0u32..0x20).filter(|&n| n != 0x0a && n != 0x09);
+        for n in c0.chain([0x7f]).chain(0x80..0xa0) {
+            let c = char::from_u32(n).unwrap();
+            let name = match c {
+                '\x1b' => r"\e".to_string(),
+                '\r' => r"\r".to_string(),
+                _ => format!(r"\x{n:02x}"),
+            };
+            assert_eq!(escape_controls(&format!("a{c}b")), format!("a{name}b"));
+        }
+        assert_eq!(escape_controls("a\tb\nc\n"), "a\tb\nc\n");
+        assert_eq!(
+            escape_controls("\x1b[2J\x1b]52;c;ZXZpbA==\x07\u{9b}31m\x7f\0"),
+            r"\e[2J\e]52;c;ZXZpbA==\x07\x9b31m\x7f\x00"
+        );
+        // CRLF line ends are line ends; a lone CR, or one at the end, is shown.
+        assert_eq!(escape_controls("a\r\nb\r\n"), "a\nb\n");
+        assert_eq!(escape_controls("a\rb\r"), r"a\rb\r");
+        assert_eq!(escape_controls("a\r\r\nb"), "a\\r\nb");
+        // Both kinds in one string.
+        assert_eq!(escape_controls("\u{202e}x\x1by"), r"<U+202E>x\ey");
+        // Printable text past Latin-1 is left alone, C1's neighbours too.
+        assert_eq!(escape_controls("\u{7e}\u{a0}é—"), "\u{7e}\u{a0}é—");
     }
 
     /// The bidi cases both sides share (src/i18n/fixtures/bidi-controls.json): every control by

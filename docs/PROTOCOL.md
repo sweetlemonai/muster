@@ -3,6 +3,15 @@
 > **Language (mu-152):** agents get English. `--lang fa` is the owner's, and inside an agent
 > session `MUSTER_LANG` is ignored; `--json`, task files and logs are English in every language.
 
+> **Output (mu-152, mu-221):** what `muster` prints for a person, on stdout and stderr, never
+> carries a control character from queue text. A bidi control shows as `<U+202E>`. A terminal
+> control shows as an escape: ESC `\e`, CR `\r`, and the rest of C0, DEL and C1 as `\xNN` (BEL
+> `\x07`, the C1 CSI `\x9b`). So a title, body, note or log line can't clear the screen, hide a
+> line, set the window's title, make a link or write the clipboard. Newline and tab print as they
+> are, and CRLF line ends print as plain ones. Task files keep what was written. `--json` is
+> unchanged, byte for byte: JSON escapes C0 itself, but DEL and C1 stay raw there, so a script that
+> shows `--json` text to a person escapes it first.
+
 > **Gate records (Muster mu-131, 2026-10-14, decision 0014, `docs/GATES.md`).** A started task
 > leaves Testing only when every gate it needs is green **at the branch's tip**. G1 (build) is the
 > gate line and the merge's own gate run; G2 (code review) is the review of record below. G3

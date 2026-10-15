@@ -167,22 +167,5 @@ fn a_refusal_keeps_its_status_and_its_stderr_line() {
     assert!(!err.contains("panicked"), "{err}");
 }
 
-#[test]
-fn cli_rs_has_no_bare_print() {
-    let src = include_str!("../src/cli.rs");
-    let bare: Vec<_> = src
-        .lines()
-        .enumerate()
-        .filter(|(_, l)| {
-            ["print!(", "println!("]
-                .iter()
-                .any(|m| l.match_indices(m).any(|(at, _)| !l[..at].ends_with('e')))
-        })
-        .map(|(n, l)| format!("{}: {l}", n + 1))
-        .collect();
-    assert!(
-        bare.is_empty(),
-        "every stdout write goes through out!/outln!:\n{}",
-        bare.join("\n")
-    );
-}
+// That every stdout write goes through out!/outln!, never a std print macro, is
+// tests/terminal_controls.rs's source check (mu-221), for stderr and every module too.

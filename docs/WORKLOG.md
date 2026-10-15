@@ -3,6 +3,24 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-221: the CLI never prints terminal control sequences from queue text
+**Did:** mu-152's `i18n::escape_bidi` is now `escape_controls`, still the one escape behind
+`out_str` and `err_str`. Besides bidi controls (`<U+202E>`), it shows every C0 control except
+newline and tab, plus DEL and C1, as `\e`, `\r` or `\xNN`. A task title, body, note or log line
+can no longer clear the screen, hide lines or write an OSC 8 link or OSC 52 clipboard.
+merge-log's stderr lines go through the same escape (`say`). `--json` is unchanged. New
+`tests/terminal_controls.rs`: the binary over a task carrying every kind, a JSON fixture made by
+the muster before this change, and a source check that scans every module for prints that skip
+the escape. It replaces broken_pipe's `cli_rs_has_no_bare_print`. Unit sweep
+`no_read_command_prints_a_terminal_control` (18 read commands, en and fa). Docs: PROTOCOL (Output
+note), AS_BUILT (Terminal controls, the i18n.rs row).
+**Decided:** a CR right before a newline is dropped, so CRLF files print as plain lines; a lone
+CR is `\r`. The alternative, `\r` at every CRLF line end, is noise with no safety gain.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati))` after the rebase onto mu-218.
+Mutants: `out_str` without the escape turns all three AC1 tests red; an `eprintln!` added to
+`ready_cmd` fails the source check at that line.
+**Open:** `--json` keeps DEL and C1 raw (serde escapes only C0), as AC2 requires; a script that
+shows JSON text to a person escapes it itself (PROTOCOL says so).
 ## 2026-10-15 — AS_BUILT brought up to date, with what's planned
 **Did:** `docs/AS_BUILT.md`: the header (main `48ae3d1`, paused), section 4's state of every part
 since 2026-10-14 (gates, sessions, run ledger, Persian, right to left, the merge-log guard and the
