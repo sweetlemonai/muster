@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { fastest } from "./fastest";
 import FilterBar from "./FilterBar";
 import {
   activeItems, applyQuery, dayContext, deleteView, EMPTY_QUERY, GROUPS, groupValues, hiddenLine, isActive, loadViews, MAX_VIEWS, removeFilter, sameQuery, saveView, storeViews,
@@ -181,15 +182,9 @@ describe("applyQuery", () => {
       }),
     );
     const query = q({ search: "crash review", filters: { stage: ["ready", "building"], tag: ["design"], captured: ["month"], changed: ["month"] } });
-    let best = Infinity;
-    let found = 0;
-    for (let run = 0; run < 7; run++) {
-      const at = performance.now();
-      found = applyQuery(many, query, ctx).length;
-      best = Math.min(best, performance.now() - at);
-    }
+    const { ms, out: found } = fastest(() => applyQuery(many, query, ctx).length);
     expect(found).toBeGreaterThan(0);
-    expect(best).toBeLessThan(16);
+    expect(ms).toBeLessThan(16);
   });
 });
 

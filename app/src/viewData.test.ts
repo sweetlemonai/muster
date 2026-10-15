@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fastest } from "./fastest";
 import { unmarked } from "./i18n";
 import { setLocale, setNumbering } from "./i18n/runtime";
 import { stampMinutes } from "./lib";
@@ -335,7 +336,7 @@ describe("timeline layout", () => {
     expect(q.left + q.width).toBeCloseTo(1);
     expect(q.width).toBeCloseTo(15 / DAY);
   });
-  it("builds and lays out 500 tasks well within a frame (best of 5, so a busy machine can't fail the gate)", () => {
+  it("builds and lays out 500 tasks well within a frame (the fastest run, so a busy machine can't fail the gate)", () => {
     const many = Array.from({ length: 500 }, (_, i) =>
       t({
         id: String(i).padStart(4, "0"), captured: `2026-10-0${1 + (i % 9)}`, stage: i % 3 ? "done" : "building",
@@ -345,15 +346,9 @@ describe("timeline layout", () => {
         ],
       }),
     );
-    const run = () => layout(spans(many, NOW), timeWindow("week", NOW, 0), "week");
-    let best = Infinity, out = run();
-    for (let i = 0; i < 5; i++) {
-      const started = performance.now();
-      out = run();
-      best = Math.min(best, performance.now() - started);
-    }
+    const { ms, out } = fastest(() => layout(spans(many, NOW), timeWindow("week", NOW, 0), "week"));
     expect(out).toHaveLength(500);
-    expect(best).toBeLessThan(16);
+    expect(ms).toBeLessThan(16);
   });
 });
 

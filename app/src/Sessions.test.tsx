@@ -3,6 +3,7 @@
 // the recap's sections, chain and Transcript button.
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { fastest } from "./fastest";
 import { setLocale } from "./i18n/runtime";
 import css from "./styles.css?raw";
 import { Mode, type DisplayMode } from "./modes";
@@ -232,12 +233,10 @@ describe("keys, names and plain text (AC6, AC7)", () => {
 });
 
 describe("speed (AC8)", () => {
-  it("renders a list of 60 sessions in under 50 ms", () => {
+  it("renders a list of 60 sessions in under 50 ms (the fastest render, mu-220)", () => {
     const rows = Array.from({ length: 60 }, (_, i) => row({ name: `S_${i}`, group: (["needs-input", "working", "completed"] as const)[i % 3], at: NOW - i * 4000 }));
-    view(list(rows));
-    const t0 = performance.now();
-    const html = view(list(rows));
-    expect(performance.now() - t0).toBeLessThan(50);
+    const { ms, out: html } = fastest(() => view(list(rows)));
+    expect(ms).toBeLessThan(50);
     expect(html.match(/data-session=/g)?.length).toBeGreaterThan(30);
   });
 });

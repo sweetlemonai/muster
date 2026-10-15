@@ -181,6 +181,14 @@ answers. The task pane, the backlog note pane and the helper load on first open.
 holds it): no file system, shell, dialog, notification, tray or network permission. Folders are picked by the core's own dialog, and the window names a queue by
 its project name, never by a path.
 
+**Speed tests** (mu-220). Four UI tests hold a time budget: `Sessions.test.tsx` (60 sessions in
+50 ms), `viewData.test.ts` (the timeline's 500 tasks in 16 ms), `filters.test.ts` (1,000 tasks in
+16 ms) and `graph.test.ts` (100 tasks in 50 ms). Each one takes the fastest of 15 runs after a
+warm-up (`fastest.ts`), so other sessions' load can't fail the gate. The bounds are the product's
+budgets, not regression tripwires: measured on 2026-10-15, only Sessions fails on a 10x slowdown
+(barely, at 51-54 ms). viewData needs about 20x, filters 60x and graph 600x
+(`.muster/attachments/0220/mutant-run-2.md`). They guard the budget, not small regressions.
+
 **Fonts and their licences** (mu-150). Latin text is the system's SF; code is SF Mono. Persian text
 is **Vazirmatn 33.003** (Saber Rastikerdar, SIL Open Font License 1.1, no Reserved Font Name),
 bundled as `Vazirmatn-fa.woff2`: the variable font (weights 100–900) cut to the Arabic-script

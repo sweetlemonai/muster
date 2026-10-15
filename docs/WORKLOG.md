@@ -3,6 +3,24 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-220: the UI's speed tests hold under machine load
+**Did (Asghar_57, builder):** the four speed tests (`Sessions.test.tsx`, `viewData.test.ts`,
+`filters.test.ts`, `graph.test.ts`) time their work with the new `fastest.ts` (+ `fastest.test.ts`):
+one warm-up, then the fastest of 15 runs, checked against the same bound as before and with each
+test's own result check. Load only adds time, so the fastest run is the code's own cost. Covers the
+backlog note of 09:57 on the same flake. `SettingsNumbering.test.tsx` uses `performance.now()` as a
+poll's timestamp, not a budget, so it stays as it was.
+**Fixed:** a single timed run failed bin/gate under load: Sessions at 53.7-111 ms against 50, and
+the timeline at 52 ms against 16 even as the best of 5. Cause: the timing measured the machine, not
+the code. Fix: the fastest of 15.
+**Decided (QA_10, the lead):** the bounds stay as they are, because they are product budgets that
+docs and decisions cite. A 10x slowdown fails only Sessions. The other three record the factor that
+does fail them. Tightening the bounds (option B) is left to a backlog note.
+**Verified:** clean fastest: Sessions 5.9 ms, viewData 1.56, filters 0.50, graph 0.29. All four are
+green 3/3 at load average 39-84. Mutants red 3/3: Sessions at 10x (51-54 ms), viewData at 20x,
+filters at 60x and graph at 600x. At 15x and 40x it was red only some of the time
+(`.muster/attachments/0220/mutant-run-2.md`).
+**Open:** apart from Sessions, these tests catch only large slowdowns. Sessions' 10x margin is thin.
 ## 2026-10-15 — mu-148: the task pane, its forms, comments, review, the Helper and Help in Persian
 **Did (Gholi_57, builder, with four area agents):** every word of the task pane in every stage
 (header, status line, stage track, Next step, priority, type, For, estimate, tags, files, links,
