@@ -1997,14 +1997,16 @@ mod tests {
 
     /// A language switch reaches the app's menus too (mu-147 R1): both switches go through
     /// `switch_lang`, and it sets the core's text, the menu bar icon and the menus. Tauri's menus
-    /// need a running app, so this reads the source; `app_menu`'s tests check what they say.
+    /// need a running app, so this reads the source; `app_menu`'s tests check what they say. It
+    /// reads code without comments (`code_only`, mu-219): a call commented out counts as gone,
+    /// and a comment naming `set_current(` in a caller is no bypass.
     #[test]
     fn switches_go_through_one_place() {
         let src = include_str!("lib.rs");
         let body = |name: &str| {
             let at = src.find(&format!("fn {name}(")).expect(name);
             let end = src[at..].find("\n}\n").expect(name);
-            &src[at..at + end]
+            code_only(&src[at..at + end])
         };
         let switch = body("switch_lang");
         for call in [
@@ -2022,6 +2024,119 @@ mod tests {
                 "{caller} switches around switch_lang"
             );
         }
+    }
+
+    /// `src` with its `//` and `/* … */` comments (nested too) blanked to spaces, line ends kept,
+    /// so it's as long as `src`. Strings, raw strings and char literals are code, so a `//` or a
+    /// `"` in one starts nothing; a lifetime like `'static` is no char literal.
+    fn code_only(src: &str) -> String {
+        let b = src.as_bytes();
+        let mut out = b.to_vec();
+        let mut blank = |at: usize| {
+            if b[at] != b'\n' {
+                out[at] = b' ';
+            }
+        };
+        let at = |i: usize| b.get(i).copied();
+        let mut i = 0;
+        while i < b.len() {
+            match (b[i], at(i + 1)) {
+                (b'/', Some(b'/')) => {
+                    while i < b.len() && b[i] != b'\n' {
+                        blank(i);
+                        i += 1;
+                    }
+                }
+                (b'/', Some(b'*')) => {
+                    let mut depth = 0;
+                    while i < b.len() {
+                        let pair = (b[i], at(i + 1));
+                        if pair == (b'/', Some(b'*')) || pair == (b'*', Some(b'/')) {
+                            depth += if pair.0 == b'/' { 1 } else { -1 };
+                            blank(i);
+                            blank(i + 1);
+                            i += 2;
+                            if depth == 0 {
+                                break;
+                            }
+                        } else {
+                            blank(i);
+                            i += 1;
+                        }
+                    }
+                }
+                (b'"', _) => {
+                    i += 1;
+                    while i < b.len() && b[i] != b'"' {
+                        i += if b[i] == b'\\' { 2 } else { 1 };
+                    }
+                    i += 1;
+                }
+                (b'r', Some(b'"' | b'#')) => {
+                    let hashes = b[i + 1..].iter().take_while(|&&c| c == b'#').count();
+                    let open = i + 1 + hashes;
+                    if at(open) != Some(b'"') {
+                        i += 1;
+                        continue;
+                    }
+                    let close = format!("\"{}", "#".repeat(hashes));
+                    i = src[open + 1..]
+                        .find(&close)
+                        .map_or(b.len(), |n| open + 1 + n + close.len());
+                }
+                (b'\'', Some(b'\\')) => {
+                    i += 3;
+                    while i < b.len() && b[i] != b'\'' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                (b'\'', Some(_)) => {
+                    let len = src[i + 1..].chars().next().map_or(1, char::len_utf8);
+                    i += if at(i + 1 + len) == Some(b'\'') {
+                        len + 2
+                    } else {
+                        1
+                    };
+                }
+                _ => i += 1,
+            }
+        }
+        String::from_utf8(out).expect("only whole chars of comments were blanked")
+    }
+
+    #[test]
+    fn code_only_blanks_comments_but_not_strings() {
+        let cut = |s: &str| {
+            code_only(s)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(cut("a();\n// b();\nc();"), "a(); c();");
+        assert_eq!(cut("a(); // b();\nc();"), "a(); c();");
+        assert_eq!(cut("a(); /* b();\n c(); */ d();"), "a(); d();");
+        assert_eq!(cut("a(); /* x /* b(); */ c(); */ d();"), "a(); d();");
+        assert_eq!(cut("a(); /* b(); // */ c();"), "a(); c();");
+        assert_eq!(
+            cut(r#"f("// k"); g("/* k */");"#),
+            r#"f("// k"); g("/* k */");"#
+        );
+        assert_eq!(
+            cut(r#"f("a \" // k \\"); // b();"#),
+            r#"f("a \" // k \\");"#
+        );
+        assert_eq!(cut(r##"f(r#"" // k"#); // b();"##), r##"f(r#"" // k"#);"##);
+        assert_eq!(cut(r#"f('"'); g('\''); // b();"#), r#"f('"'); g('\'');"#);
+        assert_eq!(
+            cut("fn f(s: &'static str) {} // b();"),
+            "fn f(s: &'static str) {}"
+        );
+        assert_eq!(cut("f('ی'); // زبان b();\ng();"), "f('ی'); g();");
+        assert_eq!(cut(r#"f('\u{6cc}'); // b();"#), r#"f('\u{6cc}');"#);
+        let mixed = "a();\n// b(); زبان\nc(); /* د */\n";
+        assert_eq!(code_only(mixed).len(), mixed.len(), "positions kept");
+        assert_eq!(code_only(mixed).lines().count(), mixed.lines().count());
     }
 
     #[test]

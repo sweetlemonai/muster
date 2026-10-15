@@ -3,6 +3,15 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-219: switches_go_through_one_place reads code, not comments
+**Fixed:** a commented-out `app_menu::set(handle)` in `switch_lang` kept the guard green (mu-147 R6)
+→ `body()` matched text, comments included → it now checks `code_only(body)`: a test-only stripper in
+`lib.rs` that blanks `//` and nested `/* */` comments outside strings, raw strings and char literals,
+keeping length and line ends. Its own test covers each form, `//` in strings, escapes and Persian text.
+**Verified:** 13 mutants on a scratch copy (`.muster/attachments/0219/mutants/`): line, trailing and
+block comments of each of the three calls, and M1-M3, all fail it; the unchanged source and a comment
+naming `set_current(` in a caller pass. `cargo clippy --all-targets -D warnings` clean; `gate: green
+(pnpm install, pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati))`.
 ## 2026-10-15 — mu-114: the run ledger, one local record per agent run, backfilled from transcripts
 **Did:** new `ledger.rs`: one JSON line per run in `ledger/YYYY-MM.jsonl` in the app's folder,
 OpenTelemetry GenAI names pinned in `SCHEMA` (`otel-genai-semconv@2026-10-14`) plus `muster.*`.
