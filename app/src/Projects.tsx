@@ -6,7 +6,7 @@ import { HomePath } from "./HomePath";
 import InlineField from "./InlineField";
 import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
-import { type Layout, layoutOf, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
+import { type Layout, layoutOf, type Pending, placeSteps, settle, shownLayout, sidebarGroups } from "./projectOrder";
 import { Swatches } from "./ProjectSwatches";
 import { RunControls } from "./Run";
 import type { Project, QueueInfo } from "./types";
@@ -78,11 +78,10 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
     if (!layout.some((g) => g.keys.includes(p.key))) return "—";
     const name = p.label || p.name;
     const named = (k: string) => list?.find((x) => x.key === k)?.label || k;
-    const step = (by: -1 | 1) => planMove(layout, { kind: "step-project", key: p.key, by }, named);
-    const [up, down] = [step(-1), step(1)];
-    const go = (plan: typeof up) => {
-      if (!plan) return;
-      track(plan, setPending, () => api.arrangeProjects(plan.order, plan.categories, plan.moved)).then(
+    const { up, down } = placeSteps(pending, core, p.key, named, setPending, (plan) => api.arrangeProjects(plan.order, plan.categories, plan.moved));
+    const go = (step: typeof up) => {
+      if (!step) return;
+      step().then(
         () => {
           onChanged();
           return load();

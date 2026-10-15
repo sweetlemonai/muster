@@ -9,7 +9,7 @@
 use crate::projects::Project;
 use crate::queue::QueueInfo;
 use serde::{Deserialize, Deserializer};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// The longest label and category kept, in characters.
 pub const MAX_LABEL: usize = 40;
@@ -31,7 +31,7 @@ pub fn clean(s: &str, max: usize) -> String {
 fn read_map<'de, D: Deserializer<'de>>(
     d: D,
     max: usize,
-) -> Result<HashMap<String, String>, D::Error> {
+) -> Result<BTreeMap<String, String>, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
     Ok(v.as_object()
         .map(|m| {
@@ -45,19 +45,19 @@ fn read_map<'de, D: Deserializer<'de>>(
         .unwrap_or_default())
 }
 
-pub fn read_labels<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String, String>, D::Error> {
+pub fn read_labels<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, String>, D::Error> {
     read_map(d, MAX_LABEL)
 }
 
 pub fn read_categories<'de, D: Deserializer<'de>>(
     d: D,
-) -> Result<HashMap<String, String>, D::Error> {
+) -> Result<BTreeMap<String, String>, D::Error> {
     read_map(d, MAX_CATEGORY)
 }
 
 /// Set the entry of the queue folder `key` to `value`, cleaned to at most `max` characters; empty
 /// takes it out (the name, or the default heading).
-pub fn set(map: &mut HashMap<String, String>, key: &str, value: &str, max: usize) {
+pub fn set(map: &mut BTreeMap<String, String>, key: &str, value: &str, max: usize) {
     let v = clean(value, max);
     if v.is_empty() {
         map.remove(key);
@@ -159,14 +159,14 @@ mod tests {
         assert_eq!(c.names.len(), 1, "the rest is kept");
         assert_eq!(
             c.labels,
-            HashMap::from([
+            BTreeMap::from([
                 ("/a".to_string(), "Muster".to_string()),
                 ("/f".to_string(), "Drover — agents".to_string()),
             ])
         );
         assert_eq!(
             c.categories,
-            HashMap::from([
+            BTreeMap::from([
                 ("/a".to_string(), "Apps".to_string()),
                 ("/d".to_string(), "Muster family".to_string()),
             ])

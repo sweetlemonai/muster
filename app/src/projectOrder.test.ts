@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accepts, dropMove, grouped, headingCounts, countsText, headingFolds, headingRanks, needsOf, readFolds, settleFolds, trackFold, trackUnfold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
+import { accepts, dropMove, foldHeading, grouped, headingCounts, countsText, headingFolds, headingRanks, needsOf, placeSteps, readBack, readFolds, runMove, settleFolds, trackFold, trackUnfold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -360,5 +360,109 @@ describe("folded headings (0070)", () => {
     expect(readFolds(set, new Map([["Apps", false], ["Tools", true]]))).toBe(set);
     expect(readFolds(set, new Map([["Apps", true], ["Tools", true]]))).toEqual({ Tools: false });
     expect(readFolds(set, new Map([["Apps", true], ["Tools", false]]))).toEqual({});
+  });
+});
+
+describe("the window's entry points, wired through (mu-88)", () => {
+  // Each component's state, as React's functional setter keeps it, and what it says.
+  const state = <T,>(start: T) => {
+    let s = start;
+    return { set: (f: (x: T) => T) => (s = f(s)), get: () => s };
+  };
+  const ui = () => {
+    const out = { said: "", problem: "" };
+    return { out, say: (t: string) => (out.said = t), problem: (t: string) => (out.problem = t) };
+  };
+  const three: Layout = [{ name: "Apps", keys: ["/a", "/b", "/c"] }];
+
+  it("Settings' ↑ shows at once and a second ↑ before the core answers plans from the first (0059 R3/R5)", async () => {
+    const pending = state<Pending | null>(null);
+    const sent: string[][] = [];
+    const save = (p: { order: string[] }) => (sent.push(p.order), new Promise<void>(() => {}));
+    const first = placeSteps(pending.get(), three, "/c", label, pending.set, save);
+    expect(first.down).toBeNull();
+    void first.up!();
+    expect(shape(pending.get()!.layout)).toEqual(["Apps: /a /c /b"]);
+    // The core hasn't read back yet: the next ↑ plans from what's shown, not from the core.
+    void placeSteps(pending.get(), three, "/c", label, pending.set, save).up!();
+    expect(sent).toEqual([["/a", "/c", "/b"], ["/c", "/a", "/b"]]);
+    expect(shape(pending.get()!.layout)).toEqual(["Apps: /c /a /b"]);
+    // At the top it can't go up; a refused save takes the move back and passes the refusal on.
+    expect(placeSteps(pending.get(), three, "/c", label, pending.set, save).up).toBeNull();
+    const fresh = state<Pending | null>(null);
+    await expect(placeSteps(null, three, "/a", label, fresh.set, () => Promise.reject("no")).down!()).rejects.toBe("no");
+    expect(fresh.get()).toBeNull();
+  });
+
+  it("a fold says so, shows at once and stays when the core keeps it (0070 R5)", async () => {
+    const folds = state<Record<string, boolean>>({});
+    const u = ui();
+    let done!: () => void;
+    const out = foldHeading("Tools", true, { setFolds: folds.set, say: u.say, problem: u.problem }, () => new Promise<void>((res) => (done = res)));
+    expect(folds.get()).toEqual({ Tools: true });
+    expect(u.out).toEqual({ said: "Tools folded", problem: "" });
+    done();
+    await out;
+    expect(folds.get()).toEqual({ Tools: true });
+    expect(u.out.problem).toBe("");
+  });
+
+  it("a fold the core refuses is put back and the refusal shown in the problem line (0070 R4/R5)", async () => {
+    const folds = state<Record<string, boolean>>({ Apps: false });
+    const u = ui();
+    await foldHeading("Tools", false, { setFolds: folds.set, say: u.say, problem: u.problem }, () => Promise.reject("no category named \"Tools\""));
+    expect(folds.get()).toEqual({ Apps: false });
+    expect(u.out).toEqual({ said: "Tools unfolded", problem: "Couldn't unfold Tools: no category named \"Tools\"" });
+  });
+
+  it("a read of the queues settles the pending move and the folds the core now says (0070 R4/R5)", () => {
+    const moved: Layout = [{ name: "Apps", keys: ["/b", "/a", "/c"] }];
+    const pending = state<Pending | null>({ layout: moved, saved: true, reads: 0 });
+    const folds = state<Record<string, boolean>>({ Apps: true, Tools: false });
+    // The core has the move and Apps' fold; Tools' unfold isn't there yet.
+    readBack(moved, new Map([["Apps", true], ["Tools", true]]), pending.set, folds.set);
+    expect(pending.get()).toBeNull();
+    expect(folds.get()).toEqual({ Tools: false });
+    // A read that doesn't have the move yet: kept, counted (settle drops it at the second).
+    const other = state<Pending | null>({ layout: moved, saved: true, reads: 0 });
+    readBack(three, new Map(), other.set, folds.set);
+    expect(other.get()).toEqual({ layout: moved, saved: true, reads: 1 });
+  });
+
+  const intoTools: Layout = [{ name: "Apps", keys: ["/a", "/b"] }, { name: "Tools", keys: ["/t"] }];
+  const moveUi = (folds: ReadonlyMap<string, boolean>) => {
+    const s = { pending: state<Pending | null>(null), folds: state<Record<string, boolean>>({}), fresh: state<string[]>(["Tools", "Later"]), u: ui() };
+    return { s, ui: { folds, setPending: s.pending.set, setFolds: s.folds.set, setFresh: s.fresh.set, say: s.u.say, problem: s.u.problem } };
+  };
+
+  it("a move under a folded heading opens it at once and keeps it open when the core has it (0057 R5, 0070)", async () => {
+    const plan = planMove(intoTools, { kind: "project", key: "/a", to: { into: "Tools" } }, label)!;
+    const { s, ui: m } = moveUi(new Map([["Apps", false], ["Tools", true]]));
+    s.u.out.problem = "an old refusal";
+    let done!: () => void;
+    const out = runMove(plan, m, () => new Promise<void>((res) => (done = res)));
+    expect(s.folds.get()).toEqual({ Tools: false });
+    expect(s.pending.get()?.layout).toBe(plan.layout);
+    expect(s.u.out).toEqual({ said: "Alpha moved to 1 of 2 in Tools; Tools unfolded", problem: "" });
+    done();
+    await out;
+    expect(s.folds.get()).toEqual({ Tools: false });
+    expect(s.pending.get()).toEqual({ layout: plan.layout, saved: true, reads: 0 });
+    expect(s.fresh.get()).toEqual(["Later"]);
+  });
+
+  it("a move the core refuses takes back its unfold and its layout, and says why (0057 R5)", async () => {
+    const plan = planMove(intoTools, { kind: "project", key: "/a", to: { into: "Tools" } }, label)!;
+    const { s, ui: m } = moveUi(new Map([["Apps", false], ["Tools", true]]));
+    await runMove(plan, m, () => Promise.reject("no such project"));
+    expect(s.folds.get()).toEqual({});
+    expect(s.pending.get()).toBeNull();
+    expect(s.fresh.get()).toEqual(["Tools", "Later"]);
+    expect(s.u.out).toEqual({ said: "Alpha moved to 1 of 2 in Tools; Tools unfolded", problem: "Couldn't keep that order: no such project" });
+    // Under an open heading: nothing to unfold, nothing to take back.
+    const open = moveUi(new Map([["Apps", false], ["Tools", false]]));
+    await runMove(plan, open.ui, () => Promise.reject("no"));
+    expect(open.s.folds.get()).toEqual({});
+    expect(open.s.u.out.said).toBe("Alpha moved to 1 of 2 in Tools");
   });
 });

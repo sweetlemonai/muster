@@ -500,14 +500,13 @@ describe("a heading reads as a heading (0082 AC1)", () => {
 });
 
 describe("the fold wiring follows the tested rules (0070 review R4, R5, R7)", () => {
+  // What each call does is tested in projectOrder.test.ts (runMove, foldHeading, readBack, mu-88).
   it("a move under a folded heading opens it at once and says both", () => {
-    expect(listSource).toContain("const opened = unfoldFor(p, folds);");
-    expect(listSource).toContain("setSaid(opened ? `${p.said}; ${opened} unfolded` : p.said);");
-    expect(listSource).toContain("trackUnfold(opened, setFoldSet, track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved)))");
+    expect(listSource).toContain("void runMove(p, { folds, setPending, setFolds: setFoldSet, setFresh, say: setSaid, problem: setProblem }, () => edit.arrange(p.order, p.categories, p.moved));");
   });
   it("a fold goes through trackFold, and each read of the queues through readFolds", () => {
-    expect(listSource).toContain("trackFold(name, folded, setFoldSet, () => edit.fold(name, folded))");
-    expect(listSource).toContain("useEffect(() => setFoldSet((f) => readFolds(f, coreFolds.current)), [queues]);");
+    expect(listSource).toContain("void foldHeading(name, folded, { setFolds: setFoldSet, say: setSaid, problem: setProblem }, () => edit.fold(name, folded));");
+    expect(listSource).toContain("useEffect(() => readBack(core.current, coreFolds.current, setPending, setFoldSet), [queues]);");
     expect(listSource).not.toMatch(/setFoldSet\(\(f\) => Object\.fromEntries/);
   });
 });
@@ -536,20 +535,22 @@ describe("the drag wiring follows the tested rules (0057 review R1, R3, R5)", ()
   it("the sidebar routes drops through dropMove and accepts, and settles a move as settle says", () => {
     expect(listSource).toContain("const m = dropMove(layout, drag, t, side);");
     expect(listSource).toContain("accepts: accepts(drag, t),");
-    expect(listSource).toContain("useEffect(() => setPending((p) => settle(p, core.current)), [queues]);");
+    expect(listSource).toContain("useEffect(() => readBack(core.current, coreFolds.current, setPending, setFoldSet), [queues]);");
     // Over nothing that takes the drag, or off the sidebar: no drop line.
     expect(listSource).toContain("onDragOver={drag ? (e) => !e.isDefaultPrevented() && hover(null) : undefined}");
     expect(listSource).toMatch(/onDragLeave=\{drag \? \(e\) => !\(e\.relatedTarget instanceof Node && e\.currentTarget\.contains\(e\.relatedTarget\)\) && hover\(null\) : undefined\}/);
   });
   it("both keep a move's bookkeeping through track, never by hand (review R6)", () => {
-    expect(listSource).toContain("track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved))");
-    expect(projectsSource).toContain("track(plan, setPending, () => api.arrangeProjects(plan.order, plan.categories, plan.moved))");
+    // runMove and placeSteps call track (projectOrder.test.ts, mu-88).
+    expect(listSource).toContain("void runMove(p, { folds, setPending,");
+    expect(projectsSource).toContain("placeSteps(pending, core, p.key, named, setPending, (plan) => api.arrangeProjects(plan.order, plan.categories, plan.moved))");
     for (const src of [listSource, projectsSource]) expect(src).not.toMatch(/setPending\(\{|setPending\(\(x\)/);
   });
   it("Settings plans each ↑ ↓ from the move it showed last", () => {
     expect(projectsSource).toContain("const layout = shownLayout(pending, core);");
     expect(projectsSource).toContain("useEffect(() => setPending((p) => settle(p, core)), [core]);");
-    expect(projectsSource).toContain('planMove(layout, { kind: "step-project", key: p.key, by }, named)');
+    expect(projectsSource).toContain("const { up, down } = placeSteps(pending, core, p.key, named, setPending,");
+    expect(projectsSource).not.toContain("planMove(");
   });
 });
 

@@ -6,7 +6,7 @@
 
 use crate::queue;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// The limit's bounds, in tasks, and its default.
@@ -43,7 +43,7 @@ fn read(v: &serde_json::Value) -> Option<Limit> {
 
 /// projects.json's `yourCheck`, entry by entry: a bad one is left out (that folder has the
 /// default), and anything but an object reads as none, so the rest of the file still loads.
-pub fn read_limits<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String, Limit>, D::Error> {
+pub fn read_limits<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, Limit>, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
     Ok(v.as_object()
         .map(|m| {
@@ -56,7 +56,7 @@ pub fn read_limits<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String, Li
 
 /// The limit of the queue at `root`: its own (the same folder, through symlinks too), else the
 /// default; None when it's Off.
-pub fn limit_for(limits: &HashMap<String, Limit>, root: &Path) -> Option<usize> {
+pub fn limit_for(limits: &BTreeMap<String, Limit>, root: &Path) -> Option<usize> {
     let own = limits.get(root.to_string_lossy().as_ref()).or_else(|| {
         let canon = |p: &Path| std::fs::canonicalize(p).ok();
         let root = canon(root)?;
@@ -73,7 +73,7 @@ pub fn limit_for(limits: &HashMap<String, Limit>, root: &Path) -> Option<usize> 
 }
 
 /// Each queue's limit in the state, from projects.json (`queue::read_state` leaves the default).
-pub fn apply(limits: &HashMap<String, Limit>, queues: &mut [queue::QueueInfo]) {
+pub fn apply(limits: &BTreeMap<String, Limit>, queues: &mut [queue::QueueInfo]) {
     for q in queues {
         q.your_check_limit = limit_for(limits, Path::new(&q.path));
     }
@@ -81,7 +81,7 @@ pub fn apply(limits: &HashMap<String, Limit>, queues: &mut [queue::QueueInfo]) {
 
 /// Set the limit of the queue folder `key` to a number from 1 to 50 or `off` (any case); empty is
 /// the default, so its entry goes. A value that isn't one changes nothing.
-pub fn set(limits: &mut HashMap<String, Limit>, key: &str, value: &str) -> Result<(), String> {
+pub fn set(limits: &mut BTreeMap<String, Limit>, key: &str, value: &str) -> Result<(), String> {
     let limit = match value.trim().to_lowercase().as_str() {
         "" => None,
         "off" => Some(Limit::Off),
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn set_takes_1_to_50_or_off_and_empty_is_the_default() {
-        let mut m = HashMap::new();
+        let mut m = BTreeMap::new();
         set(&mut m, "/p/a/tasks", " 8 ").unwrap();
         set(&mut m, "/p/b/tasks", "Off").unwrap();
         assert_eq!(limit_for(&m, Path::new("/p/a/tasks")), Some(8));
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn set_refuses_the_rest_and_changes_nothing() {
-        let mut m = HashMap::new();
+        let mut m = BTreeMap::new();
         set(&mut m, "/p/a/tasks", "8").unwrap();
         for bad in ["0", "51", "-1", "2.5", "five", "on", "1e1"] {
             assert_eq!(

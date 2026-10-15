@@ -644,7 +644,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   go under it with no category of their own; projects whose own category was the old name take the
   new one, as before; renaming it back to the folder's name clears it; a fold and a place move with
   a rename, and a merge is folded if either heading was. A migrated queue outside its group keeps
-  the group's heading as its category (`carry_over`).
+  the group's heading as its category (`carry_over`). The window's handlers are plain functions in
+  `projectOrder.ts` that the components only call (mu-88), each tested with fake setters and a save
+  that resolves or refuses: `placeSteps` (Settings' ↑/↓, planned from the move still pending),
+  `foldHeading` (a refused fold put back, the refusal in the problem line), `readBack` (a read of
+  the queues settles the pending move and the folds) and `runMove` (a refused move takes back its
+  unfold).
 - **Sidebar headings read as headings** (task 0082, `ProjectList.tsx` `CategoryHead`,
   `projectOrder.ts` `headingCounts`/`countsText`, styles.css): a 1px `--line` divider starts each
   group; the name is 15px, weight 750, in `--text` (a project's is 13px, 550; the owner saw 13px
@@ -1312,7 +1317,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   Every change to projects.json, the app's and `muster projects set`'s, goes through
   `projects::edit`: an exclusive flock on `projects.json.lock` held across load, change and
   save, and a temporary file per writer (process id and counter) renamed over it, so concurrent
-  writers keep each other's edits and a reader never sees half a file.
+  writers keep each other's edits and a reader never sees half a file. Its maps (`names`, `labels`,
+  `categories`, `gate`, `run`, `yourCheck`, `colours`, `groupNames`) are `BTreeMap`s, saved in key
+  order, so a save that changes nothing else (a fold and its unfold) keeps the file's bytes (mu-88).
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.

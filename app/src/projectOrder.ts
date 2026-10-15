@@ -302,3 +302,55 @@ export function readFolds(set: Record<string, boolean>, core: ReadonlyMap<string
   const kept = settleFolds(set, core);
   return Object.keys(kept).length === Object.keys(set).length ? set : kept;
 }
+
+// The window's entry points (mu-88): each handler's body, out of its component so a test drives it
+// with fake setters and a save that resolves or refuses. The components call these and nothing else.
+
+/** A component's functional state setter, as React's is called. */
+export type Setter<T> = (f: (s: T) => T) => void;
+/** Folds set here, by heading (0070). */
+export type Folds = Record<string, boolean>;
+/** What a screen reader hears (the polite status line) and the refusal shown (role="alert"). */
+export type Voice = { say: (text: string) => void; problem: (text: string) => void };
+
+/** Settings › Projects' ↑ and ↓ for the project `key` (0059 R3/R5): each plans from the layout
+ *  shown (the pending move's, else the core's), so a second click before the queues read back goes
+ *  on from the first, and is tracked (`track`) as it's saved. Null where it can't go. */
+export function placeSteps(pending: Pending | null, core: Layout, key: string, named: (key: string) => string, set: Setter<Pending | null>, save: (plan: Plan) => Promise<void>): { up: (() => Promise<void>) | null; down: (() => Promise<void>) | null } {
+  const layout = shownLayout(pending, core);
+  const step = (by: -1 | 1) => {
+    const plan = planMove(layout, { kind: "step-project", key, by }, named);
+    return plan ? () => track(plan, set, () => save(plan)) : null;
+  };
+  return { up: step(-1), down: step(1) };
+}
+
+/** The sidebar's fold or unfold of a heading (0070 R4/R5): said, shown at once (`trackFold`), and a
+ *  refusal put back and shown in the problem line. Never rejects. */
+export function foldHeading(name: string, folded: boolean, ui: Voice & { setFolds: Setter<Folds> }, send: () => Promise<void>): Promise<void> {
+  ui.say(`${name} ${folded ? "folded" : "unfolded"}`);
+  return trackFold(name, folded, ui.setFolds, send).catch((e: unknown) => ui.problem(`Couldn't ${folded ? "fold" : "unfold"} ${name}: ${String(e)}`));
+}
+
+/** The sidebar after a read of the queues (0070 R4/R5): the pending move settles against the
+ *  layout they give (`core`, `settle`), and so do the folds set here against theirs (`readFolds`). */
+export function readBack(core: Layout, coreFolds: ReadonlyMap<string, boolean>, setPending: Setter<Pending | null>, setFolds: Setter<Folds>): void {
+  setPending((p) => settle(p, core));
+  setFolds((f) => readFolds(f, coreFolds));
+}
+
+/** The sidebar's move (0057 R5, 0070): said, shown at once (`track`), the folded heading it moves a
+ *  project under opened at once and taken back if the core refuses (`trackUnfold`), the new heading
+ *  it filled no longer waiting (`setFresh`), and a refusal shown. Never rejects. */
+export function runMove(plan: Plan, ui: Voice & { folds: ReadonlyMap<string, boolean>; setPending: Setter<Pending | null>; setFolds: Setter<Folds>; setFresh: Setter<string[]> }, send: () => Promise<void>): Promise<void> {
+  const opened = unfoldFor(plan, ui.folds);
+  ui.say(opened ? `${plan.said}; ${opened} unfolded` : plan.said);
+  ui.problem("");
+  return trackUnfold(opened, ui.setFolds, track(plan, ui.setPending, send)).then(
+    () => {
+      const made = plan.moved?.category;
+      if (made !== undefined) ui.setFresh((f) => f.filter((x) => x !== made));
+    },
+    (e: unknown) => ui.problem(`Couldn't keep that order: ${String(e)}`),
+  );
+}

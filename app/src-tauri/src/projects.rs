@@ -6,7 +6,7 @@
 
 use crate::{layout, queue};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,31 +19,31 @@ pub struct Config {
     pub hidden: Vec<String>,
     /// Names by queue folder, from the Rename the window had before labels (0044). Still read, so a
     /// project renamed then keeps that name in commands; the window sets labels now.
-    pub names: HashMap<String, String>,
+    pub names: BTreeMap<String, String>,
     /// What the window calls a project, by queue folder (0044, `labels`): shown only, never the
     /// name commands use. A bad entry is left out when read, as with the categories.
     #[serde(deserialize_with = "crate::labels::read_labels")]
-    pub labels: HashMap<String, String>,
+    pub labels: BTreeMap<String, String>,
     /// The sidebar heading a project goes under, by queue folder (0044, `labels`).
     #[serde(deserialize_with = "crate::labels::read_categories")]
-    pub categories: HashMap<String, String>,
+    pub categories: BTreeMap<String, String>,
     /// The project's gate command by queue folder (0023): what a merge runs in the task's
     /// worktree, split into words without a shell (`bin/gate`, `make check`).
-    pub gate: HashMap<String, String>,
+    pub gate: BTreeMap<String, String>,
     /// The project's run command by queue folder (0077): what the app's Run starts in the main
     /// checkout to try the project (`bin/run`, `swift run`), split into words without a shell as
     /// the gate is; `run::plan` splits it again on every start (0079). An entry `set_run`
     /// wouldn't keep is left out when read, and never stops the rest of the file loading.
     #[serde(deserialize_with = "read_commands")]
-    pub run: HashMap<String, String>,
+    pub run: BTreeMap<String, String>,
     /// The Your check limit by queue folder (0050, `check_limit`): a number, or "off". A bad
     /// entry is left out when read, and never stops the rest of the file loading.
     #[serde(deserialize_with = "crate::check_limit::read_limits")]
-    pub your_check: HashMap<String, crate::check_limit::Limit>,
+    pub your_check: BTreeMap<String, crate::check_limit::Limit>,
     /// A colour per project, by queue folder (0057, `arrange`): one of `arrange::COLOURS`. An
     /// unknown one is left out when read.
     #[serde(deserialize_with = "crate::arrange::read_colours")]
-    pub colours: HashMap<String, String>,
+    pub colours: BTreeMap<String, String>,
     /// The sidebar's Mine order (0057, `arrange`): queue folders, first to last.
     #[serde(deserialize_with = "crate::arrange::read_order")]
     pub order: Vec<String>,
@@ -56,7 +56,7 @@ pub struct Config {
     /// A group folder's display name (0070, `arrange`): the heading its projects go under when
     /// they have no category of their own (`persianUtils` → "DashAfzar"). Read as categories are.
     #[serde(deserialize_with = "crate::labels::read_categories")]
-    pub group_names: HashMap<String, String>,
+    pub group_names: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -402,7 +402,7 @@ fn set_command(
     name: &str,
     cmd: &str,
     what: &str,
-    map: fn(&mut Config) -> &mut HashMap<String, String>,
+    map: fn(&mut Config) -> &mut BTreeMap<String, String>,
 ) -> Result<String, String> {
     let p = list(base, config)
         .into_iter()
@@ -423,7 +423,7 @@ fn set_command(
 /// projects.json's `run` (0077), entry by entry: one that isn't text, or that `set_run` would
 /// refuse or clear, is left out, and anything but an object reads as none, so the rest of the
 /// file still loads.
-fn read_commands<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String, String>, D::Error> {
+fn read_commands<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, String>, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
     Ok(v.as_object()
         .map(|m| {
@@ -1264,7 +1264,7 @@ mod tests {
         ));
         assert_eq!(
             c.run,
-            HashMap::from([("/a".to_string(), "bin/run".to_string())])
+            BTreeMap::from([("/a".to_string(), "bin/run".to_string())])
         );
         // And what's saved reads back the same.
         save(&f, &c).unwrap();
@@ -1816,5 +1816,75 @@ mod tests {
     #[should_panic(expected = "this Mac's ~/playground: give it its own with projects::use_places")]
     fn a_test_that_looks_under_this_macs_playground_fails_saying_how_to_give_its_own() {
         list(&Places::this_mac().base, &Config::default());
+    }
+
+    #[test]
+    fn folding_and_unfolding_a_heading_leaves_projects_json_byte_identical() {
+        // mu-88: every map in the file is saved in key order, so a save that changes nothing
+        // else (a fold, then its unfold) writes the same bytes, and the file never churns.
+        let base = tempfile::tempdir().unwrap();
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("cfg/projects.json");
+        let mut keys = Vec::new();
+        for i in 0..24 {
+            let q = base.path().join(format!("p{i:02}/tasks"));
+            make_queue(&q);
+            keys.push(q.to_string_lossy().to_string());
+        }
+        let heads = ["Tools", "Apps", "کارها", "Games"];
+        let colours = crate::arrange::COLOURS;
+        edit(&file, |c| {
+            for (i, k) in keys.iter().enumerate() {
+                c.categories
+                    .insert(k.clone(), heads[i % heads.len()].into());
+                c.labels.insert(k.clone(), format!("Label {i}"));
+                c.colours
+                    .insert(k.clone(), colours[i % colours.len()].into());
+                c.gate.insert(k.clone(), "bin/gate".into());
+                c.names.insert(k.clone(), format!("n{i:02}"));
+            }
+            c.group_names.insert("g1".into(), "One".into());
+            c.group_names.insert("g0".into(), "Zero".into());
+            Ok(())
+        })
+        .unwrap();
+        let before = fs::read_to_string(&file).unwrap();
+        for folded in [true, false] {
+            edit(&file, |c| {
+                let list = list(base.path(), c);
+                crate::arrange::set_folded(c, &list, "Apps", folded)
+            })
+            .unwrap();
+        }
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
+        // The keys are in order in the file itself: the first save sorts them, once.
+        let at = |k: &str| before.find(&format!("\"{k}\": \"Label")).unwrap();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert!(sorted.windows(2).all(|w| at(&w[0]) < at(&w[1])));
+    }
+
+    #[test]
+    fn read_state_passes_the_settings_through_to_the_state() {
+        // mu-73 review: the window shows State.settings; a regression would show the defaults.
+        let base = tempfile::tempdir().unwrap();
+        make_queue(&base.path().join("demo/tasks"));
+        let c = Config::default();
+        let given = crate::settings::Settings {
+            lease_minutes: 95,
+            live_minutes: 3,
+            notify: false,
+            menu_bar: false,
+            old_pauses_offered: true,
+        };
+        assert_ne!(given, crate::settings::Settings::default());
+        let s = read_state(
+            &c,
+            &list(base.path(), &c),
+            &given,
+            &mut queue::Cache::default(),
+        );
+        assert_eq!(s.settings, given);
+        assert_eq!(s.queues.len(), 1);
     }
 }
