@@ -104,6 +104,7 @@ fn reads_only(a: &Args) -> bool {
         "inbox" => a.keep,
         "index" => a.check,
         "check" => !a.fix_pauses || a.dry_run,
+        "migrate" => a.dry_run,
         "shape" => a.peek,
         "vision" => !has(&["record", "resolve"]),
         "review" => !has(&["record", "fixed", "dispute", "settle"]),
@@ -4188,6 +4189,7 @@ mod tests {
             &["index", "--check"],
             &["check"],
             &["accounts", "--json"],
+            &["migrate", "<q>", "<m>", "--dry-run"],
         ] {
             assert!(reads(r), "{r:?}");
         }
@@ -4205,6 +4207,7 @@ mod tests {
             &["check", "--fix-pauses"],
             &["accounts", "set", "mg", "reserve", "30"],
             &["accounts", "record", "--from", "statusline"],
+            &["migrate", "<q>", "<m>"],
             &["some-new-command"],
         ] {
             assert!(!reads(w), "{w:?}");

@@ -2495,7 +2495,8 @@ command that may write to the queue (note, add, new, ask, comment, pass, and any
 in `cli.rs` doesn't know as a read) that succeeded says
 `muster: note ran and its change is saved, but its output couldn't be written (…): don't run it again`,
 as `comment` does when its action stood, so nobody repeats a write for the lost output. A read
-(show, list, help, inbox --keep, …) or a refusal says `muster: can't write the output: …`. The
+(show, list, help, inbox --keep, a dry run such as `check --fix-pauses --dry-run` or
+`migrate --dry-run`, …) or a refusal says `muster: can't write the output: …`. The
 app (no arguments) doesn't use the writer.
 
 **Claims** (task 0002): `muster claim <id>` or `muster next` takes a Ready task for you, one

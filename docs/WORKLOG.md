@@ -3,6 +3,13 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-192: a migrate --dry-run whose output fails no longer says its change is saved
+**Fixed:** `migrate --dry-run` writes nothing, but `reads_only` (`cli.rs`) had no arm for migrate,
+so a lost output said "its change is saved: don't run it again" → `"migrate" => a.dry_run`. The
+reads/writes table test gains a dry-run migrate as a read and a plain one as a write (red first).
+AS_BUILT's output paragraph names the dry runs among the reads.
+**Verified:** `cargo test reads_only_knows_the_reads` (hermetic HOME) red then green; bin/gate below.
+
 ## 2026-10-15 — mu-221: the CLI never prints terminal control sequences from queue text
 **Did:** mu-152's `i18n::escape_bidi` is now `escape_controls`, still the one escape behind
 `out_str` and `err_str`. Besides bidi controls (`<U+202E>`), it shows every C0 control except
