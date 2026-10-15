@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — The card's "needs a tester" tells a teammate from its lead (mu-158)
+**Fixed (Gholi_26, builder):** a lead holding in Testing what its teammate built saw "needs a
+tester" though the core lets it test → `lib.ts` `sameHolder` compared label and session but not the
+agent that `session::same_holder` compares since 0090 → it now also requires the same agent when
+both stamps have a session (none read as the lead), so `needsTester` and the built-by line match the core.
+**Verified:** `lib.test.ts` mirrors the core's teammate, old-stamp and slot cases plus `needsTester`
+for lead, teammate and gated-in teammate; the new cases failed before the fix. Gate below.
+
 ## 2026-10-14 — Five builders moved from cc-mg to cc-hg after cc-mg's weekly limit
 **Fixed:** Asghar_20 (mu-113), Gholi_18 (mu-146), Gholi_23 (mu-98), kia-131 and gholi-131-fix2
 (mu-131) were stuck on "You've hit your weekly limit" (cc-mg, resets Oct 18). Both accounts' `projects/`

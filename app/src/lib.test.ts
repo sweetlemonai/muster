@@ -422,6 +422,47 @@ describe("the tester isn't the builder (0047)", () => {
     expect(sameHolder(A, "wt-a (session 11111111)")).toBe(false);
     expect(sameHolder(A, "wt-b (session 7b5e8856)")).toBe(false);
     expect(sameHolder("", "wt-a")).toBe(false);
+    expect(sameHolder("wt-a", "wt-b")).toBe(false);
+  });
+  // Task 0158: a teammate (0090) is its own holder, as session.rs same_holder_tells_a_lead_and_its_teammates_apart.
+  const LEAD = "asghar (main · session 7b5e8856 · cc-mg)";
+  const ONE = "asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)";
+  const TWO = "asghar (main · session 7b5e8856 · agent 0f0f0f0f · cc-mg)";
+  it("tells a lead and its teammates apart, as the core does", () => {
+    expect(sameHolder(ONE, ONE)).toBe(true);
+    // The same teammate stamped from another checkout.
+    expect(sameHolder(ONE, "asghar (wt-0090 · session 7b5e8856 · agent a1b2c3d4)")).toBe(true);
+    expect(sameHolder(LEAD, ONE)).toBe(false);
+    expect(sameHolder(ONE, LEAD)).toBe(false);
+    expect(sameHolder(ONE, TWO)).toBe(false);
+    // The same agent id under another session.
+    expect(sameHolder(ONE, "asghar (session 11111111 · agent a1b2c3d4)")).toBe(false);
+    // A bare label (unstamped) matches any.
+    expect(sameHolder(ONE, "asghar")).toBe(true);
+    expect(sameHolder("asghar", ONE)).toBe(true);
+    expect(sameHolder(ONE, "gholi (session 7b5e8856 · agent a1b2c3d4)")).toBe(false);
+    // Old stamps read as before: no agent on both is the lead.
+    expect(sameHolder("wt-a (main · session 7b5e8856 · cc-hg)", "wt-a (session 7b5e8856)")).toBe(true);
+  });
+  it("matches one role slot (0112) in one session and agent, as the core does", () => {
+    const KAVEH = "Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)";
+    expect(sameHolder(KAVEH, "coder-2 (wt-0112 · session 7b5e8856 · slot coder-2)")).toBe(true);
+    expect(sameHolder(KAVEH, "کاوه-2 (session 7b5e8856 · slot coder-2)")).toBe(true);
+    expect(sameHolder(KAVEH, "coder-2 (session 11111111 · slot coder-2)")).toBe(false);
+    expect(sameHolder(KAVEH, "Kaveh-3 (session 7b5e8856 · slot coder-3)")).toBe(false);
+    expect(sameHolder(KAVEH, "Kaveh-2")).toBe(true);
+    expect(sameHolder(KAVEH, "coder-2")).toBe(false);
+    // One slot, but a teammate's stamp against its lead's: two holders.
+    expect(sameHolder(KAVEH, "coder-2 (session 7b5e8856 · agent a1b2c3d4 · slot coder-2)")).toBe(false);
+  });
+  it("a lead testing what its teammate built doesn't need a tester; the teammate holding it does", () => {
+    expect(needsTester(task({ stage: "testing", heldBy: LEAD, builtBy: ONE }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: TWO, builtBy: ONE }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: ONE, builtBy: ONE }))).toBe(true);
+    expect(needsTester(task({ stage: "testing", heldBy: "asghar (wt-0090 · session 7b5e8856 · agent a1b2c3d4)", builtBy: ONE }))).toBe(true);
+    // Gated in by the teammate after the lead claimed it: both built it.
+    expect(needsTester(task({ stage: "testing", heldBy: ONE, builtBy: LEAD, gatedBy: ONE }))).toBe(true);
+    expect(needsTester(task({ stage: "testing", heldBy: TWO, builtBy: LEAD, gatedBy: ONE }))).toBe(false);
   });
   it("a Testing task still held by its builder needs a tester", () => {
     expect(needsTester(task({ stage: "testing", heldBy: A, builtBy: A }))).toBe(true);

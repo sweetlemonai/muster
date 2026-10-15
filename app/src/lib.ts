@@ -130,13 +130,14 @@ export function splitHolder(who: string): HolderParts {
 
 /** Is `a` the same holder as `b`? The core's session::same_holder: the same text, or the same
  *  label (or one role slot, 0112, whatever the labels say) with sessions that don't differ (one
- *  without a session matches any). */
+ *  without a session matches any) and the same agent (0090: none on both is the lead; a teammate
+ *  is never its lead, nor another teammate). */
 export function sameHolder(a: string, b: string): boolean {
   if (a === b) return true;
   const x = splitHolder(a);
   const y = splitHolder(b);
   const oneSlot = !!x.slot && x.slot === y.slot;
-  return (x.label === y.label || oneSlot) && (!x.id || !y.id || x.id === y.id);
+  return (x.label === y.label || oneSlot) && (!x.id || !y.id || (x.id === y.id && (x.agent ?? "") === (y.agent ?? "")));
 }
 
 /** Each role's name by its id (0112), as the state carries it from roles.toml. */
