@@ -29,11 +29,14 @@ export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "blockedKi
 
 /** The card's live dot (0025): one of the task's sessions changed its transcript within the LIVE
  *  window (5 minutes, or this machine's from Settings, 0036), so someone is working on it now.
- *  Nothing otherwise. */
-export function LiveDot({ t }: { t: Pick<Task, "live"> }) {
+ *  Nothing otherwise. `silent` where the words beside it already say so (the token ribbon's
+ *  "being used now", mu-172): a shape only, not read out a second time. Never animated. */
+export function LiveDot({ t, silent = false }: { t: Pick<Task, "live">; silent?: boolean }) {
   const live = useContext(Machine).liveMinutes;
   if (!t.live) return null;
-  return <i className="dot live-dot" role="img" aria-label="live" title={`A session on it is working now: its transcript changed in the last ${live} minute${live === 1 ? "" : "s"}`} />;
+  const title = `A session on it is working now: its transcript changed in the last ${live} minute${live === 1 ? "" : "s"}`;
+  if (silent) return <i className="dot live-dot" aria-hidden="true" title={title} />;
+  return <i className="dot live-dot" role="img" aria-label="live" title={title} />;
 }
 
 type Sample = { stage: string; title: string; priority: string; blocked?: boolean; needsYou?: boolean; human?: boolean };

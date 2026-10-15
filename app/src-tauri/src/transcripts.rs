@@ -24,7 +24,7 @@ use std::fs;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Transcripts larger than this aren't read (the biggest real ones are around 60 MB).
@@ -70,6 +70,16 @@ impl Tokens {
             .saturating_add(self.cache_write)
     }
 
+    /// What counts against a task's `est-tokens` (mu-172): input, output and cache writes. Cache
+    /// reads are left out: every call reads the session's whole context back from the cache, so
+    /// they grow with how long a session runs, not with the work, and swamp the rest (the median
+    /// task read 18 times its estimate). They stay visible as a kind, never counted.
+    pub fn counted(&self) -> u64 {
+        self.input
+            .saturating_add(self.output)
+            .saturating_add(self.cache_write)
+    }
+
     pub fn add(&mut self, other: &Tokens) {
         self.input = self.input.saturating_add(other.input);
         self.output = self.output.saturating_add(other.output);
@@ -109,6 +119,29 @@ pub struct Usage {
     pub skipped_lines: u64,
     /// Subagent transcripts not read: over the size cap or past `MAX_SUBAGENTS`.
     pub skipped_files: u64,
+    /// The same tokens by the minute they were used, its subagents' merged in (`Buckets`), for
+    /// the Work section's stages (mu-172). Never sent to the window.
+    #[serde(skip)]
+    pub buckets: Buckets,
+}
+
+/// Tokens by minute (mu-172): (the minute's start in seconds since 1970, what the replies stamped
+/// in it used), in order of time, one entry per minute with any use. A reply with no time stamp
+/// counts in the session's tokens and in no minute. Shared, so a cached summary hands it out
+/// without copying.
+pub type Buckets = Arc<[(u64, Tokens)]>;
+
+/// Sort `b` by minute and merge the entries of one minute.
+fn settle(mut b: Vec<(u64, Tokens)>) -> Vec<(u64, Tokens)> {
+    b.sort_by_key(|(m, _)| *m);
+    let mut out: Vec<(u64, Tokens)> = Vec::with_capacity(b.len());
+    for (m, t) in b {
+        match out.last_mut() {
+            Some((last, sum)) if *last == m => sum.add(&t),
+            _ => out.push((m, t)),
+        }
+    }
+    out
 }
 
 impl Usage {
@@ -122,6 +155,7 @@ impl Usage {
             live: false,
             skipped_lines: 0,
             skipped_files: 0,
+            buckets: Buckets::default(),
         }
     }
 
@@ -167,6 +201,7 @@ struct FileSummary {
     first: Option<u64>,
     last: Option<u64>,
     skipped_lines: u64,
+    buckets: Buckets,
 }
 
 struct Cached {
@@ -446,17 +481,25 @@ impl Reader {
             _ => 0,
         };
         u.skipped_lines = s.skipped_lines;
+        u.buckets = s.buckets;
         let (subs, over) = Self::subagents(&main);
         u.skipped_files = over;
+        let mut sub_buckets: Vec<(u64, Tokens)> = Vec::new();
         for sub in subs {
             let small = fs::metadata(&sub).is_ok_and(|m| m.len() <= MAX_TRANSCRIPT_BYTES);
             match small.then(|| self.summary(&sub)) {
                 Some(Ok(s)) => {
                     u.tokens.add(&s.tokens);
                     u.skipped_lines += s.skipped_lines;
+                    sub_buckets.extend_from_slice(&s.buckets);
                 }
                 _ => u.skipped_files += 1,
             }
+        }
+        // Only a session with subagents pays for a merged copy; the rest share the cached one.
+        if !sub_buckets.is_empty() {
+            sub_buckets.extend_from_slice(&u.buckets);
+            u.buckets = settle(sub_buckets).into();
         }
         u
     }
@@ -702,6 +745,7 @@ fn summarize(path: &Path) -> io::Result<FileSummary> {
     let mut buf = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut s = FileSummary::default();
+    let mut buckets: Vec<(u64, Tokens)> = Vec::new();
     while let Some(whole) = read_line_capped(&mut reader, &mut buf, MAX_LINE_BYTES)? {
         if !whole {
             s.skipped_lines += 1;
@@ -714,7 +758,8 @@ fn summarize(path: &Path) -> io::Result<FileSummary> {
             s.skipped_lines += 1;
             continue;
         };
-        if let Some(t) = line.timestamp.as_deref().and_then(iso_secs) {
+        let at = line.timestamp.as_deref().and_then(iso_secs);
+        if let Some(t) = at {
             s.first = Some(s.first.map_or(t, |f| f.min(t)));
             s.last = Some(s.last.map_or(t, |l| l.max(t)));
         }
@@ -728,13 +773,23 @@ fn summarize(path: &Path) -> io::Result<FileSummary> {
                 continue;
             }
         }
-        s.tokens.add(&Tokens {
+        let used = Tokens {
             input: u.input_tokens.unwrap_or(0),
             output: u.output_tokens.unwrap_or(0),
             cache_read: u.cache_read_input_tokens.unwrap_or(0),
             cache_write: u.cache_creation_input_tokens.unwrap_or(0),
-        });
+        };
+        s.tokens.add(&used);
+        if let Some(t) = at {
+            // Replies come in order of time, so most merge into the last minute here.
+            let minute = t - t % 60;
+            match buckets.last_mut() {
+                Some((m, sum)) if *m == minute => sum.add(&used),
+                _ => buckets.push((minute, used)),
+            }
+        }
     }
+    s.buckets = settle(buckets).into();
     Ok(s)
 }
 
@@ -1213,6 +1268,65 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn counted_tokens_leave_cache_reads_out() {
+        // mu-172: what counts against `est-tokens` is input, output and cache writes.
+        let t = Tokens {
+            input: 15,
+            output: 3000,
+            cache_read: 50000,
+            cache_write: 5000,
+        };
+        assert_eq!(t.counted(), 8015);
+        assert_eq!(t.total(), 58015);
+        assert_eq!(Tokens::default().counted(), 0);
+        let huge = Tokens {
+            input: u64::MAX,
+            output: 1,
+            cache_read: 0,
+            cache_write: 1,
+        };
+        assert_eq!(huge.counted(), u64::MAX);
+    }
+
+    /// A 30 MB transcript, about 80,000 replies a second apart, summarized cold (no cache), then
+    /// warm. The bound is for a busy debug build; `cargo test --release a_30_mb` gives the number
+    /// that matters.
+    #[test]
+    fn a_30_mb_transcript_is_summarized_quickly() {
+        let h = home();
+        let mut lines: Vec<String> = Vec::new();
+        let mut bytes = 0;
+        let mut i: u64 = 0;
+        while bytes < 30 * 1024 * 1024 {
+            let s = i % 86_400;
+            let at = format!(
+                "2026-10-12T{:02}:{:02}:{:02}.000Z",
+                s / 3600,
+                s / 60 % 60,
+                s % 60
+            );
+            let line = reply(&format!("msg_{i:0>48}"), &at, 1, 2, 3, 4);
+            bytes += line.len() + 1;
+            lines.push(line);
+            i += 1;
+        }
+        let path = write(h.path(), ".claude", A, &lines, NOW - 3600);
+        let t = std::time::Instant::now();
+        let s = summarize(&path).unwrap();
+        let cold = t.elapsed();
+        assert_eq!(s.tokens.total(), i * 10);
+        let (r, a) = reader(h.path());
+        r.usage(&a, "7b5e8856", NOW);
+        let t = std::time::Instant::now();
+        let u = r.usage(&a, "7b5e8856", NOW);
+        let warm = t.elapsed();
+        assert_eq!(u.tokens.total(), i * 10);
+        eprintln!("30 MB transcript ({i} replies): summarized cold in {cold:?}, warm {warm:?}");
+        assert!(cold.as_secs_f64() < 30.0, "cold summary took {cold:?}");
+        assert!(warm.as_millis() < 250, "warm usage took {warm:?}");
+    }
+
+    #[test]
     fn reads_time_stamps_as_utc_seconds() {
         assert_eq!(iso_secs("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(iso_secs("1970-01-01T00:01:05.123Z"), Some(65));
@@ -1445,6 +1559,87 @@ pub(crate) mod tests {
         touch(&subs.join("agent-a2.jsonl"), NOW - 60);
         assert!(r.live(&a, "7b5e8856", NOW));
         assert!(r.usage(&a, "7b5e8856", NOW).live);
+    }
+
+    /// mu-172: each session's tokens by the minute they were used, so the Work section can say
+    /// which stage spent them.
+    #[test]
+    fn tokens_are_kept_by_minute_with_subagents_merged_in() {
+        let h = home();
+        let tok = |input| Tokens {
+            input,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+        };
+        let main = write(
+            h.path(),
+            ".claude",
+            A,
+            &[
+                prompt("2026-10-12T08:00:05Z", "go"),
+                reply("m1", "2026-10-12T08:00:20Z", 1, 0, 0, 0),
+                // The same reply's next content block: counted once.
+                reply("m1", "2026-10-12T08:00:21Z", 1, 0, 0, 0),
+                // Same minute: one entry.
+                reply("m2", "2026-10-12T08:00:59.999Z", 10, 0, 0, 0),
+                reply("m3", "2026-10-12T08:05:00Z", 100, 0, 0, 0),
+                // Written out of order: still in order of time.
+                reply("m4", "2026-10-12T08:02:30Z", 1000, 0, 0, 0),
+                // No time stamp: counted, in no minute.
+                r#"{"type":"assistant","message":{"id":"m5","usage":{"input_tokens":5}}}"#
+                    .to_string(),
+            ],
+            NOW - 9999,
+        );
+        let subs = main.with_extension("").join("subagents");
+        fs::create_dir_all(&subs).unwrap();
+        let sub = subs.join("agent-a1.jsonl");
+        fs::write(
+            &sub,
+            [
+                reply("s1", "2026-10-12T08:02:10Z", 20000, 0, 0, 0),
+                reply("s2", "2026-10-12T08:03:00Z", 300000, 0, 0, 0),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        touch(&sub, NOW - 9999);
+        let at = |hm: &str| iso_secs(&format!("2026-10-12T{hm}:00Z")).unwrap();
+        let want = vec![
+            (at("08:00"), tok(11)),
+            (at("08:02"), tok(21000)),
+            (at("08:03"), tok(300000)),
+            (at("08:05"), tok(100)),
+        ];
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
+        assert_eq!(u.buckets.to_vec(), want);
+        assert_eq!(u.tokens.input, 321116);
+        // The minutes are never sent to the window.
+        assert!(serde_json::to_value(&u).unwrap().get("buckets").is_none());
+        // From the cache while size and modified time hold: a same-size rewrite isn't read.
+        let text = fs::read_to_string(&main).unwrap();
+        fs::write(&main, text.replace("\"m3\"", "\"m9\"")).unwrap();
+        touch(&main, NOW - 9999);
+        let again = r.usage(&a, "7b5e8856", NOW);
+        assert_eq!(again.buckets.to_vec(), want);
+        // Changed for real: read again.
+        fs::write(
+            &main,
+            reply("m1", "2026-10-12T09:00:00Z", 7, 0, 0, 0) + "\n",
+        )
+        .unwrap();
+        touch(&main, NOW - 9000);
+        let new = r.usage(&a, "7b5e8856", NOW);
+        assert_eq!(
+            new.buckets.to_vec(),
+            vec![
+                (at("08:02"), tok(20000)),
+                (at("08:03"), tok(300000)),
+                (at("09:00"), tok(7)),
+            ]
+        );
     }
 
     #[test]

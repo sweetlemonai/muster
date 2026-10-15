@@ -213,6 +213,30 @@ describe("the session's state on the holder ribbon (mu-171): readable, waiting f
   });
 });
 
+describe("the token ribbon (mu-172): neutral, readable, apart from the stages and the You gold", () => {
+  const rule = (selector: string) => {
+    const i = css.indexOf(`\n${selector} {`);
+    expect(i, selector).toBeGreaterThanOrEqual(0);
+    return css.slice(i, css.indexOf("}", i));
+  };
+  for (const t of THEMES) {
+    it(`${t.name}: its numbers and "over" read on it at 4.5:1 with every accent, and its fill is no stage's and not the gold`, () => {
+      for (const a of ACCENTS) {
+        const v = variables(t, a);
+        expect(contrast(v["--text"], v["--panel"]), `text on ${a.name}`).toBeGreaterThanOrEqual(4.5);
+        for (const [s, c] of [...Object.entries(STAGE_COLOURS), ["needs", NEEDS_COLOUR], ["you", HUMAN_COLOUR], ["building", v["--st-building"]]]) {
+          expect(colourDistance(v["--panel"], c), `${s} on ${a.name}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+        }
+      }
+    });
+  }
+  it("uses only the neutral tokens, over included: no attention colour, no stage, in every look", () => {
+    expect(rule(".token-ribbon > :not(.sr-only)")).toContain("background: var(--panel); color: var(--text); border-block-start: 1px solid var(--line);");
+    for (const sel of [".token-ribbon", ".card .token-ribbon", ".token-ribbon > :not(.sr-only)", ".token-ribbon > :first-child", ".token-over"]) expect(rule(sel), sel).not.toMatch(/--st-|--status|--card-|--edge|--accent|--pri|--warn|--bad|--gold/);
+    for (const l of ["tint", "top", "dot", "outline"]) expect(rule(`:root[data-cards="${l}"] .board .card, .look-${l} .card`)).not.toContain("token");
+  });
+});
+
 describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human cards patterned)", () => {
   // A stripe is the gold mixed by HUMAN_HATCH into the card's own background: the surface, or in
   // the Tint look the card washed in its colour (blocked, needs you), which stays under the stripes.

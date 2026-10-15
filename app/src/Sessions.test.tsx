@@ -2,7 +2,8 @@
 // groups, the Older chip, All versus one project, the keys and the rows' names, Focus's chips, and
 // the recap's sections, chain and Transcript button.
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLocale } from "./i18n/runtime";
 import css from "./styles.css?raw";
 import { Mode, type DisplayMode } from "./modes";
 import { RecapView } from "./SessionRecap";
@@ -257,9 +258,10 @@ const recap = (over: Partial<SessionRecap> = {}): SessionRecap => ({
     { id: "aaaa0006", name: "", current: false },
   ],
   cost: {
-    found: "read", start: NOW - 7200, end: NOW - 660, minutes: 109, tokens: { input: 1000, output: 2000, cacheRead: 300_000, cacheWrite: 50_000 }, totalTokens: 353_000,
-    chainMinutes: 300, chainTokens: { input: 3000, output: 6000, cacheRead: 900_000, cacheWrite: 150_000 }, chainTotalTokens: 1_059_000, chainRead: 2, chainSessions: 3,
-    estTokens: 1_500_000, estPct: 24, chainEstPct: 71,
+    found: "read", start: NOW - 7200, end: NOW - 660, minutes: 109, tokens: { input: 1000, output: 2000, cacheRead: 300_000, cacheWrite: 50_000 }, totalTokens: 353_000, countedTokens: 53_000,
+    chainMinutes: 300, chainTokens: { input: 3000, output: 6000, cacheRead: 900_000, cacheWrite: 150_000 }, chainTotalTokens: 1_059_000, chainCountedTokens: 159_000, chainRead: 2, chainSessions: 3,
+    // mu-172: the core's shares are of the counted tokens (53k and 159k of 1.5M).
+    estTokens: 1_500_000, estPct: 4, chainEstPct: 11,
   },
   progress: [{ key: "mu-98", pct: 40, text: "core done", guess: false }],
   ...over,
@@ -272,6 +274,10 @@ const recapView = (r: SessionRecap | null, more: { mode?: DisplayMode; showing?:
   );
 
 describe("the recap (AC3, AC4)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+
   it("has its sections in a fixed order, under a strip with Transcript and Close", () => {
     const html = recapView(recap());
     const order = [...html.matchAll(/<section class="recap-([a-z]+)"/g)].map((m) => m[1]);
@@ -322,9 +328,25 @@ describe("the recap (AC3, AC4)", () => {
   it("gives time and tokens, the chain's sums beside them, and the share of est-tokens", () => {
     const t = text(recapView(recap()));
     expect(t).toMatch(/Started \d{4}-\d\d-\d\d \d\d:\d\d · last active \d{4}-\d\d-\d\d \d\d:\d\d · 1\.8 h · the chain of 3: 5 h/);
-    expect(t).toContain("353k of 1.5M (24%)");
+    // mu-172: the counted tokens against the estimate, cache reads beside them and never counted.
+    expect(t).toContain("53k of 1.5M (4%) + 300k cache reads, not counted");
+    expect(t).not.toContain("353k");
     expect(t).toContain("input 1k · output 2k · cache read 300k · cache write 50k");
-    expect(t).toContain("The chain of 3: 1.1M of 1.5M (71%) · 1 of 3 not read on this Mac");
+    expect(t).toContain("The chain of 3: 159k of 1.5M (11%) + 900k cache reads, not counted · 1 of 3 not read on this Mac");
+    expect(t).not.toContain("1.1M");
+  });
+
+  it("gives the share in the same digits as the token figures beside it (review R6)", async () => {
+    await setLocale("fa");
+    // The recap's words wait on mu-147; its figures already follow the language, the share too.
+    expect(text(recapView(recap()))).toContain("۵۳k of ۱٫۵M (۴%)");
+  });
+
+  it("says no cache reads when there were none, and the counted tokens alone without an estimate", () => {
+    const base = recap().cost;
+    const t = text(recapView(recap({ cost: { ...base, tokens: { ...base.tokens, cacheRead: 0 }, estTokens: 0, estPct: null, chainSessions: 1 } })));
+    expect(t).toContain("Tokens 53k input 1k");
+    expect(t).not.toContain("cache reads, not counted");
   });
 
   it("says why there are no numbers when the transcript wasn't read", () => {

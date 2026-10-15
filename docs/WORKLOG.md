@@ -4,6 +4,79 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Work section by stage, tokens without cache reads, a token ribbon on held cards (mu-172)
+**Did (asghar_33, builder):** a task's tokens are input + output + cache writes
+(`Tokens::counted`); cache reads are shown beside them, never counted. The task pane's Work
+section is a table by stage: Shaping, Building, Testing and Your check, plus Other when a session
+worked while the task was in Backlog, Ready or Done. Each row has its counted tokens, its cache reads
+and its time (blocked and paused left out), with the sessions under it, each with its own tokens and
+time. A session's turns are split between stages by their timestamps, using per-minute token
+buckets the reader keeps with its cached summary. The total row compares counted tokens with
+`est-tokens`, and agent time (Building + Testing) with `est-time`. Times are in hours, never days.
+Held Shaping, Building and Testing cards wear a token ribbon in the bottom corner ("210k / 600k",
+"720k / 600k · over", "· shared"), and the live dot sits in it. The ribbon's count comes from the
+poll's `work::mark_tokens`; a count is reused for 30 s. Strings are in en and fa. Files: `work.rs`,
+`transcripts.rs`, `queue.rs`, `lib.rs`, `help.rs`, `backlog.rs`, `TokenRibbon.tsx`, `Work.tsx`,
+`Card.tsx`, `HolderRibbon.tsx`, `Recent.tsx`, `lib.ts`, `modes.ts`, `styles.css`, the locales,
+PROTOCOL 0017, AS_BUILT, DESIGN, `glossary-fa.md`, and the regenerated manual page 05. After the
+rebase, mu-98's Sessions recap (`sessions.rs`, `SessionRecap.tsx`) holds counted tokens against the
+estimate too, with its cache reads shown as not counted.
+**Fixed:** the owner saw "Tokens 168.1M of 1.5M (11204%)" and "Time 7.3 h of 1 d (92%)". There
+were three causes:
+- every token kind was counted, cache reads included;
+- the lead's session, which other tasks name too, was summed in full;
+- Time was the sum of each session's transcript span, set against an estimate shown in days.
+
+Now shared sessions are listed and marked, and their tokens show as "+X in shared sessions, not
+counted", in each stage and in the total. Time is stage time. The test
+`the_owners_fixture_168m_of_1_5m_and_7_3_h_of_1_d_now_reads_1_8m_and_2_5_h` shows both the old
+numbers and the new ones.
+**Decided:**
+- **Shared sessions stay out of the counted sums.** One session working several tasks can't be split
+  between them, even inside this task's stage windows. The lead (QA_10) agreed. The alternatives,
+  counting the session in full or guessing a split, are both wrong without saying so.
+- **The total's time is Building + Testing stage time.** This matches mu-168's
+  `measured::agent_minutes` on every task with no release to Ready and no send-back from Your
+  check: a test runs mu-168's own function on its cases and gets the same numbers, and asserts
+  where the two differ and why.
+- **A task's first stage runs from its first log line.** Without this, a task made in Shaping would
+  file its shaper's tokens under Other.
+- **The ribbon shows on held cards only.** The 17px strip is reserved on every card that can be
+  held.
+- **On cards under about 110px,** "shared", then the note, then the "·" give way. The figures and
+  "over" never shrink.
+- **The Persian pair is written «۷۲۰k از ۶۰۰k»,** because the Persian decimal sign beside a slash
+  read as a fraction.
+
+**Fixed (review round 1, Asghar_41; `.claude/work/reviews/mu-172/`):**
+- R1: a held card waiting for input or ended was still read out as "being used now", and Standard
+  and Focus still showed its ribbon as busy. `TokenRibbon` now decides "being spent" once
+  (`live && !stateHidesDot`) for the dot, the spoken words and the busy check.
+- R2: the stage table's stage names are `<th scope="rowgroup">`, the column heads `scope="col"`,
+  so a screen reader says a session's stage with its row.
+- R3: the stage-table test has a reply with no time stamp, which must land in "other"; deleting
+  the `rest` line fails it.
+- R4, R5: AS_BUILT and manual chapters 02, 03 and 04 describe the stage table, the total line,
+  shared sessions kept out of the count and the token ribbon.
+- Nits: the Sessions recap's share is in the language's digits like its token figures (R6); the
+  Work.test fixtures say they're hand-made (R7); `tokenRibbonText` no longer returns the unused
+  `line` (R8).
+Each fix has a test that failed first; the R1 busy check and R3 each have a mutant that fails.
+
+**Verified:** cargo test 1016 passed; vitest 2005 passed; bin/gate is green (the task has the line).
+- **AC5** (release, 10 held cards, one live 30 MB transcript growing between polls, 150 polls 2 s
+  apart): a steady poll's `mark_tokens` costs p50 6–8 µs and p95 10–35 µs. A refresh poll, once
+  every 30 s, costs 63–115 ms: one re-read of the 30 MB transcript, off the main thread. `mark_live`,
+  already in the poll, is 0.3–2.4 ms p50.
+- **Headless WebKit:** shots of the board and the Work section, in en and fa, light and dark,
+  including narrow cards. In the before/after pair the card is 192.875px high both times, and the
+  rows above the ribbon are pixel-identical.
+
+**Open:** a refresh re-reads the whole live transcript. Reading only what was appended would remove
+the 30 s spike; there's a backlog note for it. The new fa words (بیش, بی‌تخمین, روبان توکن) want a
+native check. The Work progress guess's basis is still English from the core. On a 100px card that
+is live while nothing could be read (a transcript over 128 MB), the dot is the part that gives way;
+the spoken words and the tooltip still say it's being used now.
 ## 2026-10-15 — docs/now/claims.md split into claims.md and handoffs.md, each under 3 KB (mu-208)
 **Did (Akbar_40, builder):** `docs/now/claims.md` ("Claims": claim, stamps, slots, lease,
 reclaim, pause, release, takeover; 19 rules, 2,037 bytes) and the new `docs/now/handoffs.md`

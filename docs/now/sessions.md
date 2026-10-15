@@ -15,5 +15,6 @@ covers: app/src-tauri/src/sessions.rs, app/src-tauri/src/transcripts.rs, app/src
 - The list is read off the main thread, at most every 15 s, and only while the view polls. (mu-98)
 - A click opens the recap in the pane's dock, never the transcript first. (mu-98)
 - The recap's sections keep one order: chain, Who, Tasks, History, Time, Tokens, Progress. (mu-98)
+- The recap holds counted tokens (input, output, cache writes) against `est-tokens`; cache reads are shown apart, never counted. (mu-172)
 - A handoff is read only as a regular file directly in `.claude/work/handoffs/` under `~/playground`, at most 256 KB, front matter only. (decision 0017)
 - Transcripts are read only under `~/playground` project keys of the allowed accounts. (decision 0012)

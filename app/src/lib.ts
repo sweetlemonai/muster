@@ -1,4 +1,4 @@
-import { tl } from "./i18n";
+import { fmt, tl } from "./i18n";
 import { keyOf, taskKey } from "./taskKey";
 import type { Activity, Checkin, Question, Task } from "./types";
 
@@ -568,20 +568,84 @@ export function estimateTotal(tasks: { estMinutes: number; estTestMinutes: numbe
   const parts = [fmtMinutes(m), fmtTokens(k)].filter(Boolean).join(" · ");
   return est.length < open.length ? tl("estimateSome", { parts, est: est.length, open: open.length }) : tl("estimate", { parts });
 }
-/** A token count, short and without the word: "1.2M", "70k", "3.5k", "900". */
+/** A token count, short and without the word: "1.2M", "70k", "3.5k", "900". The digits are the
+ *  language's (۱٫۲M in Persian, mu-172); the k and M stay as they are. */
 export function shortTokens(n: number): string {
   const v = Math.max(0, Math.round(n));
-  const one = (x: number) => String(Math.round(x * 10) / 10);
+  const one = (x: number) => fmt.number(Math.round(x * 10) / 10, { useGrouping: false });
   if (v >= 999_500) return `${one(v / 1e6)}M`;
-  if (v >= 10_000) return `${Math.round(v / 1e3)}k`;
+  if (v >= 10_000) return `${one(Math.round(v / 1e3))}k`;
   if (v >= 1000) return `${one(v / 1e3)}k`;
-  return String(v);
+  return one(v);
 }
-/** "1.2M of 2M (60%)": an actual against its estimate, with the core's share; the actual alone
- *  when there's no estimate. */
-export function ofEstimate(actual: string, estimate: string, pct: number | null): string {
-  return estimate && pct !== null ? `${actual} of ${estimate} (${pct}%)` : actual;
+
+/** A time in hours, never days (mu-172, D4): "45 min" under an hour, else "8 h", "26.5 h". Both
+ *  sides of the Work section's Time line, its rows and Recently finished use it, so a measured
+ *  time and its estimate read in the same unit: an estimate of `1d` is 8 agent-hours. */
+export function fmtHours(m: number): string {
+  const v = Math.max(0, Math.round(m));
+  if (v < 60) return tl("time.min", { count: v });
+  return tl("time.h", { count: Math.round(v / 6) / 10 });
 }
+
+/** Left-to-right isolate and its pop: each of the token ribbon's figures keeps its own order right
+ *  to left. */
+const LRI = "\u2066";
+const PDI = "\u2069";
+const ltr = (s: string) => `${LRI}${s}${PDI}`;
+
+type TokenFields = Pick<Task, "tokensUsed" | "tokensShared" | "estTokenCount" | "live">;
+
+/** Its counted tokens are past its estimate (both known; the estimate itself isn't over). */
+export const tokensOver = (t: Pick<Task, "tokensUsed" | "estTokenCount">) => t.tokensUsed != null && t.estTokenCount > 0 && t.tokensUsed > t.estTokenCount;
+
+/** What a card's token ribbon says (mu-172), in its parts, as the card lays them out:
+ *  - `figures`: "210k / 600k" (Persian «۲۱۰k از ۶۰۰k»: a slash beside the decimal ٫ reads as
+ *    another slash), each figure in a left-to-right isolate; never cut on the card.
+ *  - `over`: the word past the estimate ("" when it isn't); never cut either.
+ *  - `note`: the short words for what's missing ("· no est", "est · not read"); they give way on a
+ *    narrow card.
+ *  - `shared`: "· shared" when a shared session was left out; gives way first.
+ *  - `spoken`: what a screen reader says instead, whole ("210k of 600k tokens used, over the
+ *    estimate, a session shared with other tasks not counted, being used now"), `tip` the exact
+ *    counts. "being used now" goes by `live`, which the caller gives as the dot does.
+ *  Tokens are what `est-tokens` counts: input, output and cache writes. Read while rendering a
+ *  component that uses `useT`, so the words follow a language switch; they are in `common`, there
+ *  before the first paint. */
+export function tokenRibbonText(t: TokenFields): { figures: string; over: string; note: string; shared: string; spoken: string; tip: string } {
+  const used = t.tokensUsed ?? null;
+  const est = t.estTokenCount > 0 ? t.estTokenCount : 0;
+  const over = tokensOver(t) ? tl("tokenRibbon.over") : "";
+  let figures: string, note: string, spoken: string, tip: string;
+  if (used !== null && est) {
+    figures = tl("tokenRibbon.pair", { used: ltr(shortTokens(used)), est: ltr(shortTokens(est)) });
+    note = "";
+    spoken = tl("tokenRibbon.spoken", { used: shortTokens(used), est: shortTokens(est) });
+    tip = tl("tokenRibbon.tip", { used, est, pct: Math.round((used / est) * 100) });
+  } else if (used !== null) {
+    figures = ltr(shortTokens(used));
+    note = tl("tokenRibbon.noEstimate");
+    spoken = tl("tokenRibbon.spokenNoEstimate", { used: shortTokens(used) });
+    tip = tl("tokenRibbon.tipNoEstimate", { used });
+  } else if (est) {
+    figures = ltr(shortTokens(est));
+    note = tl("tokenRibbon.notRead");
+    spoken = tl("tokenRibbon.spokenNotRead", { est: shortTokens(est) });
+    tip = tl("tokenRibbon.tipNotRead", { est });
+  } else {
+    figures = "";
+    note = tl("tokenRibbon.nothing");
+    spoken = tl("tokenRibbon.spokenNothing");
+    tip = tl("tokenRibbon.tipNothing");
+  }
+  const shared = t.tokensShared ? tl("tokenRibbon.shared") : "";
+  if (over) spoken += tl("tokenRibbon.spokenOver");
+  if (shared) spoken += tl("tokenRibbon.spokenShared");
+  if (t.live) spoken += tl("tokenRibbon.spokenLive");
+  if (shared) tip += tl("tokenRibbon.tipShared");
+  return { figures, over, note, shared, spoken, tip };
+}
+
 
 /** A path as the window shows it (owner, 2026-10-13): under the home folder, `~/…`, so the
  *  user's name stays off the screen. Only for display: the real path stays in the tooltip and is

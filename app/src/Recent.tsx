@@ -1,23 +1,32 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { tl, tn } from "./i18n";
-import { fmtMinutes, key, type RoleNames, shortTokens } from "./lib";
+import { fmtHours, key, type RoleNames, shortTokens } from "./lib";
 import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, whenText } from "./recentData";
 import { RoleNamesContext } from "./settingsData";
-import type { Task } from "./types";
+import type { Task, Work } from "./types";
 import ProjectName, { TaskKey } from "./ProjectName";
 import { Pill } from "./ui";
 
-/** A task's time and tokens, the Work section's totals (0025), or why they couldn't be read. */
-export type Cost = { minutes: number; tokens: number; read: number } | { error: string };
+/** A task's time and tokens, the Work section's totals (0025), or why they couldn't be read.
+ *  `minutes` is the agent time from the stage log, null when it was never in Building. */
+export type Cost = { minutes: number | null; tokens: number; read: number } | { error: string };
 
-/** The time and tokens line: "12 min · 450k tokens", or why there's none. Undefined is still reading. */
+/** The cost as the Work section compares it with the estimates (mu-172): the agent time and the
+ *  counted tokens (input, output and cache writes) of the task's own sessions. */
+export function costOf(w: Work): Cost {
+  return { minutes: w.totals.agentMinutes, tokens: w.totals.countedTokens, read: w.totals.read };
+}
+
+/** The time and tokens line: "12 min · 450k tokens", in hours past an hour ("10 h", never days),
+ *  the tokens alone with no agent time, or why there's none. Undefined is still reading. */
 export function costText(c: Cost | undefined): string {
   if (!c) return tn("shell", "recent.costReading");
   if ("error" in c) return tn("shell", "recent.costUnknown");
   if (c.read === 0) return tn("shell", "recent.noTranscripts");
-  return tn("shell", "recent.cost", { time: fmtMinutes(c.minutes) || tl("time.min", { count: 0 }), tokens: tl("tokensShort", { amount: shortTokens(c.tokens) }) });
+  const tokens = tl("tokensShort", { amount: shortTokens(c.tokens) });
+  return c.minutes === null ? tokens : tn("shell", "recent.cost", { time: fmtHours(c.minutes), tokens });
 }
 
 /** Costs read so far, by "queue/id", with the file's modified time they were read at. The core
@@ -43,7 +52,7 @@ function useCosts(tasks: Task[]): Map<string, Cost> {
         let cost: Cost;
         try {
           const w = await api.taskSessions(t.queue, t.id);
-          cost = { minutes: w.totals.minutes, tokens: w.totals.totalTokens, read: w.totals.read };
+          cost = costOf(w);
         } catch (e) {
           cost = { error: String(e) };
         }

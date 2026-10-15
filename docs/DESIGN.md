@@ -188,8 +188,9 @@ project here).
     doesn't come with it. Unknown and paused say nothing. The state is Claude Code's, matched by
     session id in every account Muster reads, so a builder resumed on another account than its
     stamp's still shows working (0182); a shaper's claim gets one too ("Shapour_3 · working").
-    The live dot follows the words while a working session's transcript changes, and gives way
-    where it doesn't fit, or beside waiting for input or ended, where Claude Code's word wins. A
+    The live dot isn't in it any more: it sits in the token ribbon, by the number it moves
+    (mu-172), and still not while the session waits for input or has ended, where Claude Code's
+    word wins. A
     lease run out turns the name the attention colour with "quiet", as the card's flag says it;
     beside a state, "quiet" gives way first, and beside waiting for input it's in the tooltip and
     the card's flag line only.
@@ -211,6 +212,50 @@ project here).
   - Fixed place: a card in Shaping, Building or Testing, and every note, keeps a strip the
     ribbon's height above its top row, held or not. The top row (key, kind, priority) and a note's
     title run the card's full width under it, and a claim arriving with the next poll moves nothing.
+- **What the work spent is in the card's other corner** (task mu-172): a card someone holds in
+  Shaping, Building or Testing, not the owner's own, wears a **token ribbon** at the bottom, on
+  the side the text ends (bottom-left right to left): the tokens its own sessions used against
+  the estimate, "210k / 600k". Tokens are what `est-tokens` counts: input, output and cache
+  writes, never cache reads. A session another task names too isn't counted (its share can't be
+  told apart): the ribbon adds "· shared", it's read out ("a session shared with other tasks not
+  counted") and the tooltip says it in full.
+  - In words, not colour: past the estimate it adds "over" in weight 800 ("720k / 600k · over"),
+    never the attention colour, which is the owner's turn and errors' alone. "210k · no est" and
+    "600k est · not read" say the rest, short on the card and whole when read out and in the
+    tooltip. Persian writes the pair «۲۱۰k از ۶۰۰k» (از, "of"): the Persian decimal ٫ beside a
+    slash reads as another slash. Each figure sits in its own left-to-right isolate, so a pair
+    never flips right to left.
+  - Never cut, never partly shown: the dot, the figures, "over" and the note ("no est", "not
+    read", the whole message when nothing was read) stay whole on a card down to 100px wide, and
+    the ribbon never runs past the card's border. On a narrow card a part gives way whole or not
+    at all, never ending in "…" or leaving a stray dot or gap: "shared" wraps out of sight when it
+    doesn't fit (it comes last, so the dot sits first, at the ribbon's start). The "·" before "over"
+    stays: the dot and "9.9M / 999k · over" fit a 100px card whole.
+  - The live dot (a session's transcript changed in the live window, so tokens are being spent
+    now) sits in it, first, by the number it moves: one dot per card. On a card nobody holds yet the
+    dot sits alone in the ribbon's corner; a card with no token ribbon spot keeps its dot in the
+    top row. The dot is still, under reduced motion too.
+  - Neutral like the holder ribbon: the panel fill, the line border and the text colour. Not a
+    control. The card reads it out last: "210k of 600k tokens used, over the estimate, being used
+    now"; the exact counts and the share are in the tooltip.
+  - Fixed place: every card in Shaping, Building or Testing that isn't the owner's keeps a strip
+    its height at the bottom, held or not, in every mode, so a claim or a first count arriving
+    with a poll moves nothing. ADHD fills it on every held card; Standard only while live or over,
+    and on the selected card; Focus only while live or over. Its words are in the shared
+    namespace, loaded before the first paint, so it never paints a blank word.
+- **The task's Work section is a table by stage** (mu-172, the owner: "break down of tokens per
+  stage and time per stage and sessions each then total"): a row per stage the task was in
+  (Shaping, Building, Testing, Your check, and "Other" for Backlog, Ready and Done), each with its
+  counted tokens, cache reads beside them, and its time; under it the sessions that spent in it,
+  each with its counted tokens and time, a shared one marked "shared with N other tasks, not
+  counted"; then the total: "Total: 1.8M of 1.5M tokens (120%) · 2.5 h of 8 h (31%)", with the
+  cache reads and the shared sessions' tokens beside it so no token vanishes from the table.
+  - The same count as the card: the total's tokens are the stage rows' own tokens summed, the
+    ribbon's number. No number mixes counted tokens with cache reads.
+  - Time in hours, never days ("26.5 h", an estimate of `1d` is "8 h"). The time against the
+    estimate is agent time, Building + Testing, said in words; Your check's time is the owner's
+    wait, on its row only, never in the total.
+  - Right to left, every figure keeps its own left-to-right run.
 
 ## Standard mode: what most apps do
 

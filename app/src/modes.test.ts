@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardLines, columnFold, DEFAULT_MODE, ELEMENTS, loadMode, look, MODE_KEY, MODES, NOW_STAGES, pickMode, storeMode, toggleFocus, type DisplayMode, type ElementId } from "./modes";
+import { cardLines, columnFold, DEFAULT_MODE, ELEMENTS, loadMode, look, MODE_KEY, MODES, NOW_STAGES, pickMode, storeMode, toggleFocus, tokenRibbonShows, type DisplayMode, type ElementId } from "./modes";
 
 // Every source file of the window, as text: the elements a component reads are found in them.
 const sources = Object.fromEntries(
@@ -82,6 +82,7 @@ describe("the display modes' table (0038)", () => {
       ["card-lines", "all"],
       ["done-line", "show"],
       ["holder-ribbon", "show"],
+      ["token-ribbon", "show"],
       ["columns", "all"],
       ["rail", "open"],
       ["pane-sections", "open"],
@@ -98,6 +99,7 @@ describe("the display modes' table (0038)", () => {
       ["card-lines", "selected", "status"],
       ["done-line", "show", "show"],
       ["holder-ribbon", "show", "show"],
+      ["token-ribbon", "busy-or-selected", "busy"],
       ["columns", "all", "now"],
       ["rail", "open", "strip"],
       ["pane-sections", "folded", "folded"],
@@ -122,6 +124,27 @@ describe("the holder ribbon in the modes' table (0097)", () => {
   });
   it("is read by the ribbons themselves, on cards and notes", () => {
     expect(elementsReadIn(sources["HolderRibbon.tsx"])).toEqual(["holder-ribbon", "holder-ribbon"]);
+  });
+});
+
+describe("the token ribbon in the modes' table (mu-172)", () => {
+  it("shows on every held card in ADHD; in Standard while live or over, or on the selected card; in Focus only while live or over", () => {
+    const shows = (mode: DisplayMode, busy: boolean, active: boolean) => tokenRibbonShows(look("token-ribbon", mode), busy, active);
+    for (const busy of [false, true]) for (const active of [false, true]) expect(shows("adhd", busy, active), `adhd ${busy} ${active}`).toBe(true);
+    expect([shows("standard", false, false), shows("standard", false, true), shows("standard", true, false)]).toEqual([false, true, true]);
+    expect([shows("focus", false, false), shows("focus", false, true), shows("focus", true, false)]).toEqual([false, false, true]);
+  });
+  it("has Settings' words for each mode, and how to see it where a mode hides it", () => {
+    expect(ELEMENTS["token-ribbon"].label).toBe("Token ribbon");
+    expect(ELEMENTS["token-ribbon"].adhd.says).toMatch(/every card held in Shaping, Building or Testing/);
+    expect(ELEMENTS["token-ribbon"].standard.says).toMatch(/live or over.*selected card/);
+    expect(ELEMENTS["token-ribbon"].focus.says).toMatch(/live or over/);
+    for (const m of ["standard", "focus"] as const) expect(ELEMENTS["token-ribbon"][m].reach, m).toMatch(/Work/);
+    // Its room at the card's bottom stays in every mode: the words say so.
+    for (const m of ALL) expect(ELEMENTS["token-ribbon"][m].says, m).toMatch(/room/);
+  });
+  it("is read by the token ribbon itself", () => {
+    expect(elementsReadIn(sources["TokenRibbon.tsx"] ?? "")).toEqual(["token-ribbon"]);
   });
 });
 

@@ -1,14 +1,14 @@
 import { createElement as h, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import Recent, { costText, RecentList } from "./Recent";
+import Recent, { costOf, costText, RecentList } from "./Recent";
 import { dayGroups, finishes } from "./recentData";
 import type { StageStep, Task } from "./types";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
   queue: "muster", id, title: `Task ${id}`, kind: "code", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: `todo/${id}-t.md`, claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
-  openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
+  openQuestions: 0, live: false, tokensUsed: null, tokensShared: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 
 // The fake clock: 14:00 local time on Tuesday 2026-10-13, in seconds since 1970, like the state's `now`.
@@ -146,6 +146,18 @@ describe("time and tokens", () => {
     expect(costText({ minutes: 0, tokens: 0, read: 0 })).toBe("no transcripts on this Mac");
     expect(costText({ minutes: 12, tokens: 450_000, read: 1 })).toBe("12 min · 450k tokens");
     expect(costText({ minutes: 0, tokens: 900, read: 1 })).toBe("0 min · 900 tokens");
+    // In hours, never days (mu-172, D4).
+    expect(costText({ minutes: 600, tokens: 1_802_000, read: 2 })).toBe("10 h · 1.8M tokens");
+    // No agent time from the stage log (never in Building): the tokens alone.
+    expect(costText({ minutes: null, tokens: 900, read: 1 })).toBe("900 tokens");
+  });
+  it("takes the agent time and the counted tokens, as the Work section compares them (mu-172)", () => {
+    const none = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    const totals = { sessions: 2, read: 2, live: 0, shared: 1, tokens: { input: 2000, output: 600_000, cacheRead: 40_000_000, cacheWrite: 1_200_000 }, totalTokens: 41_802_000, minutes: 440, countedTokens: 1_802_000, sharedTokens: none, sharedRead: 1, agentMinutes: 150 };
+    const work = { rows: [], stages: [], totals, estimate: { minutes: 480, tokens: 1_500_000, minutesPct: 31, tokensPct: 120 }, guess: { pct: 90, basis: "" } };
+    expect(costOf(work)).toEqual({ minutes: 150, tokens: 1_802_000, read: 2 });
+    expect(costText(costOf(work))).toBe("2.5 h · 1.8M tokens");
+    expect(costOf({ ...work, totals: { ...totals, agentMinutes: null } })).toEqual({ minutes: null, tokens: 1_802_000, read: 2 });
   });
 });
 

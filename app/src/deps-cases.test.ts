@@ -24,7 +24,7 @@ const tasks: Task[] = cases.tasks.map((f) => {
     claimedBy: f.claimedBy, heldBy: f.heldBy, stageSince: "", checkins: [], heartbeat: "", waitingOn: f.waitingOn,
     blockedKind: f.waitingOn !== "" || by.length ? "tasks" : "", blockDetail: f.waitingOn, blockedBy: by,
     depends: f.depends, forWho: f.for, commit: "", captured: "", capturedAt: "", doneAt: "",
-    blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: f.stage === "your-check", tags: [],
+    blockHistory: [], questions: [], openQuestions: 0, live: false, tokensUsed: null, tokensShared: false, ownerCriteria: [], waitingForOwner: f.stage === "your-check", tags: [],
     estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
     attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: f.stage,
   };

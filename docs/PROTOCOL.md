@@ -654,6 +654,15 @@ its own agent id is another holder, 0090) and logged `(tested under
 > "too few (n)". The owner's wait in Your check (entering it to Done) is measured apart and is
 > neither estimate. Estimate `--time` as agent time from that block; `--test-time` is the owner's
 > check only (the lead's call on 2026-10-15; QA is already in `--time`). mu-115's calibration replaces this measure when it lands.
+> **Since mu-172 (2026-10-15)** each says what it's held against. `est-time` is agent hours (1d is
+> 8 h), against the task's agent time: its time in Building plus its time in Testing, less the
+> time it was blocked or paused (for a task never released to Ready nor sent back from Your check,
+> mu-168's first claim to last leaving Testing). Time back in Ready isn't work, and the wait in
+> Your check is the owner's.
+> `est-tokens` is input, output and cache writes, not cache reads: cache reads grow with how long a
+> session runs, not with the work, so they're shown and never counted. Only the task's own sessions
+> count; a session another task of the queue names too is shown apart and not counted, since its
+> transcript can't say which part was this task's.
 > **Links** are one front-matter line, `links: The spec <https://…>; <https://…>`: each entry an
 > optional title and the address in `<…>`, entries separated by `;`. Only `muster link <id>
 > <https-url> ["title"]` and `muster link <id> --remove <n|url>` write it: https only, at most 2,000

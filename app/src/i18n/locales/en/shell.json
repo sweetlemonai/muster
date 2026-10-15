@@ -664,6 +664,13 @@
         "standard": "Who holds a task in Shaping, Building or Testing and what Claude Code says its session is doing (working, waiting for input, session ended), and who is shaping a backlog note, in the card's corner: on the brief card it's the one place the holder and the session's state show",
         "focus": "Who holds a task in Shaping, Building or Testing and what Claude Code says its session is doing (working, waiting for input, session ended), and who is shaping a backlog note, in the card's corner: who's on it and its session's state are status"
       },
+      "tokenRibbon": {
+        "label": "Token ribbon",
+        "adhd": "Tokens used against the estimate (input, output and cache writes), with over in words and the live dot, at the bottom corner of every card held in Shaping, Building or Testing; its room is kept on those cards",
+        "standard": "Tokens used against the estimate, only while live or over it, and on the selected card; its room is kept, so nothing moves when it shows",
+        "focus": "Tokens used against the estimate, only while live or over it; its room is kept, so nothing moves when it shows",
+        "reach": "Select the card, or open the task: its Work section has the tokens"
+      },
       "columns": {
         "label": "Board columns",
         "all": "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked",

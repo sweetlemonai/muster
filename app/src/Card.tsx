@@ -10,6 +10,7 @@ import { cardLines, useLook } from "./modes";
 import { CardPause, pausable, PausedChip } from "./Pause";
 import { CardPing } from "./Ping";
 import type { Task } from "./types";
+import TokenRibbon from "./TokenRibbon";
 import { Badge } from "./ui";
 import YouRibbon from "./YouRibbon";
 import ProjectName, { TaskKey } from "./ProjectName";
@@ -32,7 +33,8 @@ export default function Card(props: CardProps) {
 /** The card itself. The owner's own task (0022) is hatched in the human gold and carries the You
  *  ribbon, in the same columns as the agents' tasks; a task someone holds in Shaping, Building or
  *  Testing wears their ribbon (0097), and one the owner holds the You ribbon, in the same corner,
- *  whose room the top row keeps where one can come. Why it's blocked is 0024's one sentence (by
+ *  whose room the top row keeps where one can come; the same cards keep the token ribbon's room at
+ *  the bottom (mu-172). Why it's blocked is 0024's one sentence (by
  *  tasks too: an agent's task waiting on the owner's unfinished one says "After 0041");
  *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission,
  *  its session waiting for input) is a needs-you card. */
@@ -45,15 +47,18 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
   // A session waiting for input says needs you on the ribbon (mu-171), so the poll that brings it
   // moves nothing on the card: no badge comes with it.
   const ribbonSaysNeedsYou = useLook("holder-ribbon") === "show" && ribbonWaits(t);
+  // A card the holder ribbon can come to has the token ribbon's spot too (mu-172), and its live
+  // dot is there; any other keeps the dot in the top row.
+  const holdable = ribbonStage(t);
   return (
-    <button className={`${cardClass(t, active)}${ribbonStage(t) ? " holdable" : ""}`} onClick={onOpen}>
+    <button className={`${cardClass(t, active)}${holdable ? " holdable" : ""}`} onClick={onOpen}>
       {ribbon === "you" && (isHuman(t) ? <YouRibbon /> : <YouRibbon title="You hold it" spoken="held by" />)}
       {ribbon === "holder" && <CardHolderRibbon t={t} now={now} />}
       <CardBand t={t} />
       <span className="card-top">
         {multi && <ProjectName name={t.queue} />}
         <TaskKey t={t}><HlId t={t} words={words} /></TaskKey>
-        {ribbon !== "holder" && <LiveDot t={t} />}
+        {!holdable && <LiveDot t={t} />}
         {lines !== "status" && <span className={`kind ${t.kind}`}>{t.kind}</span>}
         {lines !== "status" && <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>}
       </span>
@@ -76,6 +81,7 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
         {all && estimateText(t) && <Badge variant="est" title="Estimated agent time, test time and tokens">{estimateText(t)}</Badge>}
         {lines !== "status" && <span className="age">{ago(now, t.modified)}</span>}
       </span>
+      {holdable && <TokenRibbon t={t} active={active} />}
     </button>
   );
 }

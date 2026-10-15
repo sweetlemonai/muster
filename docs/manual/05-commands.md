@@ -21,7 +21,7 @@ muster new "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research
 | `--tags` | comma-separated: spike, chore, tech-debt, code, docs, design, research, test, perf, security, or your own |
 | `--time` | estimated agent time, the first claim to leaving Testing, review and QA included, time blocked or paused left out: 45m, 2h, 1.5d |
 | `--test-time` | estimated time of your check only, not the wait before it (QA is in --time): 30m, 1h |
-| `--tokens` | estimated tokens: 150k, 1.2M |
+| `--tokens` | estimated tokens: input, output and cache writes, not cache reads: 150k, 1.2M |
 | `--touches` | where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel\*, docs/), for muster ready --parallel |
 | `--level` | goal, feature or task (default) |
 | `--parent` | the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none |
@@ -1141,7 +1141,7 @@ muster file <note-file> "<title>" [--type code|bug|chore|tech-debt|spike|design|
 | `--tags` | comma-separated tags |
 | `--time` | estimated agent time, the first claim to leaving Testing, review and QA included, time blocked or paused left out: 45m, 2h, 1.5d |
 | `--test-time` | estimated time of your check only, not the wait before it (QA is in --time): 30m, 1h |
-| `--tokens` | estimated tokens: 150k, 1.2M |
+| `--tokens` | estimated tokens: input, output and cache writes, not cache reads: 150k, 1.2M |
 | `--touches` | where in the repo it works, folders and globs, comma-separated: what muster ready --parallel keeps apart |
 | `--body` | the shaped task in Markdown, with ## Acceptance criteria (required); - reads it from stdin |
 

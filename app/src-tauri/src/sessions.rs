@@ -604,15 +604,20 @@ pub struct Cost {
     pub end: Option<u64>,
     pub minutes: u64,
     pub tokens: Tokens,
+    /// Every kind together, for the breakdown.
     pub total_tokens: u64,
+    /// What counts against `est-tokens` (mu-172, `Tokens::counted`): input, output and cache
+    /// writes, never cache reads.
+    pub counted_tokens: u64,
     /// The chain's sums (this session's alone when it has no chain); `read` of `sessions`.
     pub chain_minutes: u64,
     pub chain_tokens: Tokens,
     pub chain_total_tokens: u64,
+    pub chain_counted_tokens: u64,
     pub chain_read: usize,
     pub chain_sessions: usize,
     /// The task's `est-tokens` when the session worked on one task, and the session's and the
-    /// chain's share of it.
+    /// chain's counted tokens as a share of it.
     pub est_tokens: u64,
     pub est_pct: Option<u32>,
     pub chain_est_pct: Option<u32>,
@@ -853,14 +858,16 @@ pub fn recap(
         minutes: own.minutes,
         tokens: own.tokens,
         total_tokens: own.tokens.total(),
+        counted_tokens: own.tokens.counted(),
         chain_minutes: sum.minutes,
         chain_tokens: sum.tokens,
         chain_total_tokens: sum.tokens.total(),
+        chain_counted_tokens: sum.tokens.counted(),
         chain_read: sum.read,
         chain_sessions: links.len(),
         est_tokens: est,
-        est_pct: work::pct(own.tokens.total(), est),
-        chain_est_pct: work::pct(sum.tokens.total(), est),
+        est_pct: work::pct(own.tokens.counted(), est),
+        chain_est_pct: work::pct(sum.tokens.counted(), est),
     };
     let project = project_of(&entry.cwd, projects).unwrap_or("").to_string();
     let who = Who {
@@ -1756,7 +1763,12 @@ waiting_on:
         let usages = |ids: &[String]| -> Vec<Usage> {
             ids.iter()
                 .map(|i| match starts.get(i) {
-                    Some(s) if i == C => usage(*s, 60, 300_000),
+                    // A long session: 5M of cache reads, which never count (mu-172).
+                    Some(s) if i == C => {
+                        let mut u = usage(*s, 60, 300_000);
+                        u.tokens.cache_read = 5_000_000;
+                        u
+                    }
                     Some(s) => usage(*s, 50, 200_000),
                     None => Usage::missing(),
                 })
@@ -1818,9 +1830,15 @@ waiting_on:
         );
         // Time and tokens: its own, and the chain's beside it. Two tasks: no estimate to hold to.
         assert_eq!((r.cost.minutes, r.cost.total_tokens), (50, 200_111));
+        // mu-172: every kind for the breakdown (C's 5M cache reads included); the counted kinds
+        // (input, output, cache writes) for what's held against an estimate.
         assert_eq!(
             (r.cost.chain_minutes, r.cost.chain_total_tokens),
-            (160, 700_333)
+            (160, 5_700_233)
+        );
+        assert_eq!(
+            (r.cost.counted_tokens, r.cost.chain_counted_tokens),
+            (200_011, 700_033)
         );
         assert_eq!((r.cost.chain_read, r.cost.chain_sessions), (3, 3));
         assert_eq!((r.cost.est_tokens, r.cost.est_pct), (0, None));
@@ -1861,8 +1879,19 @@ waiting_on:
                 ("pass", "passed it Building → Testing"),
             ]
         );
+        // mu-172: counted against est-tokens, never the cache reads: 300,011 of 1M, not the
+        // 5,300,011 every kind adds up to (530%); the chain's 700,033, not 5,700,233 (570%).
+        assert_eq!(
+            (r.cost.total_tokens, r.cost.counted_tokens),
+            (5_300_011, 300_011)
+        );
         assert_eq!((r.cost.est_tokens, r.cost.est_pct), (1_000_000, Some(30)));
         assert_eq!(r.cost.chain_est_pct, Some(70));
+        let json = serde_json::to_value(&r.cost).unwrap();
+        assert_eq!(
+            (&json["countedTokens"], &json["chainCountedTokens"]),
+            (&serde_json::json!(300_011), &serde_json::json!(700_033))
+        );
         assert!(r.progress[0].guess);
         // Refused: a session the list doesn't have, another account's, a bad id.
         assert!(recap("mg", "aaaaaaa9", &listed, &[], &src).is_err());

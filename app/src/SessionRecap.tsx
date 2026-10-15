@@ -1,20 +1,32 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { HelpButton } from "./HelpButton";
-import { fmtMinutes, ofEstimate, shortTokens, stageLabel, stamp } from "./lib";
+import { fmt } from "./i18n";
+import { fmtMinutes, shortTokens, stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { useLook } from "./modes";
 import ProjectName from "./ProjectName";
 import { chainLine, historyKind, projectOf, rowAge, SESSION_GROUPS, sessionName, WORDS } from "./sessionsData";
-import type { SessionRecap as Recap, Tokens } from "./types";
+import type { SessionRecap as Recap, SessionRow, Tokens } from "./types";
 import { Button } from "./ui";
-import { NOT_READ } from "./Work";
 
 /** While the recap is open its session may still be working, so it's read again this often. */
 const REFRESH_MS = 15_000;
 
 const minutes = (m: number) => fmtMinutes(m) || "0 min";
 const when = (secs: number | null) => (secs === null ? "—" : stamp(new Date(secs * 1000)));
+/** Why a session has no numbers, by its `found`. */
+const NOT_READ: Record<Exclude<SessionRow["found"], "read">, string> = {
+  missing: "not on this Mac",
+  "too-big": "transcript over 128 MB, not read",
+  "not-read": "not read: not stamped with a Claude account Muster reads",
+};
+/** "1.2M of 2M (60%)": an actual against its estimate, with the core's share; the actual alone
+ *  when there's no estimate. The share's digits are the language's, as `shortTokens`' are. */
+const ofEstimate = (actual: string, estimate: string, pct: number | null) => (estimate && pct !== null ? `${actual} of ${estimate} (${fmt.number(pct)}%)` : actual);
+/** " + 300k cache reads, not counted" (mu-172, as the Work section says it): cache reads are shown
+ *  beside the counted tokens and never held against the estimate; "" when there were none. */
+const cacheReads = (t: Tokens) => (t.cacheRead > 0 ? ` + ${shortTokens(t.cacheRead)} cache reads, not counted` : "");
 const breakdown = (t: Tokens) => `input ${shortTokens(t.input)} · output ${shortTokens(t.output)} · cache read ${shortTokens(t.cacheRead)} · cache write ${shortTokens(t.cacheWrite)}`;
 
 /** A session's transcript as the core folded it, or why it couldn't. */
@@ -256,7 +268,10 @@ function TokensSection({ recap }: { recap: Recap }) {
       <h2 id="recap-tokens">Tokens</h2>
       {c.found === "read" ? (
         <>
-          <p className="small"><b>{ofEstimate(shortTokens(c.totalTokens), est, c.estPct)}</b></p>
+          <p className="small">
+            <b>{ofEstimate(shortTokens(c.countedTokens), est, c.estPct)}</b>
+            {cacheReads(c.tokens)}
+          </p>
           <p className="meta small">{breakdown(c.tokens)}</p>
         </>
       ) : (
@@ -264,7 +279,8 @@ function TokensSection({ recap }: { recap: Recap }) {
       )}
       {chained && (
         <p className="meta small">
-          The chain of {c.chainSessions}: {ofEstimate(shortTokens(c.chainTotalTokens), est, c.chainEstPct)}
+          The chain of {c.chainSessions}: {ofEstimate(shortTokens(c.chainCountedTokens), est, c.chainEstPct)}
+          {cacheReads(c.chainTokens)}
           {c.chainRead < c.chainSessions && ` · ${c.chainSessions - c.chainRead} of ${c.chainSessions} not read on this Mac`}
         </p>
       )}

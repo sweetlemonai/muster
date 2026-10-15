@@ -185,6 +185,15 @@ export type Task = {
   search?: string;
   /** One of the task's sessions changed its transcript in the last 5 minutes (0025). */
   live: boolean;
+  /** The tokens its own sessions used so far, counted as `est-tokens` counts them: input, output
+   *  and cache writes, never cache reads (mu-172). Set only on a task in Shaping, Building or
+   *  Testing that isn't the owner's (the token ribbon's cards); null there when no session's
+   *  transcript could be read, and everywhere else. The same number as the Work section's
+   *  `countedTokens`. */
+  tokensUsed: number | null;
+  /** A session another task of the queue names too was read and left out of `tokensUsed`: its
+   *  share of this task can't be told apart (mu-172). */
+  tokensShared: boolean;
   /** What Claude Code says its holder's session is doing (0048, sessionState.ts); unknown when
    *  absent. "needs-input" also sets `waitingForOwner`. */
   sessionState?: SessionState;
@@ -220,15 +229,52 @@ export type SessionRow = {
   live: boolean;
   skippedLines: number;
   skippedFiles: number;
-  /** How many other tasks name this session; its cost counts in full on each. */
+  /** How many other tasks name this session. Over 0, its tokens and time are left out of this
+   *  task's totals and shown apart (mu-172). */
   sharedWith: number;
 };
+
+/** A stage of the Work section's table (mu-172 round 2): what the task's sessions spent while it
+ *  was in that stage, by the time of each turn, and the minutes it spent there less blocked and
+ *  paused. "other" holds what fell in Backlog, Ready or Done, or before the first stage line. */
+export type WorkStage = "shaping" | "building" | "testing" | "your-check" | "other";
+
+/** One session's share of a stage: its turns inside the stage's windows. `id` is a `rows[]`
+ *  entry's. A `shared` session (another task names it too) is shown, never counted. */
+export type StageSession = { id: string; tokens: Tokens; countedTokens: number; minutes: number; shared: boolean };
+
+/** A stage's row: `tokens` and `countedTokens` over its own sessions only; the shared sessions'
+ *  in-window tokens in `sharedTokens`, kept out. */
+export type StageRow = { stage: WorkStage; minutes: number; tokens: Tokens; countedTokens: number; sharedTokens: Tokens; sessions: StageSession[] };
 
 /** The task pane's Work section (0025): sessions, totals against the estimates, a progress guess. */
 export type Work = {
   rows: SessionRow[];
-  totals: { sessions: number; read: number; live: number; shared: number; tokens: Tokens; totalTokens: number; minutes: number };
-  /** The estimates as minutes and tokens, and the totals as a share of each (null without one). */
+  /** By stage, in the order shaping, building, testing, your-check, other; a stage the task never
+   *  entered and with no tokens is left out (mu-172 round 2). */
+  stages: StageRow[];
+  /** Over the sessions read on this Mac. `tokens`, `totalTokens` and `minutes` are the task's own
+   *  sessions only: one another task also names (`shared`) is left out and summed apart in
+   *  `sharedTokens` (`sharedRead` of them read). `countedTokens` is the own sessions' input,
+   *  output and cache writes, what `est-tokens` counts, the same as the stage rows' own counted
+   *  tokens summed; `agentMinutes` the agent time, the Building and Testing rows' minutes (less
+   *  blocked and paused; Your check is the owner's wait, never in it), null before it was ever
+   *  in Building (mu-172). */
+  totals: {
+    sessions: number;
+    read: number;
+    live: number;
+    shared: number;
+    tokens: Tokens;
+    totalTokens: number;
+    minutes: number;
+    countedTokens: number;
+    sharedTokens: Tokens;
+    sharedRead: number;
+    agentMinutes: number | null;
+  };
+  /** The estimates as minutes and tokens, and `agentMinutes` and `countedTokens` as a share of
+   *  each (null without one). */
   estimate: { minutes: number; tokens: number; minutesPct: number | null; tokensPct: number | null };
   guess: { pct: number; basis: string };
 };
@@ -275,13 +321,18 @@ export type SessionRecap = {
     end: number | null;
     minutes: number;
     tokens: Tokens;
+    /** Every kind together, for the breakdown. */
     totalTokens: number;
+    /** What counts against est-tokens (mu-172): input, output and cache writes, never cache reads. */
+    countedTokens: number;
     chainMinutes: number;
     chainTokens: Tokens;
     chainTotalTokens: number;
+    chainCountedTokens: number;
     chainRead: number;
     chainSessions: number;
-    /** The task's est-tokens when it worked on one task (0 otherwise), and the shares of it. */
+    /** The task's est-tokens when it worked on one task (0 otherwise), and the counted tokens'
+     *  shares of it. */
     estTokens: number;
     estPct: number | null;
     chainEstPct: number | null;

@@ -299,8 +299,34 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .note-card .you-ribbon, .note-card .holder-ribbon { border-start-end-radius: calc(var(--radius) - 1px); }
 /* The ribbon is 9.5px × 1.4 plus its 1px border, about 14.3px: the strip is 17px from the card's
    edge, and the Top bar look's band still starts at the edge, under the ribbon. */
-.card.holdable { padding-block-start: 17px; }
+.card.holdable { padding-block-start: 17px; padding-block-end: 17px; }
 .card.holdable .card-band { margin-block-start: -17px; }
+/* The token ribbon (mu-172): what the task's own sessions spent against its estimate, in the
+   card's bottom corner on the side the text ends (bottom-left right to left), in the card itself:
+   a card that can wear it (.card.holdable) keeps the 17px strip at its bottom too, held or not,
+   so a first count or a claim arriving with a poll moves nothing. Neutral like the holder ribbon;
+   "over" is a word at weight 800, never the attention colour ("720k / 600k · over"). The live dot
+   sits in it, still. */
+/* On a narrow card a part gives way whole or not at all (re-shoot 2: a squeezed word left a "."
+   or a double gap). The ribbon is one wrapping line, one line high, never wider than the card's
+   padding box: the parts come in the order they must stay (the dot, the figures, "over", the
+   note) and "shared" last, so a part that doesn't fit wraps out of sight whole. No part shrinks,
+   none ends in "…". The line hugs the corner (flex-end), and each part carries the panel, the top
+   line and its 2px start padding, so a part that wrapped away leaves the card's own background,
+   never an empty piece of ribbon. The first part shown rounds the corner; the last part that
+   never goes, and "shared", end with 2px. The "·" before "over" stays (AC3's "720k / 600k ·
+   over"): 9px text and 2px spacing fit the dot, "9.9M / 999k · over" in a 100px card in every
+   look (TokenRibbon.test's width budget), so it never has to go. */
+.token-ribbon { display: flex; flex-wrap: wrap; justify-content: flex-end; align-content: flex-start; font-size: 9px; font-weight: 600; line-height: 1.5; white-space: nowrap; max-width: 100%; height: calc(1.5em + 1px); overflow: hidden; }
+.card .token-ribbon { position: absolute; inset-block-end: 0; inset-inline-end: 0; z-index: 1; }
+.token-ribbon > :not(.sr-only) { flex: none; background: var(--panel); color: var(--text); border-block-start: 1px solid var(--line); padding-inline-start: 2px; }
+.token-ribbon > :first-child { border-inline-start: 1px solid var(--line); border-start-start-radius: 6px; }
+.token-ribbon > .token-end { padding-inline-end: 2px; }
+.token-ribbon > .token-shared { padding-inline: 0 2px; }
+.token-over { font-weight: 800; padding-inline-start: 2px; }
+.token-live { display: flex; align-items: center; }
+.token-ribbon .live-dot { flex: none; width: 6px; height: 6px; }
+.card .token-ribbon .live-dot { margin: 0; }
 
 /* In the filter bar's arrange slot: Who pushes itself right, and Group by follows it. */
 .for-filter { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
@@ -357,11 +383,16 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 
 /* The Work section (0025): sessions, cost against the estimates, a guess, and a transcript. Quiet:
    muted text, no attention colour; only a live session gets the small dot. */
-.work-totals { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 2px; font-size: 13px; }
 .work-rows { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
-.work-rows th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--line); }
-.work-rows td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.work-rows td:last-child { text-align: right; }
+.work-rows th { text-align: start; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.work-rows thead th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
+.work-rows td, .work-rows tbody th { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.work-rows td:last-child { text-align: end; }
+/* By stage (mu-172 round 2): a stage's row in the text's weight, its sessions indented under it,
+   the total last, read from the start of the line. */
+.work-stage-row td, .work-stage-row th { font-weight: 600; color: var(--text); }
+.work-session td:first-child { padding-inline-start: 16px; }
+.work-rows .work-total td { text-align: start; border-bottom: none; padding-block-start: 6px; }
 .work-rows button { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; padding: 1px 8px; font-size: 11px; }
 .work-rows button:hover:not(:disabled), .work-rows button:focus-visible, .work-rows button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
 .work-rows button:disabled { opacity: 0.4; }
@@ -370,7 +401,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .transcript { margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; }
 .transcript-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
 .transcript-title { font-weight: 600; }
-.transcript-bar button { margin-left: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 1px 8px; font-size: 11px; }
+.transcript-bar button { margin-inline-start: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 1px 8px; font-size: 11px; }
 .card .live-dot { margin: 0; }
 
 .markdown { overflow-wrap: anywhere; }
@@ -1181,6 +1212,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 @media (prefers-reduced-motion: reduce) {
   .proof-thumb, .proof-thumb img { transition: none; animation: none; }
   .side-cat-chevron { transition: none; }
+  .live-dot { animation: none; transition: none; }
 }
 /* Run from the app (mu-79): the Run line's command beside its button; the Run block's output, the
    last lines in monospace, each line set right to left or left to right by its own text so a

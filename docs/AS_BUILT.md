@@ -932,7 +932,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     "holds it", each a link to the task), History (its log lines in those tasks, by `work::log_who`:
     claim, check-in with %, pass, return, takeover, note, plus handoff-from and handoff-to, in time
     order), Time and Tokens (`transcripts::Reader::usages`, the session's and the chain's sums, and
-    the share of `est-tokens` when it worked on one task; log stamps read in-process by
+    their counted tokens' share of `est-tokens` when it worked on one task, cache reads shown
+    beside them and never counted, as in the Work section since mu-172; log stamps read in-process by
     `queue::local_epoch`, the C library's `mktime`, no `date` per line), and Progress (its latest check-in per
     task, else 0025's guess, labelled a guess). Transcript (`session_markdown`) shows 0025's folded
     Markdown under the recap, never in its place.
@@ -1694,13 +1695,58 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Work** (task 0025, below the description and check-ins in the task panel): every Claude Code
   session that worked on the task, found by the `session <8 hex>` in its claim or `held-by` and in
   the who of its log lines (the older `label (session 7b5e8856)` and 0030's stamped
-  `label (checkout · session 7b5e8856 · cc-hg)`). One row each: short id and label, the stage it
-  held, whether it holds the task now (0030's holder: the claim, or `held-by` in Testing and Your
-  check), started, ended or **live**, minutes and tokens. Then the totals against the estimates ("Tokens 70k of 100k (70%)"), the tokens by kind,
-  and a progress guess from ticked criteria and the stage, labelled as a guess. **View** opens that
-  session's transcript below the rows as Markdown: one line per prompt, reply and tool call, tool
+  `label (checkout · session 7b5e8856 · cc-hg)`). A table by stage (mu-172; columns Stage and
+  session, Tokens, Time and View): a row for each stage with its counted tokens, cache reads and
+  shared sessions apart, and its time; under it the sessions that spent there, each with its short
+  id and label, "holds it" when it holds the task now (0030's holder: the claim, or `held-by` in
+  Testing and Your check), "shared with N other tasks, not counted" when it's shared, and its
+  tokens and time in that stage. Each stage is a row group headed by its name (`<th
+  scope="rowgroup">`), so a screen reader says a session's stage with its row. A session no stage
+  has tokens of (its transcript missing, too big, not stamped, or with no tokens) is listed under
+  "No tokens by stage" with why. A live session says **live** after its label. Then one total line
+  against the estimates ("Total: 1.8M of 1.5M tokens (120%) · 2.5 h of 8 h (31%)"), cache reads
+  and shared sessions apart after it, the tokens by kind, and a progress guess from ticked
+  criteria and the stage, labelled as a guess. **View** opens that session's transcript below the
+  table as
+  Markdown: one line per prompt, reply and tool call, tool
   output and thinking left out, the latest 1,500 entries, every punctuation mark escaped so nothing
   in it renders as a link, image or HTML. Only a session the task names can be viewed.
+  - **What counts** (mu-172, `work::split`, `work::agent_minutes`): tokens are the own sessions'
+    input, output and cache writes (`Tokens::counted`, `countedTokens`), against `est-tokens`;
+    their cache reads are shown beside them and never counted (they grow with a session's length,
+    not its work). A session another task of the same queue names too (the lead's, say) is kept
+    out of every total and shown apart (`sharedTokens`, `sharedRead`): its transcript can't say
+    which part was this task's, so neither counting it in full nor guessing a split is right.
+    Time against `est-time` is agent time (`agentMinutes`): Building's stage time plus Testing's,
+    blocked and paused stretches left out, each minute once (in Building or Testing it runs to
+    now). For a task never released to Ready nor sent back from Your check that's mu-168's first
+    claim to last leaving Testing; time back in Ready isn't work, and Your check is the owner's
+    wait (`agent_minutes_match_mu_168_on_its_own_cases`). Shown in hours ("2.5 h of 8 h (31%)";
+    a day of estimate is 8 h, never "1 d"). The rows' minutes and the breakdown are the
+    own sessions' transcript spans. Before mu-172 the owner's task read "Tokens 168.1M of 1.5M
+    (11204%)" and "Time 7.3 h of 1 d (92%)": every kind of every session, the lead's whole
+    transcript included; it now reads "Total: 1.8M of 1.5M tokens (120%) · 2.5 h of 8 h (31%)"
+    (`the_owners_fixture_…` in `work.rs`).
+  - **By stage** (mu-172, `stages`, `work::stage_rows`): a row each for Shaping, Building, Testing
+    and Your check, then "other", and under each the sessions that used tokens there. Each
+    transcript keeps its tokens by minute (`transcripts::Buckets`: one entry per minute with any
+    use, subagents merged in, held in the summary cache with the rest of the file's sums), and
+    each minute goes to the stage the task was in then: a stage line opens a window of the stage
+    it moved to until the next one, the last runs to now, and before the first the task was in
+    that line's `from` stage since its first log line (a task made in Shaping has its Shaping
+    row). Ready, Backlog, Done, before the task was made and replies with no time stamp go to
+    "other", so the rows always add up to the totals. A row's time is the task's time in that
+    stage, blocked and paused left out (Your check's is the owner's wait, never in the total); a
+    session's is its first to its last minute there, paused left out. A shared session is listed
+    under each stage it used tokens in, its tokens in the row's `sharedTokens`, never counted. When
+    a stage line's stamp can't be read as a time, everything goes to "other" and agent time is
+    unknown.
+  - **The card's token ribbon** gets the same number (`work::mark_tokens`, `tokensUsed`,
+    `tokensShared`): the state read counts it for an agent's task in Shaping, Building or Testing
+    from the same split, so card and Work section agree to the token. A count is reused for 30 s
+    while the task names the same sessions (a live transcript changes every poll), the memo holds
+    only the cards marked by the latest poll, and it's taken out of the app's state while
+    transcripts are read, so no lock is held over a read.
   - **Where the numbers come from** (`transcripts.rs`, the one reader 0017's actuals will use too:
     `transcripts::actuals`): `~/.claude-<label>/projects/<folder key>/<session id>.jsonl`, each allowed
     account (0012) once (`.claude-hg/projects` linking to `.claude/projects` isn't counted twice;
@@ -1714,7 +1760,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     stamped with a Claude account Muster reads" (`Found::NotRead`, 0099). Transcripts over 128 MB and lines over 8 MB are skipped, and summaries are cached by
     size and modified time (512 files).
   - **Live:** a transcript (or one of its subagents') changed in the last 5 minutes. The card shows
-    a small dot by its id while any of the task's sessions is live, worked out in the state read
+    a small dot while any of the task's sessions is live (in its token ribbon on a card that has
+    one, mu-172; by its id on the others), worked out in the state read
     from file times only (20 cards × 50 sessions: about 0.5 ms). Done tasks aren't checked.
   - **Speed:** 50 transcripts of 1,000 lines each read in about 0.3 s cold in a debug build and
     0.5 ms warm. On the owner's Mac, five real sessions (up to 60 MB) read in 0.15 s cold in a
@@ -1726,8 +1773,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   design, research, test, perf, security, and any other word works. They're cleaned the same way
   everywhere (lowercase, hyphens, 24 characters, 8 at most). On cards, in the filter, in New task
   and on each task. `muster new --tags`, `muster set <id> tags`, `muster list --tag`.
-- **Estimates:** `est-time` (45m, 2h, 1.5d; a day is 8 agent hours) and `est-tokens` (150k, 1.2M)
-  on each task, cleaned the same way everywhere. On cards (`~2h · 500k`), in the table (sortable),
+- **Estimates:** `est-time` (45m, 2h, 1.5d; a day is 8 agent hours) and `est-tokens` (150k, 1.2M;
+  input, output and cache writes, not cache reads, since mu-172) on each task, cleaned the same
+  way everywhere. On cards (`~2h · 500k`), in the table (sortable),
   in New task and on each task. The filter bar totals what's shown and still open ("≈ 10 d · 20.1M
   tokens left, 11 of 13 open tasks estimated"). The helper estimates every task it files with a size
   guide (S 30m/150k, M 2h/500k, L 1d/2M, XL: split). `muster new --time --tokens`, `muster set <id>

@@ -2,14 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { humanColumn } from "./human";
 import {
   ago, boardColumn, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
-  builtTested, homePath, copiedPath, needsTester, nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, sameHolder, shortTokens, shortWho, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
+  builtTested, homePath, copiedPath, fmtHours, needsTester, nextStage, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, sameHolder, shortTokens, shortWho, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, tokenRibbonText, tokensOver, whoLine,
 } from "./lib";
+import { unmarked } from "./i18n";
+import { setLocale } from "./i18n/runtime";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: "todo/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "",
-  blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
+  blockHistory: [], questions: [], openQuestions: 0, live: false, tokensUsed: null, tokensShared: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
 
@@ -567,11 +569,136 @@ describe("work against an estimate (0025)", () => {
       "0", "16", "999", "1k", "3.5k", "6k", "10k", "12k", "70k", "999k", "1M", "1.2M", "12M",
     ]);
   });
-  it("ofEstimate: the actual, of the estimate, with the share; the actual alone without one", () => {
-    expect(ofEstimate("1.2M", "2M", 60)).toBe("1.2M of 2M (60%)");
-    expect(ofEstimate("3 h", "2 h", 150)).toBe("3 h of 2 h (150%)");
-    expect(ofEstimate("40 min", "", null)).toBe("40 min");
-    expect(ofEstimate("40 min", "2 h", null)).toBe("40 min");
+  it("shortTokens: Persian digits in Persian, the k and M as they are (mu-172)", async () => {
+    try {
+      await setLocale("fa");
+      expect([210_412, 600_000, 1_234_567, 9_900_000, 900].map(shortTokens)).toEqual(["۲۱۰k", "۶۰۰k", "۱٫۲M", "۹٫۹M", "۹۰۰"]);
+    } finally {
+      await setLocale("en");
+    }
+  });
+  it("fmtHours: minutes under an hour, hours with one decimal over it, never days (mu-172, D4)", async () => {
+    expect([0, 45, 59, 60, 90, 150, 480, 1590, 2880].map(fmtHours)).toEqual(["0 min", "45 min", "59 min", "1 h", "1.5 h", "2.5 h", "8 h", "26.5 h", "48 h"]);
+    // A part minute rounds; nothing below zero.
+    expect([59.6, -5].map(fmtHours)).toEqual(["1 h", "0 min"]);
+    try {
+      await setLocale("fa");
+      expect([45, 480, 1590].map(fmtHours)).toEqual(["۴۵ دقیقه", "۸ ساعت", "۲۶٫۵ ساعت"]);
+    } finally {
+      await setLocale("en");
+    }
+  });
+});
+
+describe("the token ribbon's words (mu-172)", () => {
+  const LRI = "\u2066", PDI = "\u2069";
+  const ribbon = (over: Partial<Pick<Task, "tokensUsed" | "tokensShared" | "estTokenCount" | "live">>) =>
+    tokenRibbonText({ tokensUsed: null, tokensShared: false, estTokenCount: 0, live: false, ...over });
+  /** The parts as one line, in the order the card lays them out (TokenRibbon.test checks the card). */
+  const line = (r: ReturnType<typeof ribbon>) => [r.figures, r.over && `· ${r.over}`, r.note, r.shared].filter(Boolean).join(" ");
+  const shown = (over: Parameters<typeof ribbon>[0]) => unmarked(line(ribbon(over)));
+
+  it("under the estimate: used / estimated, nothing more", () => {
+    const r = ribbon({ tokensUsed: 210_412, estTokenCount: 600_000 });
+    expect(unmarked(line(r))).toBe("210k / 600k");
+    expect([r.over, r.note, r.shared]).toEqual(["", "", ""]);
+    expect(r.spoken).toBe("210k of 600k tokens used");
+    expect(r.tip).toBe("210,412 of 600,000 tokens (35%): input, output and cache writes");
+    // Exactly the estimate isn't over it.
+    expect(shown({ tokensUsed: 600_000, estTokenCount: 600_000 })).toBe("600k / 600k");
+  });
+
+  it("over the estimate: says so in a word right after the figures, and in the spoken words", () => {
+    const r = ribbon({ tokensUsed: 720_000, estTokenCount: 600_000 });
+    expect(unmarked(line(r))).toBe("720k / 600k · over");
+    expect(r.over).toBe("over");
+    expect(unmarked(r.figures)).toBe("720k / 600k");
+    expect(r.spoken).toBe("720k of 600k tokens used, over the estimate");
+    expect(r.tip).toBe("720,000 of 600,000 tokens (120%): input, output and cache writes");
+    expect(tokensOver({ tokensUsed: 720_000, estTokenCount: 600_000 })).toBe(true);
+    expect(tokensOver({ tokensUsed: 600_000, estTokenCount: 600_000 })).toBe(false);
+    expect(tokensOver({ tokensUsed: 720_000, estTokenCount: 0 })).toBe(false);
+    expect(tokensOver({ tokensUsed: null, estTokenCount: 600_000 })).toBe(false);
+  });
+
+  it("without an estimate, and when nothing could be read: short words on the card, whole ones spoken and in the tooltip", () => {
+    expect(shown({ tokensUsed: 210_412 })).toBe("210k · no est");
+    expect(ribbon({ tokensUsed: 210_412 }).note).toBe("· no est");
+    expect(ribbon({ tokensUsed: 210_412 }).spoken).toBe("210k tokens used, no estimate");
+    expect(ribbon({ tokensUsed: 210_412 }).tip).toBe("210,412 tokens: input, output and cache writes");
+    expect(shown({ estTokenCount: 600_000 })).toBe("600k est · not read");
+    expect(ribbon({ estTokenCount: 600_000 }).spoken).toBe("600k tokens estimated, none read yet");
+    expect(ribbon({ estTokenCount: 600_000 }).tip).toBe("600,000 tokens estimated; no session's transcript could be read for it on this Mac");
+    expect(shown({})).toBe("no est · not read");
+    expect(ribbon({}).spoken).toBe("no tokens read, no estimate");
+    // Only shared sessions read: zero of its own, counted as such.
+    expect(shown({ tokensUsed: 0, estTokenCount: 600_000 })).toBe("0 / 600k");
+    // Long numbers stay whole: the widest it gets.
+    expect(shown({ tokensUsed: 999_000, estTokenCount: 9_900_000 })).toBe("999k / 9.9M");
+    expect(shown({ tokensUsed: 99_000_000, estTokenCount: 9_900_000 })).toBe("99M / 9.9M · over");
+  });
+
+  it("says when a session is spending them now", () => {
+    expect(ribbon({ tokensUsed: 210_412, estTokenCount: 600_000, live: true }).spoken).toBe("210k of 600k tokens used, being used now");
+    expect(ribbon({ tokensUsed: 720_000, estTokenCount: 600_000, live: true }).spoken).toBe("720k of 600k tokens used, over the estimate, being used now");
+    // Live doesn't change what's shown: the dot says it.
+    expect(shown({ tokensUsed: 210_412, estTokenCount: 600_000, live: true })).toBe("210k / 600k");
+  });
+
+  it("says a shared session isn't counted: a word on the card, a clause spoken, a sentence in the tooltip (review a11y-1)", () => {
+    const r = ribbon({ tokensUsed: 210_412, estTokenCount: 600_000, tokensShared: true });
+    expect(r.shared).toBe("· shared");
+    expect(unmarked(line(r))).toBe("210k / 600k · shared");
+    expect(r.spoken).toBe("210k of 600k tokens used, a session shared with other tasks not counted");
+    expect(r.tip).toBe("210,412 of 600,000 tokens (35%): input, output and cache writes; a session shared with other tasks isn't counted");
+    const all = ribbon({ tokensUsed: 720_000, estTokenCount: 600_000, tokensShared: true, live: true });
+    expect(unmarked(line(all))).toBe("720k / 600k · over · shared");
+    expect(all.spoken).toBe("720k of 600k tokens used, over the estimate, a session shared with other tasks not counted, being used now");
+    expect(shown({ tokensUsed: 210_412, tokensShared: true })).toBe("210k · no est · shared");
+  });
+
+  it("keeps each figure in a left-to-right isolate, so a pair never flips right to left", () => {
+    expect(ribbon({ tokensUsed: 210_412, estTokenCount: 600_000 }).figures).toBe(`${LRI}210k${PDI} / ${LRI}600k${PDI}`);
+    expect(ribbon({ tokensUsed: 210_412 }).figures).toBe(`${LRI}210k${PDI}`);
+    expect(ribbon({ estTokenCount: 600_000 }).figures).toBe(`${LRI}600k${PDI}`);
+    expect(ribbon({}).figures).toBe("");
+  });
+
+  it("the figures and over, which never give way, stay short enough for a 100px card", () => {
+    // The widest of each: what the card's CSS keeps whole (styles.css .token-figures, .token-over).
+    const widest = ribbon({ tokensUsed: 9_900_000, estTokenCount: 999_000 });
+    expect(unmarked(`${widest.figures} ${widest.over}`).length).toBeLessThanOrEqual(16);
+  });
+
+  it("writes Persian digits in Persian, the pair as «used از estimated», each figure left to right", async () => {
+    try {
+      await setLocale("fa");
+      const r = ribbon({ tokensUsed: 210_412, estTokenCount: 600_000 });
+      // از, not a slash: the Persian decimal ٫ beside a slash reads as another slash.
+      expect(unmarked(r.figures)).toBe("۲۱۰k از ۶۰۰k");
+      expect(r.figures).toContain(`${LRI}۲۱۰k${PDI}`);
+      expect(r.figures).toContain(`${LRI}۶۰۰k${PDI}`);
+      expect(unmarked(ribbon({ tokensUsed: 9_900_000, estTokenCount: 999_000 }).figures)).toBe("۹٫۹M از ۹۹۹k");
+      // Not read is the whole message, so it's one short word that never gives way: ناخوانده, not
+      // «خوانده نشد», whose «نشد» (the "not") was cut on a 100px card.
+      expect(unmarked(line(ribbon({ estTokenCount: 600_000 })))).toBe("۶۰۰k تخمین · ناخوانده");
+      expect(unmarked(line(ribbon({})))).toBe("بی‌تخمین · ناخوانده");
+      expect(r.spoken).toMatch(/۲۱۰k.*۶۰۰k/);
+      expect(r.tip).toContain("۲۱۰٬۴۱۲");
+      expect(r.tip).toContain("۳۵");
+      const over = ribbon({ tokensUsed: 720_000, estTokenCount: 600_000, tokensShared: true });
+      expect(unmarked(over.figures)).toBe("۷۲۰k از ۶۰۰k");
+      expect(over.over).not.toBe("");
+      expect(over.shared).not.toBe("");
+      // No English left in what it says.
+      for (const s of [line(r), r.spoken, r.tip, line(over), over.spoken, over.tip, line(ribbon({ tokensUsed: 5 })), line(ribbon({ estTokenCount: 5 })), line(ribbon({})), ribbon({}).spoken]) {
+        expect(unmarked(s).replace(/\b[kM]\b|\d[kM]/g, "")).not.toMatch(/[a-z]{2,}/i);
+      }
+      const widest = ribbon({ tokensUsed: 9_900_000, estTokenCount: 999_000 });
+      expect(unmarked(`${widest.figures} ${widest.over}`).length).toBeLessThanOrEqual(16);
+    } finally {
+      await setLocale("en");
+    }
   });
 });
 

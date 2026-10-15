@@ -1,5 +1,4 @@
 import { useContext, type ReactNode } from "react";
-import { LiveDot } from "./CardLook";
 import { isHuman } from "./human";
 import { agoText, leaseRunOut, minutesSince, nameOf, shownHolder, splitHolder } from "./lib";
 import { useLook } from "./modes";
@@ -26,6 +25,13 @@ export const ribbonStage = (t: Pick<Task, "stage" | "forWho">) => RIBBON_STAGES.
 export function ribbonHolder(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
   if (!RIBBON_STAGES.has(t.stage)) return "";
   return (t.stage === "testing" ? t.heldBy : t.claimedBy).trim();
+}
+
+/** Claude Code's word on the holder's session wins over the live dot (mu-171): while it waits for
+ *  input or has ended, the card shows no dot, wherever the dot sits (the token ribbon, mu-172). */
+export function stateHidesDot(t: Pick<Task, "stage" | "sessionState" | "paused">): boolean {
+  if (ribbonStateWords(t, false) === "") return false;
+  return t.sessionState === "needs-input" || t.sessionState === "ended";
 }
 
 const isOwner = (who: string) => splitHolder(who).label === "owner";
@@ -128,13 +134,12 @@ function RibbonState({ t }: { t: Task }) {
   );
 }
 
-/** A held card's ribbon (`cardRibbon` says "holder"): the name, its session's state (mu-171), the
- *  live dot while a session on it works (0025, moved here from the top row; not beside waiting
- *  for input or ended, where Claude Code's word wins, as the sidebar's working now judges it), and
+/** A held card's ribbon (`cardRibbon` says "holder"): the name, its session's state (mu-171), and
  *  quiet once the lease runs out, judged as the card's flag judges it. Waiting for input is the owner's turn, so
  *  quiet goes to the tooltip there (the card's flag line says it too). The ribbon sits in its
  *  room, the strip above the card's top row less 8px at the start, which picks the full or short
- *  words by its width. Every mode shows it. */
+ *  words by its width. Every mode shows it.
+ *  The live dot is the token ribbon's, by the number it moves (mu-172). */
 export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
   const on = useLook("holder-ribbon");
   const lease = useContext(Machine).leaseMinutes;
@@ -149,7 +154,6 @@ export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
     <span className="holder-room">
       <Ribbon who={who} spoken="held by" tip={tip} quiet={quiet && state !== "needs-input"} state={state}>
         <RibbonState t={t} />
-        {(state === "" || state === "working") && <LiveDot t={t} />}
       </Ribbon>
     </span>
   );

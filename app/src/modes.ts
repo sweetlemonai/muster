@@ -82,6 +82,14 @@ const TABLE = {
     standard: does("show", "display.elements.holderRibbon.standard"),
     focus: does("show", "display.elements.holderRibbon.focus"),
   },
+  "token-ribbon": {
+    get label() {
+      return tn("shell", "display.elements.tokenRibbon.label");
+    },
+    adhd: does("show", "display.elements.tokenRibbon.adhd"),
+    standard: does("busy-or-selected", "display.elements.tokenRibbon.standard", "display.elements.tokenRibbon.reach"),
+    focus: does("busy", "display.elements.tokenRibbon.focus", "display.elements.tokenRibbon.reach"),
+  },
   columns: {
     get label() {
       return tn("shell", "display.elements.columns.label");
@@ -191,6 +199,14 @@ export type CardLines = "all" | "brief" | "status";
 export function cardLines(how: Look<"card-lines">, active: boolean): CardLines {
   if (how === "all" || (how === "selected" && active)) return "all";
   return how === "selected" ? "brief" : "status";
+}
+
+/** Whether a card's token ribbon shows (mu-172): on every card ADHD gives it; in Standard while
+ *  it says something is happening or wrong (`busy`: a session is spending tokens now, or they're
+ *  over the estimate), or on the selected card; in Focus only while busy. Its room at the card's
+ *  bottom stays either way. */
+export function tokenRibbonShows(how: Look<"token-ribbon">, busy: boolean, active: boolean): boolean {
+  return how === "show" || busy || (how === "busy-or-selected" && active);
 }
 
 /** The stages Focus keeps open: the work going on now and what waits on the owner. */

@@ -723,6 +723,12 @@ pub struct Task {
     /// One of those sessions' transcripts changed in the last 5 minutes (0025). Set by the app's
     /// state read (`work::mark_live`); false wherever nothing set it.
     pub live: bool,
+    /// The card's token ribbon (mu-172, `work::mark_tokens`): its own sessions' input, output and
+    /// cache writes, the Work section's counted tokens. Set by the app's state read for an agent's
+    /// task in Shaping, Building or Testing; None elsewhere, and when no session could be read.
+    pub tokens_used: Option<u64>,
+    /// A session read for it was kept out of `tokens_used` because another task names it too.
+    pub tokens_shared: bool,
     /// What Claude Code says its holder's session is doing (0048, `agents::apply`): working,
     /// needs-input, ended, or unknown wherever nothing read it (the heartbeat lines decide then).
     pub session_state: crate::agents::SessionState,
@@ -1481,6 +1487,8 @@ pub fn parse_task(
         search,
         session_ids: Vec::new(),
         live: false,
+        tokens_used: None,
+        tokens_shared: false,
         session_state: Default::default(),
         session_account: String::new(),
         touches: parse_touches(&get("touches")),

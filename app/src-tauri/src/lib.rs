@@ -72,6 +72,8 @@ pub(crate) struct AppState {
     roles_file: PathBuf,
     /// Session transcripts under the home folder (0025), read and cached off the main thread.
     transcripts: Arc<transcripts::Reader>,
+    /// The cards' token counts between polls (mu-172), taken out while a poll counts them.
+    tokens: Arc<Mutex<work::TokenMemo>>,
     /// Claude Code's session states (0048), read off the main thread at most every 15 s.
     agents: Arc<agents::Monitor>,
     /// The Sessions view's list (0098), read off the main thread at most every 15 s while the
@@ -147,6 +149,7 @@ async fn state(
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
     let reader = app.transcripts.clone();
+    let tokens = app.tokens.clone();
     let monitor = app.agents.clone();
     let h = handle.clone();
     let (state, cache, menu_bar) = blocking(move || {
@@ -168,6 +171,12 @@ async fn state(
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, &allowed, s.now);
+        // The held cards' token ribbon: each count reused for 30 s. The memo is taken out while
+        // transcripts are read and put back after, so the lock is never held over a read; a poll
+        // running beside this one finds it empty and only counts again.
+        let mut memo = std::mem::take(&mut *tokens.lock().map_err(|e| e.to_string())?);
+        work::mark_tokens(&mut s.tasks, &reader, &allowed, s.now, &mut memo);
+        *tokens.lock().map_err(|e| e.to_string())? = memo;
         // Claude Code's word on each holder's session (0048): the latest read, never waited on.
         let sessions = monitor.poll(&s.tasks, &allowed, s.now);
         agents::apply(&mut s.tasks, &sessions, &allowed);
@@ -1825,6 +1834,7 @@ pub fn run() {
                 helpers: Mutex::new(HashMap::new()),
                 config: Mutex::new(()),
                 transcripts: Arc::clone(&reader),
+                tokens: Arc::new(Mutex::new(work::TokenMemo::default())),
                 agents: agents::Monitor::app(home()),
                 sessions: sessions::Lister::app(home(), reader),
                 config_file: dir.join("projects.json"),

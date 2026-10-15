@@ -12,7 +12,7 @@ import type { Note, Task } from "./types";
 const task = (over: Partial<Task>): Task => ({
   queue: "muster", id: "0097", prefix: "mu", title: "Shaping is a claim", kind: "code", priority: "normal", status: "doing", stage: "building", blocked: false, stageHistory: [],
   folder: "doing", path: "doing/0097-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "2026-10-14 18:55", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
-  openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0,
+  openQuestions: 0, live: false, tokensUsed: null, tokensShared: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0,
   level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "building", ...over,
 });
 const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "2026-10-14-1600-x.md", title: "Backlog notes show who", text: "Backlog notes show who", truncated: false, added: 0, heldBy: "", heldSince: "", heartbeat: "", ...over });
@@ -128,7 +128,9 @@ describe("a held card wears its holder's ribbon (0097)", () => {
     expect(spoken(own)).not.toContain("held by");
   });
   it("wears nothing when nobody holds it, or in a stage with no ribbon", () => {
-    expect(card(task({}))).not.toContain("ribbon");
+    // Nobody holds it: no holder or You ribbon (the token ribbon at the bottom comes on every card
+    // in these stages, mu-172).
+    expect(card(task({}))).not.toMatch(/holder-ribbon|you-ribbon/);
     expect(card(task({ stage: "ready", claimedBy: ASGHAR }))).not.toContain("ribbon");
     expect(card(task({ stage: "your-check", heldBy: ASGHAR }))).not.toContain("holder-ribbon");
   });
@@ -144,14 +146,18 @@ describe("a held card wears its holder's ribbon (0097)", () => {
     for (const stage of ["backlog", "ready", "your-check", "done"]) expect(classOf(card(task({ stage }))), stage).not.toContain("holdable");
     expect(classOf(card(task({ forWho: "human" })))).not.toContain("holdable");
   });
-  it("carries the live dot beside the name, not in the top row, so a session starting moves nothing either", () => {
+  it("leaves the live dot to the token ribbon, not the top row, so a session starting moves nothing either (mu-172)", () => {
     const html = card(task({ claimedBy: ASGHAR, live: true }));
-    expect(ribbon(html)).toContain('class="dot live-dot" role="img" aria-label="live"');
+    // The dot moved from beside the name to the token ribbon, by the number it moves.
+    expect(ribbon(html)).not.toContain("live-dot");
+    expect(/<span class="token-ribbon".*$/.exec(html)?.[0]).toContain('class="dot live-dot"');
     expect(topRow(html)).not.toContain("live-dot");
     expect(html.match(/live-dot/g)).toHaveLength(1);
     expect(topRow(html)).toBe(topRow(card(task({}))));
-    // Without a holder ribbon the dot stays where it was.
-    expect(topRow(card(task({ live: true })))).toContain("live-dot");
+    // Nobody holds it yet: the dot is still the token ribbon's, so a claim arriving moves nothing.
+    expect(topRow(card(task({ live: true })))).not.toContain("live-dot");
+    // Where no ribbon can come, the dot stays where it was.
+    expect(topRow(card(task({ stage: "ready", live: true })))).toContain("live-dot");
     expect(topRow(card(task({ forWho: "human", live: true })))).toContain("live-dot");
   });
   it("turns quiet, in words, once the lease runs out, as the card's flag does", () => {
@@ -317,11 +323,12 @@ describe("a backlog note being shaped (0097)", () => {
 
 describe("the session's state on the ribbon (mu-171)", () => {
   const held = { claimedBy: ASGHAR, stageSince: "2026-10-14 17:00", heartbeat: "2026-10-14 18:55" };
-  it("says working after the name, in the Building accent's class, with the live dot after the words", () => {
+  it("says working after the name, in the Building accent's class; the live dot is the token ribbon's (mu-172)", () => {
     const r = ribbon(card(task({ ...held, sessionState: "working", live: true })));
     expect(r).toMatch(/^<span class="holder-ribbon stated working" title="Held by [^"]*, working">/);
     expect(seen(r)).toBe("Asghar_7 · working");
-    expect(r).toContain('<span aria-hidden="true" class="holder-sep"> · </span><span aria-hidden="true" class="holder-state working">working</span><i class="dot live-dot"');
+    expect(r).toContain('<span aria-hidden="true" class="holder-sep"> · </span><span aria-hidden="true" class="holder-state working">working</span></span>');
+    expect(r).not.toContain("live-dot");
   });
   it("says waiting for input in a needs-you block, the short words beside the full for a narrow card, and no ·", () => {
     const r = ribbon(card(task({ ...held, sessionState: "needs-input", waitingForOwner: true })));
@@ -375,7 +382,8 @@ describe("the session's state on the ribbon (mu-171)", () => {
   });
   it("leaves the live dot out beside waiting for input and ended: Claude Code's word wins", () => {
     for (const sessionState of ["needs-input", "ended"] as const) expect(card(task({ ...held, sessionState, live: true })), sessionState).not.toContain("live-dot");
-    expect(ribbon(card(task({ ...held, live: true })))).toContain("live-dot");
+    // Working or unknown, the dot shows, in the token ribbon (mu-172).
+    expect(card(task({ ...held, live: true }))).toContain("live-dot");
   });
   it("renders no .card-session line on any card", () => {
     for (const mode of MODE_IDS)
@@ -496,7 +504,7 @@ describe("the ribbons' CSS (0097)", () => {
     const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)];
     const ribbonRules = rules.filter(([, sel]) => /holder-(ribbon|room|state|full|short|name|sep|quiet)|\.live-dot|^\s*\.dot\b/.test(sel));
     expect(ribbonRules.length).toBeGreaterThan(5);
-    for (const [, sel, body] of ribbonRules) expect(body, sel.trim()).not.toMatch(/animation|transition/);
+    for (const [, sel, body] of ribbonRules) expect(body, sel.trim()).not.toMatch(/(animation|transition)(?!\s*:\s*none\s*;)/);
     expect(css).not.toMatch(/@keyframes/);
   });
 });

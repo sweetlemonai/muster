@@ -1112,7 +1112,7 @@ const ROLES: [Role; 3] = [
     },
     Role {
         role: "Tech",
-        job: "where in the code and how (read it, name the files); estimate agent time from the measured block below, and tokens (--time, --tokens); which tasks it depends on.",
+        job: "where in the code and how (read it, name the files); estimate agent time from the measured block below, and tokens (--time, --tokens): time in agent hours (1d = 8 h), tokens as input, output and cache writes, not cache reads; which tasks it depends on.",
     },
     Role {
         role: "UI",
@@ -2103,6 +2103,8 @@ mod tests {
             "agent time from the measured block below, and tokens",
             "\nEstimates, measured on this queue (",
             "estimate by scope\n",
+            "agent hours (1d = 8 h)",
+            "input, output and cache writes, not cache reads",
             "depends on",
             "UI:",
             "docs/DESIGN.md",

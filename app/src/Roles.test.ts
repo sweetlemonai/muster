@@ -33,7 +33,7 @@ import type { Question, Role, SessionRow, Task, Work as WorkData } from "./types
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0030", title: "T", kind: "task", priority: "normal", status: "doing", stage: "building", blocked: false, stageHistory: [],
   folder: "doing", path: "doing/0030-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "",
-  blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
+  blockHistory: [], questions: [], openQuestions: 0, live: false, tokensUsed: null, tokensShared: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "building", ...over,
 });
 
@@ -345,7 +345,8 @@ describe("check-ins, comments, Work rows and question askers name a slot by its 
     });
     const work = {
       rows: [row({ slot: "coder-2" }), row({ id: "1c6af0d9", who: "wt-a", holds: false })],
-      totals: { sessions: 2, read: 0, live: 0, shared: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, totalTokens: 0, minutes: 0 },
+      stages: [],
+      totals: { sessions: 2, read: 0, live: 0, shared: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, totalTokens: 0, minutes: 0, countedTokens: 0, sharedTokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, sharedRead: 0, agentMinutes: null },
       estimate: { minutes: 0, tokens: 0, minutesPct: null, tokensPct: null },
       guess: { pct: 50, basis: "the stage" },
     } satisfies WorkData;

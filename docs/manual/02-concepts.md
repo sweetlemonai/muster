@@ -241,14 +241,18 @@ A task can carry three **estimates**, set while shaping: agent time, the testing
 
 What a task actually cost comes from the Claude Code sessions that worked on it. `muster` stamps the session's id on the claim, on who holds the task, and on every log line it writes, so Muster knows which sessions to look at. It reads their transcripts on this Mac, where Claude Code keeps them, and sends nothing anywhere. Only sessions whose stamp names an account on your list in [Settings › Agents](04-in-the-app.md#agents) are read; a session stamped with no account (bare `claude`, or a stamp from before accounts were stamped) is never read, so it adds no tokens and its row says "not read: not stamped with a Claude account Muster reads".
 
-The task pane's **Work** section shows what it found:
+Muster counts a session's input, output and cache writes, the same tokens an `est-tokens` estimate counts. Cache reads are shown beside them but never counted: they grow with how long a session runs, not with the work it does. A session that also worked on other tasks (the lead's, say) can't say which part of it was this task's, so it is listed but kept out of every total, and the total says what it spent: "+ 2.3M in shared sessions, not counted". Time against the estimate is agent time, Building plus Testing, in hours; Your check is your own wait and is never in it.
 
-- one row per session: who it was, the stage it worked in, when it started and ended (or **live** while it's still going), its time and its tokens;
-- the totals against the estimates, such as "Tokens 70k of 100k (70%)", and the tokens by kind;
+The task pane's **Work** section shows what it found, as a table by stage:
+
+- a row for each stage the task was in (Shaping, Building, Testing, Your check, and "Other (Backlog, Ready, Done)"), with the tokens spent there, cache reads apart, and the time the task spent there; Your check's row says "45 min, your wait";
+- under each stage, the sessions that spent there: who it was, "holds it" for the one holding the task now, **live** while it's still going, and its tokens and time in that stage. A session that spent in two stages is listed under both, its tokens split by when it used them. A shared session says "shared with 1 other task, not counted";
+- under "No tokens by stage", a session with nothing to split, with why ("not on this Mac", "no tokens read");
+- one total line against the estimates, such as "Total: 1.8M of 1.5M tokens (120%) · 2.5 h of 8 h (31%)", then the tokens by kind;
 - a guess at how far along the task is, from its ticked criteria and its stage, labelled as a guess;
-- **View** on a row, which opens that session's transcript below the rows: one line per prompt, reply and tool call.
+- **View** on a session, which opens its transcript below the table: one line per prompt, reply and tool call.
 
-A card shows a small dot beside its id while one of its sessions is working, meaning its transcript changed in the last 5 minutes (the LIVE window). A session that ran on another Mac shows as "not on this Mac". A session that also worked on other tasks is counted in full on each, and the section says so, so the task's own cost is lower than shown.
+A card someone holds in Shaping, Building or Testing wears a **token ribbon** in its bottom corner: the tokens its own sessions counted against its estimate, "210k / 600k". Past the estimate it adds the word "over"; "· no est" when there's no estimate, "est · not read" before anything was read, and "· shared" when a shared session was left out. Hovering it gives the exact counts. A small dot sits by the number while the holder's session is working, meaning its transcript changed in the last 5 minutes (the LIVE window). The dot goes away while Claude Code says that session is waiting for your input or has ended. In ADHD mode every held card shows the ribbon; Standard shows it while the tokens are being spent, while they're over, or on the card you selected; Focus while they're being spent or over. A session that ran on another Mac shows as "not on this Mac".
 
 See [The task pane](04-in-the-app.md#the-task-pane) (task 0025).
 

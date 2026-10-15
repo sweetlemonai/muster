@@ -36,4 +36,5 @@ covers: app/src-tauri/src/backlog.rs, app/src-tauri/src/lenses.rs, app/src-tauri
 - `muster shape` names the now pages its matched open tasks cover. (mu-102)
 - The brief shows the estimates, measured on this queue: actual ÷ `est-time` at p50/p80 and median hours, overall, by type and by size; under 5 tasks says "too few (n)". (mu-168)
 - `--time` is agent time (first claim to leaving Testing, review and QA included, blocked and paused left out); `--test-time` is the owner's check only; the wait in Your check is neither. (mu-168)
+- `--tokens` counts input, output and cache writes, never cache reads; `--time` is agent hours (1d = 8 h). (mu-172)
 - `muster check` warns about a page over 60 lines or 4 KB, without `covers:`, sharing another's, or a symlink; never fails. (mu-102)

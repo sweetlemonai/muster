@@ -292,6 +292,14 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | LIVE | زنده | the LIVE window and badge | (proposed) |
 | prefix / folder | پیشوند / پوشه | | Mozilla |
 | estimate | تخمین | | common usage |
+| token ribbon | روبان توکن | the card's bottom corner: tokens used against the estimate (mu-172); built like روبان دارنده | (proposed) |
+| over (the estimate) | بیش | the token ribbon's one word past the estimate, kept short so the figures and it fit a 100px card; read out in full as «بیشتر از تخمین» | (proposed) |
+| no est / shared / not read (the token ribbon's short words) | بی‌تخمین / مشترک / ناخوانده | short so they fit a 100px card; «مشترک» gives way whole on a narrow card, «ناخوانده» never does (it is the whole message when nothing was read; «خوانده نشد» lost its «نشد»); spoken and in the tooltip in full | (proposed) |
+| cache read / cache write | خواندن از کش / نوشتن در کش | kinds of tokens; cache reads are shown, never counted («شمرده نشده») | (proposed) |
+| shared session | نشست مشترک | a session another task names too; listed, «شمرده نشده» | (proposed) |
+| agent time | زمان ایجنت | the Work total's time: «در حال ساخت» + «در حال تست» | (proposed) |
+| your wait (Your check's time) | انتظار شما | the owner's wait, never in the agent time | (proposed) |
+| total | مجموع | the Work table's last row | common usage |
 | Group by / Who | گروه‌بندی / چه کسی | the filter bar's choices | (proposed) |
 | sort | مرتب‌سازی | the filter bar's sort; ترتیب is the sidebar's order, kept apart | Mozilla |
 | none (a picker option) | هیچ‌کدام | bare هیچ is an unfinished word as an option; «…: هیچ.» after a heading stays | Mozilla |
@@ -324,6 +332,7 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 
 The "(proposed)" words (شکل‌دهی، در حال ساخت، برداشتن، مهلت، زاویه‌ی دید، گزارش وضعیت، ضربان،
 سازنده، شکل‌دهنده، تسک برداشته‌شده, and the shell's: بورد (or برد)، دستیار، نما، چیپ، نام نمایشی، سرصفحه، سرفصل، ترتیب دلخواه،
-راکد، ساکت، رها کردن، زنده، چشم‌انداز، رونوشت) have no source and wait on a native-speaking
-review. The digits rule waits on mu-151: until then a number filled into a Persian string is in
+راکد، ساکت، رها کردن، زنده، چشم‌انداز، رونوشت, and mu-172's: روبان توکن، بیش، خواندن از کش، نوشتن
+در کش، نشست مشترک، زمان ایجنت، انتظار شما) have no source and wait on a native-speaking review.
+The token ribbon writes its figures in Persian digits, with the k and M as they are (۲۱۰k). The digits rule waits on mu-151: until then a number filled into a Persian string is in
 Persian digits (the layer formats it), and a number written alone on screen (a count chip) is not.

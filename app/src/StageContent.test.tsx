@@ -23,7 +23,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   queue: "ai", id: "0010", prefix: "ai", title: "Example-chat component", kind: "task", priority: "high", status: "doing", stage: "your-check", blocked: false,
   stageHistory: [{ at: "2026-10-13 02:53", who: "qa", from: "testing", to: "your-check" }], folder: "doing", path: "doing/0010-example-chat-component.md", claimedBy: "", heldBy: "owner",
   stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
-  openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: true, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0,
+  openQuestions: 0, live: false, tokensUsed: null, tokensShared: false, ownerCriteria: [], waitingForOwner: true, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0,
   claimedOn: "", doneOn: "", links: [], comments: [], attachments: ["0010-ac2-keyboard.png", "0010-ac3-offline.png", "notes.txt"], logTail: [], modified: 0, level: "task",
   parent: "", due: "", children: [], progress: null, shownStage: "your-check", criteria: AI10,
   summary: "A chat example the reader steps through with Next or the keyboard; works offline; under 1 KB",
