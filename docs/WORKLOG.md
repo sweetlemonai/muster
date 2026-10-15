@@ -4,6 +4,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Two more notes shaped (mu-185, mu-186)
+**Did (shapour):** the 2317 note (a claim keeps its old account after a session moves cc-mg→cc-hg)
+became mu-185, high, after mu-184: a holder's act re-stamps `claimed-by:`/`held-by:` when its session
+id and agent match but the account changed, and takeover by that session re-stamps instead of refusing.
+The 2318 note became mu-186: the window gets `queue::Task.builders` and `lib.ts` `builders()` counts
+the takeover chain as `tester_rule` (ops.rs:2209) does.
+**Decided:** mu-185 is its own task, not folded into mu-184 or mu-182 (mu-182 is in Building and read-side
+only; mu-184's re-stamp covers bare labels). Re-stamp on every act by the holder, not only checkin.
+Vision V1 against decision 0013 rule 2 resolved by the owner's words: the re-stamp records a move the
+owner's tool made; Muster still never picks an account. mu-186 aligns the app with the core; no live
+repro was traced.
+**Verified:** both in Ready; backlog empty; `muster check` reports nothing about the new tasks.
+
 ## 2026-10-14 — The card's "needs a tester" tells a teammate from its lead (mu-158)
 **Fixed (Gholi_26, builder):** a lead holding in Testing what its teammate built saw "needs a
 tester" though the core lets it test → `lib.ts` `sameHolder` compared label and session but not the
