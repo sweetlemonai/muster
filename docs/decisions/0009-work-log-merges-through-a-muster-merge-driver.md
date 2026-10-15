@@ -1,7 +1,8 @@
 # 0009 — The work log merges through a muster merge driver
 
 Date: 2026-10-14 · Status: accepted (the shaper decided it for task mu-67; the owner can overrule
-it any time).
+it any time). Amended 2026-10-15 twice: entries under an entry, not only on top (mu-190), then at
+any number of points (mu-196).
 
 ## Why
 
@@ -68,6 +69,33 @@ resolved by hand. The why of this decision covers that case, so the rule widens 
 
 The shaper made this call for mu-190 (the owner can overrule it); only the same-point case was
 added, as the backlog note asked.
+
+## Amendment 2026-10-15: entries inserted at any number of points (task mu-196)
+
+The rule above still stopped the common case. A task with review rounds has its first entry
+rebased below main's newer entries, then puts each round's entry on top. Its log then has new
+entries at two points, and mu-173's rebase onto main stopped on `docs/WORKLOG.md` with "both sides
+changed more than new entries at one point" and was merged by hand. The why of this decision
+covers it, so the rule widens again, from "at one point" to "at any number of points":
+
+- A side is accepted when it is the base's preamble and entries, unchanged and in order, with any
+  number of runs of new dated whole entries, each at a point among the base's entries.
+- The result is the base with, at each point, one side's run as it is, or both sides' runs merged
+  there as above (newest date first, theirs above ours on the same date, each side's order kept).
+  An entry both sides added is kept once, at ours' point when the sides put it at different
+  points, since ours is what the target branch already shows; a side that repeats it keeps its
+  copies (each entry max(ours, theirs) times). That holds where the sides clash, the driver's
+  own merge. `git merge-file` runs first, and when the two points don't touch it merges cleanly
+  and its result stands: the entry is then there twice. The base's entries never move or change.
+- A run that repeats the base entries beside it fits several points. It goes where mu-190 put
+  it: at a point the other side's run can be at too, the topmost such, else its own topmost. The
+  result is the same bytes on every run.
+- Markers and exit 1 stay for everything else: an edited or removed base entry, a changed
+  preamble, an undated new entry. Two runs on one side are no longer on that list.
+- The give-up message now reads "both sides changed more than new dated entries; left the conflict
+  markers", with no point count to go stale.
+
+The shaper made this call for mu-196 (the owner can overrule it).
 
 ## Options considered
 

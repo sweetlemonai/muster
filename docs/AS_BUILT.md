@@ -2070,16 +2070,26 @@ tip, or the owner's override, said in the report) and `review::carry` after each
 conflict it splits the three versions at their `## ` lines outside fenced code blocks (``` and
 ~~~, CommonMark's opening and closing rules, an unclosed one running to the end) into the
 preamble, then whole entries (bytes as they are: CRLF, a missing last line end and non-UTF-8 text are kept). When each side is
-the base's preamble and entries with one run of dated entries (`## YYYY-MM-DD…`) inserted at one
-point, the same point on both sides (on top, or under the same base entry: task 0190,
-`inserted`, `both_inserted`), it writes the base with both sides' new entries merged there by
-date, newest first, theirs (`%B`) first on a tie, each side's own order kept, an entry both added
-kept once. `inserted` finds the points a run can be at from how many entries match from the top
-and from the bottom (one pass each; a run that repeats its neighbours fits several points, all
-giving the side's file), and the sides must share one. Anything else (two runs on one side,
-runs at different points, which merge-file already merged when they don't touch) gets
-merge-file's conflict markers (labels `ours`, `base`, `theirs`) and exit 1, with "both sides
-changed more than new entries at one point" on stderr. The result replaces `%A` whole or
+the base's preamble and entries, unchanged and in order, with any number of runs of dated entries
+(`## YYYY-MM-DD…`) inserted among them (on top, or under any base entry: tasks 0190 and 0196,
+`inserted`, `both_inserted`), it writes the base with each side's runs at their points; where
+both sides have a run at the same point they're merged there by date, newest first, theirs (`%B`) first
+on a tie, each side's own order kept. An entry both added is kept once, at ours' point when the
+sides put it at different points; that's only on this path: when merge-file merges the sides
+cleanly (the same entry at two points that don't touch), its result stands and the entry is there
+twice. The dedup counts copies per entry, so each entry is kept max(ours, theirs) times: where one
+side repeats an entry the other added too, both copies stay, where task 0190 dropped every copy
+theirs had and lost one. `inserted` first reads a side as one run as task 0190 did (entries the
+same from the top and from the bottom), so a run goes to the point 0190 put it at; otherwise it matches the base's entries
+from the bottom, each to the lowest side entry it can be (one pass,
+so every run is as high as it goes), then lets each run down over the base entries below it that
+it repeats, up to the next run: a run that repeats its neighbours fits several points, all giving
+the side's file. `both_inserted` pairs the two sides' runs whose points overlap in one pass (each
+side's runs are at disjoint ranges, in order) and puts a pair at their topmost shared point, any
+other run at its own topmost. Anything else (an edited or removed base entry, a changed preamble,
+an undated new entry) gets merge-file's conflict markers (labels `ours`, `base`, `theirs`) and
+exit 1, with "both sides changed more than new dated entries; left the conflict markers" on
+stderr. The result replaces `%A` whole or
 not at all (`replace`, task 0071): written to a new `.<name>.muster-merge-<pid>` beside it with
 `%A`'s mode, then renamed over it, with no fsync (git reads it straight back, and a full sync
 can fail on network and external volumes). On a failure the new file is removed and `%A` is
@@ -2099,7 +2109,7 @@ repo's `.muster/`) sets `merge.muster-log.name` and `merge.muster-log.driver`
 find, and prints a line when it wrote one. A failure is a warning on stderr and stops nothing.
 `parallel::merge` puts `merge_log::config_args(this_muster())` before its `rebase` (`-c` for both
 keys, the same command with the binary's path, `%` doubled and shell-quoted), so the merge's rebase uses this binary whatever the config
-says. A clash of only new entries at one point no longer sends a task back to Building. Its unit tests
+says. A clash of only new dated entries, at any number of points, no longer sends a task back to Building. Its unit tests
 build the muster binary they run as the driver once per test run (`cargo build --bin muster`
 into the harness's own target and profile), so `cargo test --lib` works in a fresh target too.
 **Lessons** (`lessons.rs`): `reviews/lessons.json` (truth) and `lessons.md` (rendered) in the

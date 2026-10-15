@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — merge-log merges new entries at any number of points, not only one (mu-196)
+**Fixed (Akbar_36, builder):** mu-173's rebase stopped on `docs/WORKLOG.md` → its log had round
+entries on top and its first entry deeper, two runs on one side, and `inserted` took only one →
+`inserted` still reads a one-run side as mu-190 did (the same point), else matches the base's
+entries from the bottom in one pass and returns every run, each
+with the points it can slide to over repeated neighbours; `both_inserted` pairs the two sides'
+runs per point in one pass and keeps an entry both added once, at ours' point, each entry
+max(ours, theirs) times (`app/src-tauri/src/merge_log.rs`). Where merge-file merges cleanly
+(the same entry at two points that don't touch) its result stands, with the entry twice. The give-up message is now "both sides changed more than new
+dated entries; left the conflict markers".
+**Decided:** decision 0009 amended a second time ("any number of points"), as shaped; repeats on
+one side are counted, so a side's own duplicate entries stay.
+**Verified:** tests first (7 red, then green), `cargo test merge_log` 30 passed: the mu-173 shape
+both ways, per-point merges, refusals beside multi-point runs through the binary, CRLF and a
+missing last line end, real repos merged and rebased both ways, 150 fixed-seed random cases through
+the binary. The real repro (O=d8ac722, A=ed2474c, B=cf5f59e) exits 0 with 163 entries in QA_10's
+hand-merged order (fe231be), plus one blank line the hand merge had dropped from theirs' entry.
+An independent review found a one-run side with a copied base entry read as two runs (different
+bytes from mu-190); fixed test-first.
+**Fixed (Akbar_39, review round 1, Reviewer_77):** R1 the real-repo test's git and driver run in
+a home of their own with no MUSTER_* (`home_g`); R2 the randomised check asserts max(ours,
+theirs) copies where the driver made the text (the keep-theirs'-copy mutant now fails it); R3 and
+R4 AS_BUILT, 0009, help and manual say what the merge keeps, and a test pins merge-file's clean
+case with the entry twice. `cargo test merge_log` 31 passed. `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))`.
+
 ## 2026-10-15 — Builders' briefs say how to undo a bad rebase; only the lead restarts a stalled session (mu-193)
 **Did (Gholi_39, builder):** `muster instructions coder` and `tester` print the git rule
 (`GIT_RULE` in `roles.rs`): never `reset --hard`, `checkout --`, `restore` over changes or

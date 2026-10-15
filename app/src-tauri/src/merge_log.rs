@@ -1,9 +1,10 @@
 //! The work log's merge driver (task 0067, decision 0009): `muster merge-log %O %A %B`, which git
 //! runs for `docs/WORKLOG.md` (`.gitattributes`: `docs/WORKLOG.md merge=muster-log`). Every task
 //! puts its entry at the top of the log, or under a later-dated one that landed on main meanwhile,
-//! so two branches always clash at one point; this keeps both entries whole, newest first, so a
-//! merge or a rebase doesn't stop for them (0190: at one point, not only on top). Anything else is a
-//! plain three-way merge, conflict markers and all. Git finds the driver in config: `muster start`
+//! and its review rounds' entries on top of that, so two branches always clash; this keeps every
+//! new entry whole, newest first, so a merge or a rebase doesn't stop for them (0190: under an
+//! entry, not only on top; 0196: at any number of points). Anything else is a plain three-way
+//! merge, conflict markers and all. Git finds the driver in config: `muster start`
 //! and `muster init` write it to the repo's own config when it's missing (`configure`), and
 //! Muster's merge passes it with `git -c` (`config_args`), so it never depends on that.
 
@@ -104,17 +105,44 @@ fn date(entry: &[u8]) -> Option<&[u8]> {
     (dated && ends).then_some(d)
 }
 
-/// One run of new entries a side put in among the base's, when that's all it changed (the same
-/// preamble, the base's entries untouched and in order around them), each with a date (0190):
-/// the points in the base's entries it can be at (0 is on top; more than one when the run
-/// repeats the entries beside it) and how many entries it has. At each point k the run is the
-/// side's entries k..k + len: a different turn of the same entries, so it's sliced at the point
-/// chosen, never moved there from another.
-fn inserted(base: &Log, side: &Log) -> Option<(std::ops::RangeInclusive<usize>, usize)> {
+/// One run of new entries a side put in among the base's (0190, 0196): the points in the base's
+/// entries it can be at (0 is on top; more than one when the run repeats the base entries below
+/// it), where it starts in the side's entries at the first of them, and how many entries it has.
+/// At point `points.start() + j` the run is the side's entries `at + j..at + j + len`: a different
+/// turn of the same entries, so it's sliced at the point chosen, never moved there from another.
+struct Run {
+    points: std::ops::RangeInclusive<usize>,
+    at: usize,
+    len: usize,
+}
+
+impl Run {
+    /// The run's entries in `side` when it's at `point`, one of its points.
+    fn at<'a, 'l>(&self, side: &'l Log<'a>, point: usize) -> &'l [&'a [u8]] {
+        let k = self.at + point - self.points.start();
+        &side.entries[k..k + self.len]
+    }
+}
+
+/// The runs of new entries a side put in among the base's, top to bottom, when that's all it
+/// changed (the same preamble, the base's entries untouched and in order around them) and each
+/// new entry has a date (0196: at any number of points, not only one).
+///
+/// A side that reads as one run is read as mu-190 read it. Otherwise the base's entries are
+/// matched from the bottom, each to the lowest side entry it can be, so
+/// every run is as high as it can go: one ordered pass, no search. Then each run is let down
+/// over the base entries below it that it repeats, as far as the next run: the other points it
+/// can be at, all giving the side's file.
+fn inserted(base: &Log, side: &Log) -> Option<Vec<Run>> {
     let (b, s) = (&base.entries, &side.entries);
     if side.preamble != base.preamble || s.len() < b.len() {
         return None;
     }
+    let dated = |run: &[&[u8]]| run.iter().all(|e| date(e).is_some());
+    // One run first, as mu-190 read it: at point k the side is b[..k], the run, b[k..], k no
+    // further down than the entries the same from the top, and no higher than the entries the
+    // same from the bottom allow. A run holding a copy of a base entry can also read as several
+    // runs below, so this keeps mu-190's bytes for every side it took.
     let same_above = b.iter().zip(s.iter()).take_while(|(x, y)| x == y).count();
     let same_below = b
         .iter()
@@ -122,40 +150,129 @@ fn inserted(base: &Log, side: &Log) -> Option<(std::ops::RangeInclusive<usize>, 
         .zip(s.iter().rev())
         .take_while(|(x, y)| x == y)
         .count();
-    // At point k the side is b[..k], the run, b[k..]: k no further down than the entries the
-    // same from the top, and no higher than the entries the same from the bottom allow.
-    let (from, to) = (b.len() - same_below, same_above);
-    if from > to {
-        return None;
+    let (from, len) = (b.len() - same_below, s.len() - b.len());
+    if len == 0 {
+        return (s == b).then(Vec::new);
     }
-    // Every point's run has the same entries, so one point's dates stand for all.
-    let len = s.len() - b.len();
-    s[from..from + len]
-        .iter()
-        .all(|e| date(e).is_some())
-        .then_some((from..=to, len))
+    if from <= same_above {
+        return dated(&s[from..from + len]).then(|| {
+            vec![Run {
+                points: from..=same_above,
+                at: from,
+                len,
+            }]
+        });
+    }
+    // pos[i]: where base entry i is in the side.
+    let mut pos = vec![0; b.len()];
+    let mut j = s.len();
+    for (i, e) in b.iter().enumerate().rev() {
+        j = s[..j].iter().rposition(|x| x == e)?;
+        pos[i] = j;
+    }
+    // Gap g (point g: above base entry g, or under the last at g == b.len()) is the side's
+    // entries start(g)..end(g).
+    let start = |g: usize| if g == 0 { 0 } else { pos[g - 1] + 1 };
+    let end = |g: usize| pos.get(g).copied().unwrap_or(s.len());
+    let mut runs = Vec::new();
+    let mut g = 0;
+    while g <= b.len() {
+        let (at, len) = (start(g), end(g) - start(g));
+        if len == 0 {
+            g += 1;
+            continue;
+        }
+        if !dated(&s[at..at + len]) {
+            return None;
+        }
+        // Down one point, past base entry p: the run's first entry at that point is p itself,
+        // and the gap under p is empty, so the next base entry still follows the run.
+        let mut p = g;
+        while p < b.len() && s[at + p - g] == b[p] && start(p + 1) == end(p + 1) {
+            p += 1;
+        }
+        runs.push(Run {
+            points: g..=p,
+            at,
+            len,
+        });
+        g = p + 1;
+    }
+    Some(runs)
 }
 
-/// Both sides only added one run of whole entries, at the same point among the base's (on top,
-/// or under a later-dated entry that landed on both): the base with both runs at that point,
-/// newest date first and, on the same date, theirs (the incoming side: the commit a rebase
-/// replays, the branch a merge brings in) above ours. Each side's entries keep their own order;
-/// one both sides added is kept once. None when the sides changed anything else, or put their
-/// runs at different points (git's merge-file's case).
+/// Both sides only added runs of whole dated entries among the base's, at any number of points
+/// (on top, or under any base entry): the base with each side's runs at their points. Where both
+/// sides have a run at one point, the two are merged there newest date first and, on the same
+/// date, theirs (the incoming side: the commit a rebase replays, the branch a merge brings in)
+/// above ours; each side's entries keep their own order. An entry both sides added is kept once,
+/// at ours' point (what the target branch already shows). The base's entries never move or
+/// change. None when a side changed anything else: an edited or removed base entry, a changed
+/// preamble, a new entry without a date.
+///
+/// A run that fits several points (it repeats its neighbours) goes where mu-190 put it: at a
+/// point the other side's run can be at too, the topmost such, else its own topmost. The runs on
+/// one side are at disjoint ranges of points, in order, so one pass over both pairs them.
 fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
     let b = split(base);
     let (o_log, t_log) = (split(ours), split(theirs));
-    let (o_at, o_len) = inserted(&b, &o_log)?;
-    let (t_at, t_len) = inserted(&b, &t_log)?;
-    let at = *o_at.start().max(t_at.start());
-    if at > *o_at.end().min(t_at.end()) {
-        return None;
+    let (o_runs, t_runs) = (inserted(&b, &o_log)?, inserted(&b, &t_log)?);
+    let (mut o_at, mut t_at) = (vec![0; o_runs.len()], vec![0; t_runs.len()]);
+    let (mut i, mut j) = (0, 0);
+    while i < o_runs.len() || j < t_runs.len() {
+        match (o_runs.get(i), t_runs.get(j)) {
+            (Some(o), Some(t)) => {
+                let at = *o.points.start().max(t.points.start());
+                if at <= *o.points.end().min(t.points.end()) {
+                    (o_at[i], t_at[j]) = (at, at);
+                    (i, j) = (i + 1, j + 1);
+                } else if o.points.end() < t.points.start() {
+                    o_at[i] = *o.points.start();
+                    i += 1;
+                } else {
+                    t_at[j] = *t.points.start();
+                    j += 1;
+                }
+            }
+            (Some(o), None) => {
+                o_at[i] = *o.points.start();
+                i += 1;
+            }
+            (None, Some(t)) => {
+                t_at[j] = *t.points.start();
+                j += 1;
+            }
+            (None, None) => unreachable!("the loop runs while either side has a run left"),
+        }
     }
-    let o = &o_log.entries[at..at + o_len];
-    let t: Vec<&[u8]> = t_log.entries[at..at + t_len]
+    let o: Vec<(usize, Vec<&[u8]>)> = o_runs
         .iter()
-        .copied()
-        .filter(|e| !o.contains(e))
+        .zip(&o_at)
+        .map(|(r, &at)| (at, r.at(&o_log, at).to_vec()))
+        .collect();
+    // Theirs' entries ours added too go only where ours has them, each copy once.
+    let mut ours_added: std::collections::HashMap<&[u8], usize> = std::collections::HashMap::new();
+    for e in o.iter().flat_map(|(_, run)| run) {
+        *ours_added.entry(e).or_default() += 1;
+    }
+    let t: Vec<(usize, Vec<&[u8]>)> = t_runs
+        .iter()
+        .zip(&t_at)
+        .map(|(r, &at)| {
+            let kept = r
+                .at(&t_log, at)
+                .iter()
+                .copied()
+                .filter(|e| match ours_added.get_mut(e) {
+                    Some(n) if *n > 0 => {
+                        *n -= 1;
+                        false
+                    }
+                    _ => true,
+                })
+                .collect();
+            (at, kept)
+        })
         .collect();
     let eol: &[u8] = if ours.windows(2).any(|w| w == b"\r\n") {
         b"\r\n"
@@ -170,26 +287,34 @@ fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
         }
         out.extend_from_slice(part);
     };
-    for e in &b.entries[..at] {
-        push(e);
-    }
-    let (mut i, mut j) = (0, 0);
-    while i < o.len() || j < t.len() {
-        let theirs_next = match (o.get(i), t.get(j)) {
-            (Some(a), Some(b)) => date(b) >= date(a),
-            (None, Some(_)) => true,
-            _ => false,
-        };
-        if theirs_next {
-            push(t[j]);
-            j += 1;
-        } else {
-            push(o[i]);
-            i += 1;
+    let (mut o, mut t) = (o.into_iter().peekable(), t.into_iter().peekable());
+    for g in 0..=b.entries.len() {
+        let o_run = o
+            .next_if(|(at, _)| *at == g)
+            .map(|r| r.1)
+            .unwrap_or_default();
+        let t_run = t
+            .next_if(|(at, _)| *at == g)
+            .map(|r| r.1)
+            .unwrap_or_default();
+        let (mut i, mut j) = (0, 0);
+        while i < o_run.len() || j < t_run.len() {
+            let theirs_next = match (o_run.get(i), t_run.get(j)) {
+                (Some(a), Some(b)) => date(b) >= date(a),
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            if theirs_next {
+                push(t_run[j]);
+                j += 1;
+            } else {
+                push(o_run[i]);
+                i += 1;
+            }
         }
-    }
-    for e in &b.entries[at..] {
-        push(e);
+        if let Some(e) = b.entries.get(g) {
+            push(e);
+        }
     }
     Some(out)
 }
@@ -216,7 +341,7 @@ fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
 
 /// Merge the three versions of the log at `base`, `ours` and `theirs`: a plain three-way merge
 /// (`git merge-file`) when it's clean, else both sides' new entries (`both_inserted`) when that's
-/// all they added, at one point, else the three-way merge's conflict markers.
+/// all they added, at any number of points, else the three-way merge's conflict markers.
 pub fn merge(base: &Path, ours: &Path, theirs: &Path) -> Result<Merged, String> {
     merge_capped(base, ours, theirs, MAX_BYTES)
 }
@@ -331,7 +456,7 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
     let e = match merged {
         Ok(0) => return Ok(0),
         Ok(code) => {
-            eprintln!("muster merge-log: both sides changed more than new entries at one point; left the conflict markers");
+            eprintln!("muster merge-log: both sides changed more than new dated entries; left the conflict markers");
             return Ok(code);
         }
         Err(e) => e,
@@ -709,12 +834,15 @@ mod tests {
         let base = format!("{PRE}{top}{OLD}{OLDER}");
         let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-14", "B"));
         let (c, d) = (entry("2026-10-12", "C"), entry("2026-10-12", "D"));
-        // Two runs on one side, the other inserting at one of them.
-        conflict(merged(
-            &base,
-            &format!("{PRE}{top}{a}{OLD}{c}{OLDER}"),
-            &format!("{PRE}{top}{b}{OLD}{OLDER}"),
-        ));
+        // Two runs on one side, the other inserting at one of them: merged per point (0196).
+        assert_eq!(
+            clean(merged(
+                &base,
+                &format!("{PRE}{top}{a}{OLD}{c}{OLDER}"),
+                &format!("{PRE}{top}{b}{OLD}{OLDER}"),
+            )),
+            format!("{PRE}{top}{b}{a}{OLD}{c}{OLDER}")
+        );
         // An undated inserted entry.
         conflict(merged(
             &base,
@@ -743,26 +871,472 @@ mod tests {
             &format!("# Renamed\n\n{top}{a}{OLD}{OLDER}"),
             &format!("{PRE}{top}{b}{OLD}{OLDER}"),
         ));
-        // Inserts at two different points are no case of ours: whatever merge-file makes of
-        // them. It merges them itself, even with only a one-line entry between them.
+        // Inserts at two different points: merge-file merges them itself, even with only a
+        // one-line entry between them, and both_inserted gives the same (0196).
         let o = format!("{PRE}{a}{top}{OLD}{OLDER}");
         let t = format!("{PRE}{top}{OLD}{c}{OLDER}");
-        assert!(both_inserted(base.as_bytes(), o.as_bytes(), t.as_bytes()).is_none());
-        assert_eq!(
-            clean(merged(&base, &o, &t)),
-            format!("{PRE}{a}{top}{OLD}{c}{OLDER}")
-        );
+        let want = format!("{PRE}{a}{top}{OLD}{c}{OLDER}");
+        assert_eq!(inserted_text(&base, &o, &t), want);
+        assert_eq!(clean(merged(&base, &o, &t)), want);
         let o = format!("{PRE}{top}{a}{OLD}{OLDER}");
         let t = format!("{PRE}{top}{OLD}{d}{OLDER}");
+        assert_eq!(
+            inserted_text(&base, &o, &t),
+            format!("{PRE}{top}{a}{OLD}{d}{OLDER}")
+        );
         let one_line = "## 2026-10-12 — One line\n";
         let base1 = format!("{PRE}{top}{one_line}{OLDER}");
         let o1 = format!("{PRE}{top}{a}{one_line}{OLDER}");
         let t1 = format!("{PRE}{top}{one_line}{d}{OLDER}");
-        assert!(both_inserted(base.as_bytes(), o.as_bytes(), t.as_bytes()).is_none());
-        assert!(both_inserted(base1.as_bytes(), o1.as_bytes(), t1.as_bytes()).is_none());
+        let want = format!("{PRE}{top}{a}{one_line}{d}{OLDER}");
+        assert_eq!(inserted_text(&base1, &o1, &t1), want);
+        assert_eq!(clean(merged(&base1, &o1, &t1)), want);
+    }
+
+    /// `both_inserted`'s result as text; panics when it gives up.
+    fn inserted_text(base: &str, ours: &str, theirs: &str) -> String {
+        let got = both_inserted(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())
+            .expect("both_inserted gave up");
+        String::from_utf8(got).unwrap()
+    }
+
+    /// `muster merge-log` run as git runs it, through the binary, in a home of its own with no
+    /// MUSTER_BASE, MUSTER_ROOT or TASKS_ROOT: its exit code, what it left in ours, its stderr.
+    fn through_binary(base: &[u8], ours: &[u8], theirs: &[u8]) -> (i32, Vec<u8>, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        fs::create_dir(p("home")).unwrap();
+        fs::write(p("o"), base).unwrap();
+        fs::write(p("a"), ours).unwrap();
+        fs::write(p("b"), theirs).unwrap();
+        let out = Command::new(this_muster().unwrap())
+            .arg("merge-log")
+            .args([p("o"), p("a"), p("b")])
+            .env("HOME", p("home"))
+            .env_remove("MUSTER_BASE")
+            .env_remove("MUSTER_ROOT")
+            .env_remove("TASKS_ROOT")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        (
+            out.status.code().unwrap_or(-1),
+            fs::read(p("a")).unwrap(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    const GIVE_UP: &str =
+        "muster merge-log: both sides changed more than new dated entries; left the conflict markers";
+
+    #[test]
+    fn merge_log_inserts_at_any_number_of_points() {
+        // mu-173's rebase (0196): theirs put two round entries on top and its first entry deeper,
+        // under the base's newer entries; ours put one entry on top, on the same date.
+        let (n1, n2) = (
+            entry("2026-10-15", "New one"),
+            entry("2026-10-15", "New two"),
+        );
+        let base = format!("{PRE}{n1}{n2}{OLD}{OLDER}");
+        let o = entry("2026-10-15", "Ours");
+        let (t1, t2) = (
+            entry("2026-10-15", "Round two"),
+            entry("2026-10-15", "Round one"),
+        );
+        let deep = entry("2026-10-14", "First entry");
+        let ours = format!("{PRE}{o}{n1}{n2}{OLD}{OLDER}");
+        let theirs = format!("{PRE}{t1}{t2}{n1}{n2}{deep}{OLD}{OLDER}");
+        // Merge-file alone can't: it leaves the clash on top.
+        conflict(merged_file_only(&base, &ours, &theirs));
+        let want = format!("{PRE}{t1}{t2}{o}{n1}{n2}{deep}{OLD}{OLDER}");
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        let (code, text, err) = through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+        assert_eq!((code, String::from_utf8(text).unwrap()), (0, want), "{err}");
+        // The sides swapped: the incoming side's run is still the one above on the same date.
+        let want = format!("{PRE}{o}{t1}{t2}{n1}{n2}{deep}{OLD}{OLDER}");
+        assert_eq!(clean(merged(&base, &theirs, &ours)), want);
+        let (code, text, err) = through_binary(base.as_bytes(), theirs.as_bytes(), ours.as_bytes());
+        assert_eq!((code, String::from_utf8(text).unwrap()), (0, want), "{err}");
+    }
+
+    #[test]
+    fn merge_log_keeps_merge_files_clean_result_with_an_entry_both_added_twice() {
+        // The same entry on top in ours and deeper in theirs: the points don't touch, so
+        // merge-file merges it cleanly and its result stands, with the entry twice (0009).
+        let (top, x) = (entry("2026-10-15", "Top"), entry("2026-10-14", "X"));
+        let base = format!("{PRE}{top}{OLD}{OLDER}");
+        let ours = format!("{PRE}{x}{top}{OLD}{OLDER}");
+        let theirs = format!("{PRE}{top}{OLD}{x}{OLDER}");
+        let want = format!("{PRE}{x}{top}{OLD}{x}{OLDER}");
+        assert_eq!(clean(merged_file_only(&base, &ours, &theirs)), want);
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+    }
+
+    /// Plain `git merge-file -p`, to show a case is one merge-file can't merge.
+    fn merged_file_only(base: &str, ours: &str, theirs: &str) -> Merged {
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        fs::write(p("o"), base).unwrap();
+        fs::write(p("a"), ours).unwrap();
+        fs::write(p("b"), theirs).unwrap();
+        let out = Command::new("git")
+            .args(["merge-file", "-p"])
+            .args([p("a"), p("o"), p("b")])
+            .output()
+            .unwrap();
+        match out.status.code() {
+            Some(0) => Merged::Clean(out.stdout),
+            _ => Merged::Conflict(out.stdout),
+        }
+    }
+
+    #[test]
+    fn merge_log_inserts_merge_per_point() {
+        let top = entry("2026-10-15", "Top");
+        let base = format!("{PRE}{top}{OLD}{OLDER}");
+        // Runs at the same two points on both sides: each point merged on its own, newest
+        // first, theirs above ours on a date, each side's order kept.
+        let (o1, o2, o3) = (
+            entry("2026-10-17", "Ours newest"),
+            entry("2026-10-16", "Ours new"),
+            entry("2026-10-12", "Ours deep"),
+        );
+        let (t1, t2, t3) = (
+            entry("2026-10-16", "Theirs new"),
+            entry("2026-10-12", "Theirs deep"),
+            entry("2026-10-11", "Theirs deeper"),
+        );
+        let ours = format!("{PRE}{o1}{o2}{top}{OLD}{o3}{OLDER}");
+        let theirs = format!("{PRE}{t1}{top}{OLD}{t2}{t3}{OLDER}");
+        let want = format!("{PRE}{o1}{t1}{o2}{top}{OLD}{t2}{o3}{t3}{OLDER}");
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        assert_eq!(inserted_text(&base, &ours, &theirs), want);
+        // Runs at disjoint points on each side all go in as they are.
+        let (a, b, c, d) = (
+            entry("2026-10-16", "A"),
+            entry("2026-10-14", "B"),
+            entry("2026-10-12", "C"),
+            entry("2026-10-10", "D"),
+        );
+        let ours = format!("{PRE}{a}{top}{OLD}{c}{OLDER}");
+        let theirs = format!("{PRE}{top}{b}{OLD}{OLDER}{d}");
         assert_eq!(
-            clean(merged(&base1, &o1, &t1)),
-            format!("{PRE}{top}{a}{one_line}{d}{OLDER}")
+            inserted_text(&base, &ours, &theirs),
+            format!("{PRE}{a}{top}{b}{OLD}{c}{OLDER}{d}")
+        );
+        // An entry both sides added at the same point is kept once, beside a second point.
+        let x = entry("2026-10-14", "On both");
+        let ours = format!("{PRE}{a}{top}{x}{OLD}{OLDER}");
+        let theirs = format!("{PRE}{top}{b}{x}{OLD}{c}{OLDER}");
+        let want = format!("{PRE}{a}{top}{b}{x}{OLD}{c}{OLDER}");
+        assert_eq!(inserted_text(&base, &ours, &theirs), want);
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        // At different points: kept once, at ours' point (what the target branch shows). Theirs
+        // also inserts on top with ours, so merge-file can't merge it and it's ours to do.
+        let ours = format!("{PRE}{a}{top}{x}{OLD}{OLDER}");
+        let theirs = format!("{PRE}{b}{x}{top}{OLD}{OLDER}");
+        let want = format!("{PRE}{a}{b}{top}{x}{OLD}{OLDER}");
+        assert_eq!(inserted_text(&base, &ours, &theirs), want);
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        let ours = format!("{PRE}{a}{top}{OLD}{OLDER}{x}");
+        assert_eq!(
+            inserted_text(&base, &ours, &theirs),
+            format!("{PRE}{a}{b}{top}{OLD}{OLDER}{x}")
+        );
+        // A run that repeats the entry above it (S) fits two points; beside a second run it's
+        // placed as mu-190 places it: at the point the other side inserts at, else the topmost.
+        let (s, n, t) = (
+            entry("2026-10-15", "Sync"),
+            entry("2026-10-15", "N"),
+            entry("2026-10-15", "T"),
+        );
+        let base = format!("{PRE}{s}{OLD}{OLDER}");
+        let ours = format!("{PRE}{s}{n}{s}{OLD}{c}{OLDER}");
+        let theirs = format!("{PRE}{s}{t}{OLD}{d}{OLDER}");
+        let want = format!("{PRE}{s}{t}{n}{s}{OLD}{c}{d}{OLDER}");
+        for _ in 0..3 {
+            assert_eq!(
+                inserted_text(&base, &ours, &theirs),
+                want,
+                "the same every run"
+            );
+        }
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        // A run holding a copy of the base entry above it, with new entries on both sides of
+        // the copy, is one run, as on main (mu-190's bytes), not a copy on top and the rest
+        // under it.
+        let (ba, bb) = (entry("2026-10-01", "Base A"), entry("2026-09-01", "Base B"));
+        let (x, y, z) = (
+            entry("2026-10-05", "X"),
+            entry("2026-10-03", "Y"),
+            entry("2026-10-04", "Z"),
+        );
+        assert_eq!(
+            inserted_text(
+                &format!("{PRE}{ba}{bb}"),
+                &format!("{PRE}{ba}{x}{ba}{y}{bb}"),
+                &format!("{PRE}{ba}{z}{bb}"),
+            ),
+            format!("{PRE}{ba}{x}{z}{ba}{y}{bb}")
+        );
+        // The other side at no point of its range: the topmost, [S, N] on top.
+        let theirs = format!("{PRE}{s}{OLD}{d}{OLDER}");
+        assert_eq!(
+            inserted_text(&base, &ours, &theirs),
+            format!("{PRE}{s}{n}{s}{OLD}{c}{d}{OLDER}")
+        );
+    }
+
+    #[test]
+    fn merge_log_multi_point_inserts_still_refuse_anything_else() {
+        let top = entry("2026-10-15", "Top");
+        let base = format!("{PRE}{top}{OLD}{OLDER}");
+        let (a, b, c, d) = (
+            entry("2026-10-16", "A"),
+            entry("2026-10-16", "B"),
+            entry("2026-10-14", "C"),
+            entry("2026-10-12", "D"),
+        );
+        let theirs = format!("{PRE}{b}{top}{d}{OLD}{OLDER}");
+        let edited = OLD.replace("the old thing", "the old thing, edited");
+        for (what, ours) in [
+            (
+                "an edited base entry",
+                format!("{PRE}{a}{top}{c}{edited}{OLDER}"),
+            ),
+            ("a removed base entry", format!("{PRE}{a}{top}{c}{OLDER}")),
+            (
+                "a changed preamble",
+                format!("# Renamed\n\n{a}{top}{c}{OLD}{OLDER}"),
+            ),
+            (
+                "an undated new entry",
+                format!("{PRE}{a}{top}## Unreleased\n- c\n\n{OLD}{OLDER}"),
+            ),
+        ] {
+            assert!(
+                both_inserted(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).is_none(),
+                "{what}"
+            );
+            let t = conflict(merged(&base, &ours, &theirs));
+            assert!(
+                t.contains("<<<<<<< ours\n") && t.contains(">>>>>>> theirs\n"),
+                "{what}: {t}"
+            );
+            // Through the binary, as git runs it: the markers, 1, and the message.
+            let (code, text, err) =
+                through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+            assert_eq!(code, 1, "{what}");
+            assert_eq!(String::from_utf8(text).unwrap(), t, "{what}");
+            assert_eq!(err.trim(), GIVE_UP, "{what}");
+        }
+    }
+
+    #[test]
+    fn merge_log_multi_point_inserts_keep_crlf_and_a_missing_last_line_end() {
+        let crlf = |s: &str| s.replace('\n', "\r\n");
+        let (pre, top, old) = (crlf(PRE), crlf(&entry("2026-10-15", "Top")), crlf(OLD));
+        let (a, b, c) = (
+            crlf(&entry("2026-10-16", "A")),
+            crlf(&entry("2026-10-16", "B")),
+            crlf(&entry("2026-10-14", "C")),
+        );
+        let got = clean(merged(
+            &format!("{pre}{top}{old}"),
+            &format!("{pre}{a}{top}{old}"),
+            &format!("{pre}{b}{top}{c}{old}"),
+        ));
+        assert_eq!(got, format!("{pre}{b}{a}{top}{c}{old}"));
+        // The file's last line has no line end on every side: it stays that way.
+        let last = "## 2026-10-12 — Old\r\n**Did:** no line end";
+        let got = clean(merged(
+            &format!("{pre}{top}{last}"),
+            &format!("{pre}{a}{top}{last}"),
+            &format!("{pre}{b}{top}{c}{last}"),
+        ));
+        assert_eq!(got, format!("{pre}{b}{a}{top}{c}{last}"));
+        // An entry added under it gives it a line end: that's an edit of the base's last entry,
+        // so it's merge-file's markers.
+        let tail = "## 2026-10-11 — Tail\r\n**Did:** no line end either";
+        conflict(merged(
+            &format!("{pre}{top}{last}"),
+            &format!("{pre}{a}{top}{last}"),
+            &format!("{pre}{b}{top}{c}{last}\r\n{tail}"),
+        ));
+        let got = clean(merged(
+            &format!("{pre}{top}{last}"),
+            &format!("{pre}{b}{top}{c}{last}"),
+            &format!("{pre}{a}{top}{last}"),
+        ));
+        assert_eq!(got, format!("{pre}{a}{b}{top}{c}{last}"));
+    }
+
+    #[test]
+    fn merge_log_merges_and_rebases_a_branch_with_runs_at_two_points() {
+        // mu-173's shape in a real repo: the task's one commit put its round entries on top and
+        // its first entry deeper; main put one entry on top. Merge and rebase, both ways round.
+        let n1 = entry("2026-10-15", "Landed before");
+        let (t1, t2) = (
+            entry("2026-10-15", "Round two"),
+            entry("2026-10-15", "Round one"),
+        );
+        let deep = entry("2026-10-14", "First entry");
+        let m = entry("2026-10-15", "Main's");
+        let task_log = format!("{PRE}{t1}{t2}{n1}{deep}{OLD}");
+        let main_log = format!("{PRE}{m}{n1}{OLD}");
+        for (how, onto, incoming) in [
+            ("merge", "main", "task"),
+            ("merge", "task", "main"),
+            ("rebase", "main", "task"),
+            ("rebase", "task", "main"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let home = dir.path().join("home");
+            fs::create_dir(&home).unwrap();
+            let g = |d: &Path, args: &[&str]| home_g(&home, d, args);
+            let repo = log_repo_with(dir.path(), &g);
+            let bin = this_muster().unwrap();
+            g(&repo, &["config", &format!("merge.{DRIVER}.name"), NAME]);
+            let driver = driver_command(&sh_quote(&bin.to_str().unwrap().replace('%', "%%")));
+            g(
+                &repo,
+                &["config", &format!("merge.{DRIVER}.driver"), &driver],
+            );
+            fs::write(repo.join("docs/WORKLOG.md"), format!("{PRE}{n1}{OLD}")).unwrap();
+            g(&repo, &["commit", "-qam", "the base"]);
+            g(&repo, &["checkout", "-q", "-b", "task"]);
+            fs::write(repo.join("docs/WORKLOG.md"), &task_log).unwrap();
+            g(&repo, &["commit", "-qam", "the task"]);
+            g(&repo, &["checkout", "-q", "main"]);
+            fs::write(repo.join("docs/WORKLOG.md"), &main_log).unwrap();
+            g(&repo, &["commit", "-qam", "main's entry"]);
+            g(
+                &repo,
+                &[
+                    "checkout",
+                    "-q",
+                    if how == "merge" { onto } else { incoming },
+                ],
+            );
+            if how == "merge" {
+                g(&repo, &["merge", "-q", "--no-edit", incoming]);
+            } else {
+                g(&repo, &["rebase", "-q", onto]);
+            }
+            // The incoming side (the branch merged in, the commit replayed) above on the date.
+            let want = if incoming == "task" {
+                format!("{PRE}{t1}{t2}{m}{n1}{deep}{OLD}")
+            } else {
+                format!("{PRE}{m}{t1}{t2}{n1}{deep}{OLD}")
+            };
+            let got = fs::read_to_string(repo.join("docs/WORKLOG.md")).unwrap();
+            assert_eq!(got, want, "{how} {incoming} onto {onto}");
+            assert_eq!(g(&repo, &["status", "--porcelain"]), "", "{how}");
+        }
+    }
+
+    /// A small fixed-seed generator for the randomised check (xorshift64*).
+    struct Rng(u64);
+    impl Rng {
+        fn below(&mut self, n: usize) -> usize {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            (self.0.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 33) as usize % n
+        }
+    }
+
+    /// Is `small` in `big` in the same order (not necessarily side by side)?
+    fn in_order(small: &[&[u8]], big: &[&[u8]]) -> bool {
+        let mut it = big.iter();
+        small.iter().all(|s| it.any(|b| b == s))
+    }
+
+    #[test]
+    fn merge_log_randomised_multi_point_inserts_keep_every_entry_and_each_sides_order() {
+        let mut clean_by_us = 0;
+        for seed in 1..=150u64 {
+            let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+            let day = |r: &mut Rng| format!("2026-10-{:02}", 10 + r.below(8));
+            let base_entries: Vec<String> = (0..1 + rng.below(6))
+                .map(|i| entry(&day(&mut rng), &format!("Base {i}")))
+                .collect();
+            let shared: Vec<String> = (0..2)
+                .map(|i| entry(&day(&mut rng), &format!("Shared {i}")))
+                .collect();
+            // A side: the base with runs at random points, a run sometimes repeating its
+            // neighbour or holding an entry the other side adds too. Always one run on top, so
+            // the two sides clash and it's the driver's merge, not merge-file's.
+            let side = |name: &str, rng: &mut Rng| -> String {
+                let mut out = PRE.to_string();
+                for k in 0..=base_entries.len() {
+                    if k == 0 || rng.below(3) == 0 {
+                        for i in 0..1 + rng.below(3) {
+                            out += &match rng.below(6) {
+                                0 if k > 0 => base_entries[k - 1].clone(),
+                                1 => shared[rng.below(2)].clone(),
+                                _ => entry(&day(rng), &format!("{name} {k}.{i}")),
+                            };
+                        }
+                    }
+                    if let Some(e) = base_entries.get(k) {
+                        out += e;
+                    }
+                }
+                out
+            };
+            let base = format!("{PRE}{}", base_entries.concat());
+            let (ours, theirs) = (side("Ours", &mut rng), side("Theirs", &mut rng));
+            let (code, text, err) =
+                through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+            assert_eq!(code, 0, "seed {seed}: {err}\n{ours}\n---\n{theirs}");
+            let by_us = both_inserted(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())
+                .as_deref()
+                == Some(&text[..]);
+            clean_by_us += usize::from(by_us);
+            let (b, o, t, r) = (
+                split(base.as_bytes()),
+                split(ours.as_bytes()),
+                split(theirs.as_bytes()),
+                split(&text),
+            );
+            let why = format!("seed {seed}:\n{}", String::from_utf8_lossy(&text));
+            assert_eq!(r.preamble, PRE.as_bytes(), "{why}");
+            assert!(in_order(&b.entries, &r.entries), "the base's order: {why}");
+            assert!(in_order(&o.entries, &r.entries), "ours' order: {why}");
+            // Theirs' order, but for the entries ours added too (kept at ours' point).
+            let count = |log: &[&[u8]], e: &[u8]| log.iter().filter(|x| **x == e).count();
+            let ours_added = |e: &[u8]| count(&o.entries, e) > count(&b.entries, e);
+            let theirs_kept: Vec<&[u8]> = t
+                .entries
+                .iter()
+                .copied()
+                .filter(|e| !ours_added(e))
+                .collect();
+            assert!(in_order(&theirs_kept, &r.entries), "theirs' order: {why}");
+            // Every entry as many times as the side with the most of it has it where the driver
+            // made the text; where merge-file did, at least that and at most the base's plus both
+            // sides' new ones. And no other entry.
+            for e in o.entries.iter().chain(&t.entries) {
+                let (bn, on, tn) = (
+                    count(&b.entries, e),
+                    count(&o.entries, e),
+                    count(&t.entries, e),
+                );
+                let rn = count(&r.entries, e);
+                if by_us {
+                    assert_eq!(rn, on.max(tn), "{why}");
+                } else {
+                    assert!(on.max(tn) <= rn && rn <= on + tn - bn, "{why}");
+                }
+            }
+            for e in &r.entries {
+                assert!(o.entries.contains(e) || t.entries.contains(e), "{why}");
+            }
+        }
+        assert!(
+            clean_by_us >= 100,
+            "only {clean_by_us} merged by the driver"
         );
     }
 
@@ -1000,16 +1574,21 @@ mod tests {
     /// A temp repo whose log has one entry, with the attribute committed and nothing in its
     /// config about the driver, in a folder with a space.
     fn log_repo(dir: &Path) -> PathBuf {
+        log_repo_with(dir, &g)
+    }
+
+    /// `log_repo`, its git run by `git`.
+    fn log_repo_with(dir: &Path, git: &dyn Fn(&Path, &[&str]) -> String) -> PathBuf {
         let repo = dir.join("a repo");
         fs::create_dir(&repo).unwrap();
-        g(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["init", "-q", "-b", "main"]);
         for (k, v) in [
             ("user.name", "Test Person"),
             ("user.email", "test@example.com"),
             ("commit.gpgsign", "false"),
             ("core.hooksPath", "/dev/null"),
         ] {
-            g(&repo, &["config", k, v]);
+            git(&repo, &["config", k, v]);
         }
         fs::create_dir(repo.join("docs")).unwrap();
         fs::write(
@@ -1018,9 +1597,38 @@ mod tests {
         )
         .unwrap();
         fs::write(repo.join("docs/WORKLOG.md"), format!("{PRE}{OLD}")).unwrap();
-        g(&repo, &["add", "-A"]);
-        g(&repo, &["commit", "-qm", "base"]);
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-qm", "base"]);
         repo
+    }
+
+    /// `g` in a home of its own: no global or system git config, and no MUSTER_BASE,
+    /// MUSTER_ROOT or TASKS_ROOT for git or the driver it starts.
+    fn home_g(home: &Path, dir: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("HOME", home)
+            .env("GIT_CONFIG_GLOBAL", home.join(".gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .env_remove("MUSTER_BASE")
+            .env_remove("MUSTER_ROOT")
+            .env_remove("TASKS_ROOT")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?} in {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 
     #[test]
