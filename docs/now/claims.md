@@ -24,6 +24,7 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 - The cap is 150k, or 600k for `Muster_Team_Lead*`. (decision 0011)
 - A holder hands off with `muster checkin <id> "<done, next>" --handoff` first. (decision 0011)
 - The successor runs `muster claim <id> --takeover --as <same name>`, then the old inbox. (PROTOCOL.md "Sessions")
+- The layer's context-watch stop and `/handoff` (Write step 0, Resume step 2) say both steps. (mu-161)
 - Without a handoff, a takeover waits for 30 quiet minutes; the owner may always take over. (mu-90)
 - Nobody takes over a paused claim. (mu-90)
 - A takeover brings that task's mail and repoints its questions. (mu-90)

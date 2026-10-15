@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Handoffs carry the claim in the layer's text (mu-161)
+**Did (Asghar_24, builder):** the layer's context-watch stop (step 3) and `/handoff` now tell a
+claim holder to run `muster checkin <id> "…" --handoff` before writing, to put
+`muster claim <id> --takeover --as <name>` first in "Start here" and `muster inbox --session <id>`
+first in "Next steps"; Resume step 2 makes the takeover the successor's first command. Built in
+`~/playground/.claude`, layer commit ac6921e; here only `docs/now/claims.md`.
+**Verified:** layer `node --test hooks/__tests__/guards.test.mjs` 45/45 on layer HEAD plus the
+change; the new test fails on the old text. Review (correctness): the inbox line was missing and
+step 0's takeover lacked `--as`; both fixed.
+
 ## 2026-10-14 — run.rs login-shell stand-ins chain their delay with && (mu-163)
 **Fixed (Gholi_25, builder):** a `/bin/sleep` that doesn't run still let both stand-ins finish, so
 the logout test passed and the two-writes test failed only on `took >= 300 ms` → the lines after
