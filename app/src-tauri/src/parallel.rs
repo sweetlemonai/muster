@@ -934,18 +934,29 @@ fn main_ready(repo: &Repo) -> Result<(), String> {
 /// How many more times a merge rebases and gates when main moved during the gate.
 const REGATES: usize = 2;
 
+#[cfg(test)]
+type WorktreeHook = Box<dyn Fn(&Path)>;
+
+#[cfg(test)]
+thread_local! {
+    /// Run in the worktree after the last gate run, before the fast-forward: a test's commit there.
+    static AFTER_GATE: std::cell::RefCell<Option<WorktreeHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// `muster pass <id> --from testing` for a started task (0023), in order, stopping at the first
 /// failure: (1) take the repo's merge lock; (2) rebase the branch on the local main, and on a
 /// conflict abort it and return the task to Building naming the files; (3) run the gate in the
 /// worktree, and on red return it with the gate line; if main moved while it ran, rebase and gate
 /// again (twice at most, then stop: "main keeps moving"), so main only ever gets a tree the gate
-/// saw; (4) fast-forward the local main to the branch, only if the main checkout is clean and on
-/// main (never a merge commit); (5) push main to origin, plainly (rejected: fetch, say so, stop);
-/// (6) remove the worktree (never a runner's, `start --here`) and delete the branch, and origin's
-/// copy only when it's the same commit; (7) record the merge in the task (worktree and branch
-/// cleared, `commit:` the merge, the report logged) and pass it to Your check: once main has the
-/// merge this is written whatever, and a pass refused meanwhile (blocked, moved) is an error that
-/// says so; (8) name the next task to start. Before step 1 it needs the review of record clean at
+/// saw; (4) fast-forward the local main to the commit the gate checked, never to the branch's
+/// name, only if the main checkout is clean and on main (never a merge commit); (5) push main to
+/// origin, plainly (rejected: fetch, say so, stop); (6) remove the worktree (never a runner's,
+/// `start --here`) and delete the branch, unless it moved after the gate (its newer commits stay
+/// on it, and the report says so), and origin's copy only when it's the merged commit; (7) record
+/// the merge in the task (worktree and branch cleared, `commit:` the merge, the report logged) and
+/// pass it to Your check: once main has the merge this is written whatever, and a pass refused
+/// meanwhile (blocked, moved) is an error that says so; (8) name the next task to start. Before step 1 it needs the review of record clean at
 /// the branch's tip (0027, `review::merge_check`) and every gate record it needs green there
 /// (mu-131, `gates::merge_check`), the owner aside; before each rebase it checks both again (a
 /// commit that landed while it waited for the lock wasn't reviewed), each rebase carries the
@@ -1053,7 +1064,7 @@ pub fn merge(
     // while the gate ran, so what lands is what the gate saw.
     let trunk = repo.trunk.clone();
     let mut again = 0;
-    let run = loop {
+    let (run, checked) = loop {
         let before = git(&wt, &["rev-parse", "HEAD"])?;
         // A commit that landed while the merge waited for its lock, or during the last gate,
         // hasn't been reviewed: refused, nothing rebased.
@@ -1105,7 +1116,7 @@ pub fn merge(
             ));
         }
         if git(&repo.main, &["rev-parse", &trunk])? == onto {
-            break run;
+            break (run, after);
         }
         if again == REGATES {
             return Err(format!(
@@ -1117,12 +1128,21 @@ pub fn merge(
         say("main moved during the gate; rebasing on it and running the gate again".into());
     };
 
+    #[cfg(test)]
+    AFTER_GATE.with(|h| {
+        if let Some(h) = h.borrow().as_ref() {
+            h(&wt)
+        }
+    });
+
     // The facts the task will record, checked before anything lands. Only a fast-forward lands,
-    // so the merge commit is the branch's tip.
+    // to the commit the gate checked (mu-187), never to the branch's name: a commit made after
+    // the gate stays on the branch.
     // Under the queue's lock from the last check to the fast-forward (records and rounds take
     // it too), so nothing recorded in between is missed: what's checked is what lands.
-    let (commit, short, has_origin, report) = queue::with_lock(root, || {
-        let commit = git(&wt, &["rev-parse", "HEAD"])?;
+    let (commit, short, has_origin, report, moved) = queue::with_lock(root, || {
+        let commit = checked.clone();
+        let moved = git(&repo.main, &["rev-parse", &format!("refs/heads/{branch}")])? != commit;
         // A round or a gate record written while the merge rebased or ran the gate: what stood
         // when it started must still stand for what lands. The review's words name the commit it
         // saw; the gates' say where each stands now.
@@ -1140,7 +1160,7 @@ pub fn merge(
         let has_origin = git(&repo.main, &["remote", "get-url", "origin"]).is_ok();
         let task = queue::read_task(root, id)?;
         let at = now();
-        let report = format!(
+        let mut report = format!(
             "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · {reviewed} · Building {} · Testing {} · {} check-in{}",
             if has_origin { ", pushed to origin" } else { ", not pushed: no origin" },
             run.line,
@@ -1150,14 +1170,17 @@ pub fn merge(
             task.checkins.len(),
             if task.checkins.len() == 1 { "" } else { "s" },
         );
+        if moved {
+            report.push_str(&format!(" · {}", moved_line(&branch)));
+        }
         ops::check_merge_facts(who, &at, &commit, &report)?;
 
         // 4. Fast-forward the local main: never a merge commit, never a tree the gate didn't see.
         main_ready(&repo)?;
-        if let Err(e) = git(&repo.main, &["merge", "--ff-only", "--no-edit", &branch]) {
+        if let Err(e) = git(&repo.main, &["merge", "--ff-only", "--no-edit", &commit]) {
             let _ = git(&repo.main, &["merge", "--abort"]);
             return Err(format!(
-                "the fast-forward of {trunk} to {branch} failed: {e}. Nothing was merged or deleted: fix what it says and pass again"
+                "the fast-forward of {trunk} to {short} ({branch}) failed: {e}. Nothing was merged or deleted: fix what it says and pass again"
             ));
         }
         if git(&repo.main, &["rev-parse", "HEAD"])? != commit {
@@ -1169,7 +1192,10 @@ pub fn merge(
         say(format!(
             "merged {branch} into {trunk} as {short} (fast-forward)"
         ));
-        Ok((commit, short, has_origin, report))
+        if moved {
+            say(moved_line(&branch));
+        }
+        Ok((commit, short, has_origin, report, moved))
     })?;
 
     // 5. Push main, plainly. Never forced.
@@ -1200,7 +1226,6 @@ pub fn merge(
     // 6. Clean up, now the branch is on main. A runner's worktree stays (it's theirs): it's
     // let go of the branch so the branch can go.
     let mut notes = Vec::new();
-    let local_tip = git(&repo.main, &["rev-parse", &format!("refs/heads/{branch}")])?;
     if t.worktree_runner {
         match git(&wt, &["switch", "--detach", &commit]) {
             Ok(_) => say(format!(
@@ -1218,16 +1243,26 @@ pub fn merge(
             Err(e) => notes.push(format!("the worktree {} is still there: {e}", wt.display())),
         }
     }
-    match git(&repo.main, &["branch", "-d", &branch]) {
-        Ok(_) => say(format!("deleted the branch {branch}")),
-        Err(e) => notes.push(format!("the branch {branch} is still there: {e}")),
+    // A branch that moved after the gate keeps its newer commits (the report says so), and
+    // origin's copy goes only when it's the merged commit.
+    if !moved {
+        match git(&repo.main, &["branch", "-d", &branch]) {
+            Ok(_) => say(format!("deleted the branch {branch}")),
+            Err(e) => notes.push(format!("the branch {branch} is still there: {e}")),
+        }
     }
     if has_origin {
-        drop_origin_copy(&repo, &branch, &local_tip, say, &mut notes);
+        drop_origin_copy(&repo, &branch, &commit, say, &mut notes);
     }
 
     // 7 and 8. The merge is on main: the task records it whatever happens to the pass.
     merged(root, id, who, &now(), commit, report, notes)
+}
+
+/// The report's line for a branch that got commits after the gate (mu-187): main has the checked
+/// commit, the branch the rest.
+fn moved_line(branch: &str) -> String {
+    format!("{branch} moved after the gate; its newer commits stay on {branch}")
 }
 
 /// Delete origin's copy of `branch` only when it's `local_tip`, the merged commit: anything else
@@ -3290,6 +3325,65 @@ pub(crate) mod tests {
             main_before,
             "nothing merged"
         );
+    }
+
+    #[test]
+    fn fast_forwards_to_the_checked_commit() {
+        let f = fx();
+        let id = task(&f.root, "Moves after", "v/");
+        let s = built(&f, &id, "v/x.txt");
+        let checked = g(&s.worktree, &["rev-parse", "HEAD"]);
+        // The builder commits and pushes after the gate ran, before main is fast-forwarded.
+        let late = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+        let seen = late.clone();
+        AFTER_GATE.with(|h| {
+            *h.borrow_mut() = Some(Box::new(move |wt: &Path| {
+                commit(wt, "v/late.txt", "unchecked\n", "after the gate");
+                g(wt, &["push", "-q", "origin", "HEAD"]);
+                *seen.borrow_mut() = g(wt, &["rev-parse", "HEAD"]);
+            }))
+        });
+        let (r, said) = run_merge(&f, &id, &green(&f));
+        AFTER_GATE.with(|h| *h.borrow_mut() = None);
+        let late = late.borrow().clone();
+        assert!(!late.is_empty() && late != checked, "the hook ran");
+        let Merge::Merged {
+            commit: merged,
+            report,
+            ..
+        } = r.unwrap()
+        else {
+            panic!("not merged: {said:?}")
+        };
+        let moved = format!(
+            "{b} moved after the gate; its newer commits stay on {b}",
+            b = s.branch
+        );
+        assert_eq!(merged, checked, "the commit the gate saw");
+        assert_eq!(g(&f.repo, &["rev-parse", "main"]), checked);
+        assert_eq!(g(&f.origin, &["rev-parse", "main"]), checked, "pushed");
+        assert!(has_branch(&f, &s.branch), "the branch isn't deleted");
+        assert_eq!(
+            g(&f.repo, &["rev-parse", &format!("refs/heads/{}", s.branch)]),
+            late,
+            "the branch keeps its newer commit"
+        );
+        assert_eq!(
+            g(
+                &f.origin,
+                &["rev-parse", &format!("refs/heads/{}", s.branch)]
+            ),
+            late,
+            "origin's copy, ahead of what merged, stays"
+        );
+        assert!(report.ends_with(&format!(" · {moved}")), "{report}");
+        assert!(said.iter().any(|l| l == &moved), "{said:?}");
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (t.stage.as_str(), t.commit.as_str()),
+            ("your-check", checked.as_str())
+        );
+        assert_eq!(t.merge_report, report);
     }
 
     #[test]

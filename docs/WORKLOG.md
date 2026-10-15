@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — The merge fast-forwards main to the commit the gate checked (mu-187)
+**Fixed:** a commit made in the worktree after the gate's last run moved the branch, and
+`git merge --ff-only <branch>` took main to it; the check after caught it only once main had moved →
+`parallel::merge` keeps the commit the gate checked and fast-forwards to that SHA. A branch that moved
+keeps its newer commits (not deleted), the report ends "<branch> moved after the gate; its newer
+commits stay on <branch>", and origin's copy is compared with the merged commit, not the branch's tip.
+**Verified:** `fast_forwards_to_the_checked_commit` (commit and push through a test-only hook after the
+gate) red with `&branch`, green with the fix; `cargo test --lib parallel::` 49/49, hermetic.
+
 ## 2026-10-15 — mu-198: the board says which columns are past its edge
 **Fixed in round 3 (Asghar_45, builder; Reviewer_94's R6, R7):** R6: under 30em, with the chips
 overflowing (ADHD 1100, pane open, Building folded), the row's "+2 more" took line 2 and the

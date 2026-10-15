@@ -25,6 +25,7 @@ covers: app/src-tauri/src/parallel.rs, app/src-tauri/src/merge_log.rs, .gitattri
 - With no gate set for the project, nothing merges. (mu-23)
 - If main moved during the gate, it rebases and gates again, twice at most. (mu-23)
 - Main only ever gets a tree the gate saw. (mu-23)
+- Main fast-forwards to the commit the gate saw, never to the branch's name; later commits stay on the branch. (mu-187)
 - Main is fast-forwarded, never given a merge commit, and only if the main checkout is clean and on main. (mu-23)
 - Main is pushed plainly, never forced; if origin moved, it stops. (mu-23)
 - The app's Pass is refused for a started task in Testing. (mu-23)

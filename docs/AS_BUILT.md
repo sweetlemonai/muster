@@ -2230,7 +2230,11 @@ named, the owner's override said in the report), `gates::still_stands` before ea
 standing one that no longer passes there (`review::carry` likewise refuses a review that isn't
 clean). After the last gate run, under the queue's lock (which records and rounds take too) held through
 the local fast-forward, `review::still_stands` and `gates::still_stands` run again at the commit
-that lands, and the gates' report words are worked out there. `muster migrate` copies `gates/`.
+that lands, and the gates' report words are worked out there. The commit that lands is the one the
+last gate run checked (mu-187): main fast-forwards to its SHA, never to the branch's name, so a
+commit made after the gate stays on the branch, which isn't deleted, and the report ends `<branch>
+moved after the gate; its newer commits stay on <branch>`; origin's copy of the branch goes only
+when it's the merged commit. `muster migrate` copies `gates/`.
 **The work log's merge driver** (task 0067, decision 0009, `merge_log.rs`): `muster merge-log
 %O %A %B` is git's merge driver for `docs/WORKLOG.md` (`.gitattributes`:
 `docs/WORKLOG.md merge=muster-log`). It runs `git merge-file -p` and keeps a clean result. On a
