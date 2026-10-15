@@ -1292,6 +1292,7 @@ fn merge_cmd(
     id: &str,
     who: &str,
     gate: Option<(String, String)>,
+    cwd: Option<&Path>,
 ) -> Result<i32, String> {
     let k = crate::key::key(prefix, id);
     if a.flags.contains_key("gate") || a.flags.contains_key("commit") {
@@ -1303,7 +1304,7 @@ fn merge_cmd(
     let argv = gate_words(&project, &gate)?;
     println!("{k}: merging into main (gate: {})", argv.join(" "));
     let mut say = |line: String| println!("{line}");
-    match crate::parallel::merge(root, id, who, &local_stamp, &argv, &mut say)? {
+    match crate::parallel::merge(root, id, who, &local_stamp, &argv, cwd, &mut say)? {
         crate::parallel::Merge::Returned(why) => {
             println!("{k}: back in Building: {why}");
             Ok(1)
@@ -1809,7 +1810,7 @@ fn run_on(
                 .is_ok_and(|t| t.stage == "testing" && !t.branch.is_empty());
             if started && from.as_deref().is_none_or(|f| f == "testing") {
                 let gate = projects::gate_of(&base(), &projects::load(&config_file()), root);
-                return merge_cmd(a, root, prefix, id, &me(), gate);
+                return merge_cmd(a, root, prefix, id, &me(), gate, cwd);
             }
             let opts = ops::PassOpts {
                 gate: a.flags.get("gate").cloned().unwrap_or_default(),
@@ -2329,7 +2330,7 @@ fn run_on(
             Ok(0)
         }
         "vision" => run_vision(a, root, prefix, &me, stamp),
-        "review" => run_review(a, root, prefix, &me, stamp),
+        "review" => run_review(a, root, prefix, &me, stamp, cwd),
         "lessons" => run_lessons(a, root, &me, stamp),
         "check" => {
             if a.dry_run {
@@ -2483,6 +2484,7 @@ fn run_review(
     prefix: &str,
     me: &dyn Fn() -> String,
     stamp: &str,
+    cwd: Option<&Path>,
 ) -> Result<i32, String> {
     let id = need(a, 1, "a task id")?;
     let k = crate::key::key(prefix, id);
@@ -2514,7 +2516,7 @@ fn run_review(
                     "review takes one task id; to answer a finding: muster review {k} --fixed R1 \"<how>\" (see `muster help`)"
                 ));
             }
-            let span = review::span(root, id)?;
+            let span = review::span_in(root, id, cwd)?;
             let b = review::brief(root, id, &span, stamp)?;
             if a.json {
                 print_json(&b)?;
@@ -2532,7 +2534,7 @@ fn run_review(
                 Some(j) => j.to_string(),
                 None => String::new(),
             };
-            let span = review::span(root, id)?;
+            let span = review::span_in(root, id, cwd)?;
             let r = review::record(root, id, &json, &me(), stamp, &span)?;
             if a.json {
                 print_json(&r)?;
@@ -3219,6 +3221,114 @@ mod tests {
             Ok(0)
         );
         assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "building");
+    }
+
+    #[test]
+    fn a_task_merged_by_hand_is_a_warning_check_passes_with() {
+        use crate::parallel::tests::{commit, fx, g, task};
+        let f = fx();
+        let id = task(&f.root, "Merged by hand", "cli/");
+        // Stamped now, so the claim isn't quiet past the lease, which would fail the check.
+        let now = local_stamp();
+        let check = || {
+            run_on(
+                &parse(&sv(&["check"])).unwrap(),
+                "check",
+                &f.root,
+                "pj",
+                &now,
+                &no_env,
+                Some(&f.repo),
+            )
+        };
+        assert_eq!(check(), Ok(0));
+        let s = crate::parallel::start(
+            &f.root,
+            &id,
+            "wt-a",
+            &now,
+            &f.repo,
+            &crate::parallel::Place::Default,
+        )
+        .unwrap();
+        commit(&s.worktree, "cli/x.txt", "x\n", "built");
+        g(&f.repo, &["merge", "-q", "--no-edit", &s.branch]);
+        let worktree = s.worktree.to_str().unwrap().to_string();
+        // What check reads and prints: the state keyed with the project's prefix.
+        let lines = || {
+            let s = queue::read_state_keyed(
+                &[("q".into(), f.root.clone())],
+                &mut queue::Cache::default(),
+                &settings::Settings::default(),
+                &|_| "pj".to_string(),
+            );
+            crate::parallel::stale(&s.tasks, std::slice::from_ref(&f.repo))
+        };
+        let first = lines();
+        assert!(
+            first[0].starts_with("pj-1 is in Building, but its branch task/pj-1-merged-by-hand"),
+            "{first:#?}"
+        );
+        assert_eq!(check(), Ok(0));
+        // Each printed command, run as printed with its placeholders filled in, catches the stage
+        // up: on a task with no summary, and with its worktree gone by the second.
+        let (_, fix) = first[0].split_once(": muster ").unwrap();
+        let cmds: Vec<String> = format!("muster {fix}")
+            .split(", then ")
+            .map(String::from)
+            .collect();
+        assert_eq!(cmds.len(), 2, "{cmds:?}");
+        let argv = |c: &str, who: &str| {
+            let c = c
+                .replace("<the gate's line>", "gate: green (by hand)")
+                .replace("<what was built>", "Built and merged by hand");
+            let mut words: Vec<String> = c
+                .split('"')
+                .enumerate()
+                .flat_map(|(i, part)| match i % 2 {
+                    1 => vec![part.to_string()],
+                    _ => part.split_whitespace().map(String::from).collect(),
+                })
+                .collect();
+            assert_eq!(words.remove(0), "muster");
+            // A key on the command line is its id by the time run_on sees it.
+            words[1] = crate::key::typed(&words[1]).unwrap().id;
+            words.extend(["--as".to_string(), who.to_string()]);
+            parse(&words).unwrap()
+        };
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().summary, "");
+        let built = argv(&cmds[0], "wt-a");
+        assert_eq!(
+            run_on(&built, "pass", &f.root, "pj", &now, &no_env, Some(&f.repo)),
+            Ok(0)
+        );
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "testing");
+        crate::parallel::tests::review_clean(&f, &id);
+        g(&f.repo, &["worktree", "remove", &worktree]);
+        let second = lines();
+        assert!(
+            second[0].ends_with(&format!(": {}", cmds[1])),
+            "{second:#?}"
+        );
+        // The pass from Testing is the merge. Its gate is the project's, from projects.json,
+        // which a test never reads: handed in as `pass` finds it.
+        let tested = argv(&cmds[1], "qa");
+        assert_eq!(
+            merge_cmd(
+                &tested,
+                &f.root,
+                "pj",
+                &tested.pos[1],
+                "qa",
+                Some(("proj".into(), "true".into())),
+                Some(&f.repo)
+            ),
+            Ok(0)
+        );
+        let t = queue::read_task(&f.root, &id).unwrap();
+        assert_eq!((t.stage.as_str(), t.branch.as_str()), ("your-check", ""));
+        assert_eq!(lines(), Vec::<String>::new());
+        assert_eq!(check(), Ok(0));
     }
 
     /// `list --status --stage --tag`, as the options give it.
@@ -5646,7 +5756,7 @@ mod tests {
         to_testing(&f, &id);
         // From Testing, with no gate set for the project: refused, nothing touched.
         let a = parse(&sv(&["pass", &id, "--from", "testing"])).unwrap();
-        let e = merge_cmd(&a, &f.root, "pj", &id, "qa", None).unwrap_err();
+        let e = merge_cmd(&a, &f.root, "pj", &id, "qa", None, None).unwrap_err();
         assert!(
             e.contains("no gate set for proj") && e.contains("muster projects set proj gate"),
             "{e}"
@@ -5658,6 +5768,7 @@ mod tests {
             &id,
             "qa",
             Some(("proj".into(), "  ".into())),
+            None,
         )
         .unwrap_err();
         assert!(e.contains("no gate set"), "{e}");
@@ -5668,7 +5779,8 @@ mod tests {
             "pj",
             &id,
             "qa",
-            Some(("proj".into(), "true".into()))
+            Some(("proj".into(), "true".into())),
+            None
         )
         .unwrap_err()
         .contains("leave --gate and --commit out"));
@@ -5676,7 +5788,15 @@ mod tests {
         // With the project's gate (quoted words, no shell): merged, pushed, cleaned, next named.
         let gate = format!("'{}'", green(&f)[0]);
         assert_eq!(
-            merge_cmd(&a, &f.root, "pj", &id, "qa", Some(("proj".into(), gate))),
+            merge_cmd(
+                &a,
+                &f.root,
+                "pj",
+                &id,
+                "qa",
+                Some(("proj".into(), gate)),
+                None
+            ),
             Ok(0)
         );
         let t = queue::read_task(&f.root, &id).unwrap();

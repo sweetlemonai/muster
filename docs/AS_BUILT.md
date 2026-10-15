@@ -551,7 +551,17 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 - **Files still move between status folders in the old layout** until its queue is migrated.
 - **`tasks.json` goes stale:** nothing rebuilds it after a change but `manifest.py` run by hand.
 - **A task's stage can lag its code:** a lead that merges a task by hand has to pass it too.
-  mu-52 and mu-53 were merged to main on 2026-10-13 and read Building until 2026-10-14.
+  mu-52 and mu-53 were merged to main on 2026-10-13 and read Building until 2026-10-14. Closed
+  by mu-110: `muster check` names a task in Building or Testing whose `task/` branch is in main
+  holding a commit it made itself (`parallel::own_commits`, from its reflog; a fast-forward or
+  rebase onto main with nothing built doesn't count), with the pass that catches it up
+  (`parallel::lagging`, a warning). With its worktree gone, that pass from Testing records the
+  merge main already has (`parallel::record_hand_merge`: no rebase, gate or push; origin's branch
+  is kept until origin's main has the tip), and `muster review` reads the branch from the
+  project's repo (`parallel::branch_span`). `muster check`
+  only, not the app's Problems list, which never shows the left-behind lines.
+  Not covered: a squash merge (the branch tip never lands in main), a branch deleted after the
+  merge, and a branch whose reflog is gone (nothing says where it started, so nothing is said).
 - **New session id after `/clear` or a handoff:** answers to the old session's questions wait in its
   old mailbox. Covered: the handoff carries the old session id (its `session:` front matter), and
   PROTOCOL.md (decision 0011) has the writer put `muster inbox --session <old>` first in its Next

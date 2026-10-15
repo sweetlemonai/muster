@@ -257,20 +257,48 @@ pub fn repo_of(dir: &Path) -> Result<Repo, String> {
     })
 }
 
+/// The repo whose `.muster/` is the queue at `root` (its main checkout), if it is one.
+fn own_repo(root: &Path) -> Option<Repo> {
+    (root.file_name().is_some_and(|n| n == ".muster"))
+        .then(|| root.parent())
+        .flatten()
+        .and_then(|main| repo_of(main).ok())
+}
+
+/// Where a started task's branch is when its worktree is gone (0110): the queue's own repo, else
+/// `cwd`'s, the first that has it.
+fn repo_with_branch(root: &Path, cwd: Option<&Path>, branch: &str) -> Option<Repo> {
+    let refname = format!("refs/heads/{branch}");
+    own_repo(root)
+        .into_iter()
+        .chain(cwd.and_then(|d| repo_of(d).ok()))
+        .find(|r| git(&r.main, &["rev-parse", "--verify", "--quiet", &refname]).is_ok())
+}
+
 /// What a review of a started task looks at (0027): where its branch left the local main (their
-/// merge base) and the branch's tip, read from the task's worktree.
-pub(crate) fn branch_span(worktree: &str, branch: &str) -> Result<(String, String), String> {
+/// merge base) and the branch's tip, read from the task's worktree, or with the worktree gone
+/// (merged by hand, then removed: 0110) from `repo_with_branch`. Also returns the folder it was
+/// read in.
+pub(crate) fn branch_span(
+    root: &Path,
+    worktree: &str,
+    branch: &str,
+    cwd: Option<&Path>,
+) -> Result<(String, String, PathBuf), String> {
     let wt = Path::new(worktree);
-    if worktree.is_empty() || !wt.is_dir() {
-        return Err(format!("its worktree {worktree} is gone"));
-    }
-    let repo = repo_of(wt)?;
+    let repo = if !worktree.is_empty() && wt.is_dir() {
+        repo_of(wt)?
+    } else {
+        repo_with_branch(root, cwd, branch).ok_or_else(|| {
+            format!("its worktree {worktree} is gone and this folder's repo has no {branch}: run it from the project's repo")
+        })?
+    };
     let head = git(
         &repo.main,
         &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
     )?;
     let base = git(&repo.main, &["merge-base", &repo.trunk, &head])?;
-    Ok((base, head))
+    Ok((base, head, repo.main))
 }
 
 /// Is commit `a` an ancestor of `b` (or `b` itself), in the repo of `worktree`?
@@ -294,11 +322,7 @@ pub(crate) fn check_in_main(
     to: &str,
 ) -> Result<(), String> {
     let wt = Path::new(worktree);
-    let own = (root.file_name().is_some_and(|n| n == ".muster"))
-        .then(|| root.parent())
-        .flatten()
-        .and_then(|main| repo_of(main).ok());
-    let repo = own
+    let repo = own_repo(root)
         .or_else(|| {
             (!worktree.is_empty() && wt.is_dir())
                 .then(|| repo_of(wt).ok())
@@ -912,13 +936,16 @@ const REGATES: usize = 2;
 /// again (a commit that landed while it waited for the lock wasn't reviewed), each rebase carries
 /// that review to the replayed commits, and a commit made while the gate ran stops it. The report and the commit are checked before step 4.
 /// A refusal before step 4 or a stop at 4 or 5 leaves the worktree, the branch and the task as
-/// they were. `now` gives the local time for each write; `say` gets a line per step done.
+/// they were. A branch already merged into main by hand whose worktree is gone is recorded
+/// instead, found from `cwd`'s repo (`record_hand_merge`, 0110). `now` gives the local time for
+/// each write; `say` gets a line per step done.
 pub fn merge(
     root: &Path,
     id: &str,
     who: &str,
     now: &dyn Fn() -> String,
     gate: &[String],
+    cwd: Option<&Path>,
     say: &mut dyn FnMut(String),
 ) -> Result<Merge, String> {
     let t = queue::read_task(root, id)?;
@@ -935,11 +962,26 @@ pub fn merge(
         return Err("the gate command is empty".into());
     }
     let wt = PathBuf::from(&t.worktree);
-    if !wt.is_dir() {
-        return Err(format!(
-            "{id}'s worktree {} is gone, so there's nothing to merge from: muster release {id} --clean",
-            t.worktree
-        ));
+    if t.worktree.is_empty() || !wt.is_dir() {
+        // Merged by hand, then its worktree removed (0110): there's nothing left to merge, only
+        // the merge to record. Otherwise there's nothing to merge from.
+        let gone = || {
+            format!(
+                "{id}'s worktree {} is gone, so there's nothing to merge from: muster release {id} --clean",
+                t.worktree
+            )
+        };
+        // Found in no repo from here, this isn't the project's repo, and release would be wrong.
+        let Some(repo) = repo_with_branch(root, cwd, &t.branch) else {
+            return Err(format!(
+                "{id}'s worktree {} is gone and this folder's repo has no {}: pass it from the project's repo, which records it if it's merged into main by hand",
+                t.worktree, t.branch
+            ));
+        };
+        return match hand_merged(&repo, &t.branch) {
+            Some(tip) => record_hand_merge(root, id, who, now, &repo, &tip, say),
+            None => Err(gone()),
+        };
     }
     let repo = repo_of(&wt)?;
     if canon(&wt) == canon(&repo.main) {
@@ -1134,34 +1176,56 @@ pub fn merge(
         Err(e) => notes.push(format!("the branch {branch} is still there: {e}")),
     }
     if has_origin {
-        // Only origin's copy that is this very commit: anything else is work this merge didn't
-        // take, so it stays.
-        let head = format!("refs/heads/{branch}");
-        match git(&repo.main, &["ls-remote", "origin", &head]) {
-            Ok(listed) => {
-                let remote_tip = listed.split_whitespace().next().unwrap_or("").to_string();
-                if remote_tip.is_empty() {
-                } else if remote_tip == local_tip {
-                    match git(&repo.main, &["push", "origin", "--delete", &branch]) {
-                        Ok(_) => say(format!("deleted origin's {branch}")),
-                        Err(e) => notes.push(format!("origin's {branch} is still there: {e}")),
-                    }
-                } else {
-                    notes.push(format!(
-                        "origin's {branch} is at {} and the merged one was at {}, so it's kept",
-                        remote_tip.chars().take(7).collect::<String>(),
-                        local_tip.chars().take(7).collect::<String>()
-                    ));
-                }
-            }
-            Err(e) => notes.push(format!("couldn't look for origin's {branch}: {e}")),
-        }
+        drop_origin_copy(&repo, &branch, &local_tip, say, &mut notes);
     }
 
-    // 7. The merge is on main: the task records it whatever happens to the pass.
-    let path = ops::pass_merged(root, id, who, &now(), &commit, &report)?;
+    // 7 and 8. The merge is on main: the task records it whatever happens to the pass.
+    merged(root, id, who, &now(), commit, report, notes)
+}
 
-    // 8. What's next.
+/// Delete origin's copy of `branch` only when it's `local_tip`, the merged commit: anything else
+/// is work the merge didn't take, so it stays (a note says so).
+fn drop_origin_copy(
+    repo: &Repo,
+    branch: &str,
+    local_tip: &str,
+    say: &mut dyn FnMut(String),
+    notes: &mut Vec<String>,
+) {
+    let head = format!("refs/heads/{branch}");
+    match git(&repo.main, &["ls-remote", "origin", &head]) {
+        Ok(listed) => {
+            let remote_tip = listed.split_whitespace().next().unwrap_or("").to_string();
+            if remote_tip.is_empty() {
+            } else if remote_tip == local_tip {
+                match git(&repo.main, &["push", "origin", "--delete", branch]) {
+                    Ok(_) => say(format!("deleted origin's {branch}")),
+                    Err(e) => notes.push(format!("origin's {branch} is still there: {e}")),
+                }
+            } else {
+                notes.push(format!(
+                    "origin's {branch} is at {} and the merged one was at {}, so it's kept",
+                    remote_tip.chars().take(7).collect::<String>(),
+                    local_tip.chars().take(7).collect::<String>()
+                ));
+            }
+        }
+        Err(e) => notes.push(format!("couldn't look for origin's {branch}: {e}")),
+    }
+}
+
+/// The merge's last steps (7, 8): the task records it and passes to Your check, and the next
+/// task to start is named.
+fn merged(
+    root: &Path,
+    id: &str,
+    who: &str,
+    at: &str,
+    commit: String,
+    report: String,
+    notes: Vec<String>,
+) -> Result<Merge, String> {
+    let path = ops::pass_merged(root, id, who, at, &commit, &report)?;
     let state = queue::read_state(
         &[("q".into(), root.to_path_buf())],
         &mut queue::Cache::default(),
@@ -1174,6 +1238,92 @@ pub fn merge(
         notes,
         next,
     })
+}
+
+/// `merge` for a branch merged into main by hand whose worktree is gone (0110, `hand_merged`):
+/// nothing is rebased, gated, fast-forwarded or pushed, since main has it already. The review of
+/// record still has to be clean at the branch's tip (the owner aside). The stale worktree entry is
+/// pruned, the branch deleted (origin's copy only when it's the same commit), and the task records
+/// the branch's tip as its commit and passes to Your check, as a merge does.
+fn record_hand_merge(
+    root: &Path,
+    id: &str,
+    who: &str,
+    now: &dyn Fn() -> String,
+    repo: &Repo,
+    tip: &str,
+    say: &mut dyn FnMut(String),
+) -> Result<Merge, String> {
+    let task = queue::read_task(root, id)?;
+    let branch = task.branch.clone();
+    let trunk = &repo.trunk;
+    let review = crate::review::merge_check(root, id, tip, who)?;
+    let short: String = tip.chars().take(7).collect();
+    let at = now();
+    // Nothing here pushes main, so origin's copy of the branch goes only once origin's main has
+    // it; until then it may be the only copy origin holds.
+    let mut notes = Vec::new();
+    let on_origin = git(&repo.main, &["remote", "get-url", "origin"]).is_ok()
+        && match git(
+            &repo.main,
+            &["ls-remote", "origin", &format!("refs/heads/{branch}")],
+        ) {
+            Ok(listed) => !listed.trim().is_empty(),
+            Err(e) => {
+                notes.push(format!("couldn't look for origin's {branch}: {e}"));
+                false
+            }
+        };
+    let kept = match on_origin.then(|| origin_trunk_holds(repo, tip)) {
+        None | Some(Ok(true)) => None,
+        Some(Ok(false)) => Some(format!(
+            "origin's {branch} is kept until {trunk} is pushed: origin's {trunk} doesn't have {short} yet"
+        )),
+        Some(Err(e)) => Some(format!(
+            "origin's {branch} is kept: couldn't check origin's {trunk} for {short}: {e}"
+        )),
+    };
+    let report = format!(
+        "recorded {branch}, merged into {trunk} by hand as {short} (its worktree was gone: nothing rebased, gated or pushed{}) · {} · Building {} · Testing {} · {} check-in{}",
+        kept.as_ref().map(|k| format!("; {k}")).unwrap_or_default(),
+        review.words,
+        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
+        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
+        task.checkins.len(),
+        if task.checkins.len() == 1 { "" } else { "s" },
+    );
+    ops::check_merge_facts(who, &at, tip, &report)?;
+    say(format!(
+        "{branch} is in {trunk} as {short}, merged by hand; its worktree is gone, so there's nothing to rebase or gate"
+    ));
+    // The worktree's entry outlives its folder, and git won't delete a branch an entry holds.
+    if let Err(e) = git(&repo.main, &["worktree", "prune"]) {
+        notes.push(format!("couldn't prune the gone worktree's entry: {e}"));
+    }
+    match git(&repo.main, &["branch", "-d", &branch]) {
+        Ok(_) => say(format!("deleted the branch {branch}")),
+        Err(e) => notes.push(format!("the branch {branch} is still there: {e}")),
+    }
+    match kept {
+        Some(k) => notes.push(k),
+        None if on_origin => drop_origin_copy(repo, &branch, tip, say, &mut notes),
+        None => {}
+    }
+    merged(root, id, who, &at, tip.to_string(), report, notes)
+}
+
+/// Does origin's trunk hold `tip`? Its commits are fetched first, so they can be asked about.
+fn origin_trunk_holds(repo: &Repo, tip: &str) -> Result<bool, String> {
+    let head = format!("refs/heads/{}", repo.trunk);
+    let listed = git(&repo.main, &["ls-remote", "origin", &head])?;
+    let Some(remote) = listed.split_whitespace().next() else {
+        return Ok(false);
+    };
+    git(&repo.main, &["fetch", "-q", "origin", &head])?;
+    Ok(
+        git_output(&repo.main, &["merge-base", "--is-ancestor", tip, remote])
+            .is_ok_and(|o| o.status.success()),
+    )
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1304,11 +1454,90 @@ fn branch_task(branch: &str) -> Option<String> {
         .map(|t| t.id)
 }
 
+/// The commits a branch made itself, newest first, from its reflog (`%H %gs` lines): a commit
+/// (amended, squashed after a reset, a merge with conflicts resolved), a cherry-pick, `git am`,
+/// and a rebase that picked something (it finished somewhere other than onto). Not its creation,
+/// a fast-forward or merge of main, a reset, or a rebase that picked nothing.
+fn own_commits(reflog: &str) -> impl Iterator<Item = &str> {
+    reflog.lines().filter_map(|l| {
+        let (sha, what) = l.split_once(' ')?;
+        let own = what.starts_with("commit")
+            || what.starts_with("cherry-pick")
+            || what.starts_with("am: ")
+            || (what.contains("(finish): ")
+                && what
+                    .rsplit_once(" onto ")
+                    .is_some_and(|(_, onto)| onto.trim() != sha));
+        own.then_some(sha)
+    })
+}
+
+/// How many of a branch's own commits `lagging` asks git about: the newest is nearly always the
+/// one in its tip.
+const OWN_COMMITS_ASKED: usize = 20;
+
+/// The tip of `branch` in `repo` when it's in the local main and holds a commit the branch made
+/// itself (`own_commits`): built, then merged by hand. None for a branch with nothing built, even
+/// when it's in main (started at main's tip, caught up by a fast-forward or a rebase, or its
+/// commits reset away), and with no reflog to say what the branch made.
+fn hand_merged(repo: &Repo, branch: &str) -> Option<String> {
+    let refname = format!("refs/heads/{branch}");
+    let tip = git(&repo.main, &["rev-parse", "--verify", "--quiet", &refname]).ok()?;
+    let trunk = format!("refs/heads/{}", repo.trunk);
+    let ancestor = |a: &str, b: &str| {
+        git_output(&repo.main, &["merge-base", "--is-ancestor", a, b])
+            .is_ok_and(|o| o.status.success())
+    };
+    if !ancestor(&tip, &trunk) {
+        return None;
+    }
+    let log = git(&repo.main, &["reflog", "show", "--format=%H %gs", &refname]).ok()?;
+    let built = own_commits(&log)
+        .take(OWN_COMMITS_ASKED)
+        .any(|c| ancestor(c, &tip));
+    built.then_some(tip)
+}
+
+/// A task in Building or Testing whose stage lags its code (0110): its own `task/` branch's tip is
+/// in the local main and holds a commit the branch made itself (`hand_merged`), merged by hand
+/// with no pass. The line names the pass that catches the stage up; `merge` records the merge
+/// even with the worktree gone. A paused task is the owner's to move, so it's skipped. The first
+/// of `repos` that has the branch is asked.
+fn lagging<'a>(t: &Task, key: &str, repos: impl IntoIterator<Item = &'a Repo>) -> Option<String> {
+    if !matches!(t.stage.as_str(), "building" | "testing")
+        || !t.paused.is_empty()
+        || branch_task(&t.branch).as_deref() != Some(t.id.as_str())
+    {
+        return None;
+    }
+    let refname = format!("refs/heads/{}", t.branch);
+    let repo = repos
+        .into_iter()
+        .find(|r| git(&r.main, &["rev-parse", "--verify", "--quiet", &refname]).is_ok())?;
+    let tip = hand_merged(repo, &t.branch)?;
+    let short = git(&repo.main, &["rev-parse", "--short", &tip]).unwrap_or(tip);
+    let fix = if t.stage == "building" {
+        format!(
+            "muster pass {key} --from building --gate \"<the gate's line>\" --summary \"<what was built>\", then muster pass {key} --from testing"
+        )
+    } else {
+        format!("muster pass {key} --from testing")
+    };
+    Some(format!(
+        "{key} is in {}, but its branch {} is in {} since {short}: {fix}",
+        queue::stage_label(&t.stage),
+        t.branch,
+        repo.trunk
+    ))
+}
+
 /// What `muster check` lists for 0023, none of it failing the check: claims whose worktree is gone,
 /// worktrees of tasks released to Ready, and worktrees on a `task/<key>-…` branch whose task is
-/// past Testing (or no longer names that branch), each with the command that cleans it. The
-/// repos looked in are those of the tasks' worktrees, plus `extra` (the repo `check` runs in).
-/// Tasks are named by their keys when they have their project's prefix.
+/// past Testing (or no longer names that branch), each with the command that cleans it; and a
+/// task merged by hand whose stage still says Building or Testing (`lagging`, 0110), with the
+/// pass that catches it up. The repos looked in are those of the tasks' worktrees, plus `extra`
+/// (the repo `check` runs in). Tasks are named by their keys when they have their project's
+/// prefix.
 pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
     let key = |t: &Task| crate::key::key(&t.prefix, &t.id);
     let mut out = Vec::new();
@@ -1318,42 +1547,42 @@ pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
             repos.push(r);
         }
     };
+    let extra: Vec<Repo> = extra.iter().filter_map(|d| repo_of(d).ok()).collect();
     for t in tasks.iter().filter(|t| !t.branch.is_empty()) {
         let wt = Path::new(&t.worktree);
         let present = !t.worktree.is_empty() && wt.is_dir();
-        match (t.stage.as_str(), present) {
-            ("building" | "testing", false) => out.push(format!(
-                "{}: its worktree {} is gone ({}, branch {}): muster release {} --clean",
-                key(t),
-                t.worktree,
-                queue::stage_label(&t.stage),
-                t.branch,
-                key(t)
-            )),
-            ("ready", true) => out.push(format!(
-                "{}: released to Ready but its worktree {} is still there: muster release {} --clean (or muster start {} to pick it up again)",
-                key(t),
-                t.worktree,
-                key(t),
-                key(t)
-            )),
-            ("ready", false) => out.push(format!(
-                "{}: released to Ready with its worktree gone: muster release {} --clean",
-                key(t),
-                key(t)
-            )),
-            _ => {}
-        }
-        if present {
-            if let Ok(r) = repo_of(wt) {
-                add(r);
+        let own = present.then(|| repo_of(wt).ok()).flatten();
+        // Merged by hand while its stage lags (0110): the pass that catches the stage up, in
+        // place of release --clean, which would send merged work back to Ready.
+        let k = key(t);
+        if let Some(l) = lagging(t, &k, own.iter().chain(&extra)) {
+            out.push(l);
+        } else {
+            match (t.stage.as_str(), present) {
+                ("building" | "testing", false) => out.push(format!(
+                    "{k}: its worktree {} is gone ({}, branch {}): muster release {k} --clean",
+                    t.worktree,
+                    queue::stage_label(&t.stage),
+                    t.branch
+                )),
+                ("ready", true) => {
+                    let wt = &t.worktree;
+                    out.push(format!(
+                        "{k}: released to Ready but its worktree {wt} is still there: muster release {k} --clean (or muster start {k} to pick it up again)"
+                    ))
+                }
+                ("ready", false) => out.push(format!(
+                    "{k}: released to Ready with its worktree gone: muster release {k} --clean"
+                )),
+                _ => {}
             }
         }
-    }
-    for dir in extra {
-        if let Ok(r) = repo_of(dir) {
+        if let Some(r) = own {
             add(r);
         }
+    }
+    for r in extra {
+        add(r);
     }
     for repo in &repos {
         for (path, branch) in worktrees(repo) {
@@ -1559,7 +1788,7 @@ pub(crate) mod tests {
 
     fn run_merge(f: &Fx, id: &str, gate: &[String]) -> (Result<Merge, String>, Vec<String>) {
         let mut said = Vec::new();
-        let r = merge(&f.root, id, "qa", &noon, gate, &mut |l| said.push(l));
+        let r = merge(&f.root, id, "qa", &noon, gate, None, &mut |l| said.push(l));
         (r, said)
     }
 
@@ -2675,7 +2904,10 @@ pub(crate) mod tests {
         let ran = f.base.join("gate-ran");
         let gate = shell_gate(&f, "marks", &format!("touch '{}'", ran.display()));
         let mut said = Vec::new();
-        let e = merge(&f.root, &id, "wt-a", &noon, &gate, &mut |l| said.push(l)).unwrap_err();
+        let e = merge(&f.root, &id, "wt-a", &noon, &gate, None, &mut |l| {
+            said.push(l)
+        })
+        .unwrap_err();
         assert_eq!(
             e,
             format!("{id} was built by wt-a; a different session tests it: run the QA pass with its own --as (e.g. qa-{id}), or the owner passes it")
@@ -2688,7 +2920,15 @@ pub(crate) mod tests {
         assert!(s.worktree.is_dir() && has_branch(&f, &s.branch));
         assert_eq!(fs::read_to_string(&file).unwrap(), before);
         // A QA session merges it.
-        let merged = merge(&f.root, &id, "qa-0001", &noon, &green(&f), &mut |_| {});
+        let merged = merge(
+            &f.root,
+            &id,
+            "qa-0001",
+            &noon,
+            &green(&f),
+            None,
+            &mut |_| {},
+        );
         assert!(matches!(merged, Ok(Merge::Merged { .. })), "{merged:?}");
         let t = read(&f.root, &id);
         assert_eq!(
@@ -2781,7 +3021,7 @@ pub(crate) mod tests {
             let (tx, rx) = std::sync::mpsc::channel();
             let (root, task_id, gate) = (f.root.clone(), id.clone(), green(&f));
             let merging = std::thread::spawn(move || {
-                merge(&root, &task_id, who, &noon, &gate, &mut |l| {
+                merge(&root, &task_id, who, &noon, &gate, None, &mut |l| {
                     let _ = tx.send(l);
                 })
             });
@@ -2864,7 +3104,7 @@ pub(crate) mod tests {
             ..Default::default()
         };
         ops::pass_task(&f.root, &id, "wt-a", "2026-10-13 11:00", &opts).unwrap();
-        let r = merge(&f.root, &id, "owner", &noon, &green(&f), &mut |_| {});
+        let r = merge(&f.root, &id, "owner", &noon, &green(&f), None, &mut |_| {});
         let Merge::Merged { report, .. } = r.unwrap() else {
             panic!("not merged")
         };
@@ -3013,6 +3253,490 @@ pub(crate) mod tests {
             stale(&state(&f.root).tasks, std::slice::from_ref(&f.repo)),
             Vec::<String>::new()
         );
+    }
+
+    /// What a builder's pass Building → Testing gives.
+    fn built_pass() -> PassOpts {
+        PassOpts {
+            gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn check_names_a_task_merged_by_hand_whose_stage_still_says_building_or_testing() {
+        let f = fx();
+        let here = std::slice::from_ref(&f.repo);
+        // A clean queue, and a task started a moment ago: its branch is main's tip, no code yet.
+        assert!(stale(&state(&f.root).tasks, here).is_empty());
+        let fresh = task(&f.root, "Fresh", "f/");
+        start(&f.root, &fresh, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        assert!(stale(&state(&f.root).tasks, here).is_empty());
+        // Built but not merged.
+        let open = task(&f.root, "Open", "o/");
+        let so = start(&f.root, &open, "wt-b", T0, &f.repo, &Place::Default).unwrap();
+        commit(&so.worktree, "o/x.txt", "x\n", "open work");
+        assert!(stale(&state(&f.root).tasks, here).is_empty());
+        // Merged into main by hand, still in Building.
+        let built = task(&f.root, "Built", "b/");
+        let sb = start(&f.root, &built, "wt-c", T0, &f.repo, &Place::Default).unwrap();
+        commit(&sb.worktree, "b/x.txt", "x\n", "built work");
+        let tip_b = g(&f.repo, &["rev-parse", "--short", &sb.branch]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &sb.branch]);
+        // Merged into main by hand, in Testing.
+        let tested = task(&f.root, "Tested", "t/");
+        let st = start(&f.root, &tested, "wt-d", T0, &f.repo, &Place::Default).unwrap();
+        commit(&st.worktree, "t/x.txt", "x\n", "tested work");
+        ops::pass_task(&f.root, &tested, "wt-d", "2026-10-13 11:00", &built_pass()).unwrap();
+        let tip_t = g(&f.repo, &["rev-parse", "--short", &st.branch]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &st.branch]);
+        // Merged and paused: the owner's pause wins, nothing to say.
+        let paused = task(&f.root, "Paused", "p/");
+        let sp = start(&f.root, &paused, "wt-e", T0, &f.repo, &Place::Default).unwrap();
+        commit(&sp.worktree, "p/x.txt", "x\n", "paused work");
+        g(&f.repo, &["merge", "-q", "--no-edit", &sp.branch]);
+        crate::pause::pause(&f.root, &paused, "", "owner", T0).unwrap();
+        let lines = stale(&state(&f.root).tasks, here);
+        assert_eq!(
+            lines,
+            vec![
+                format!(
+                    "{built} is in Building, but its branch {} is in main since {tip_b}: muster pass {built} --from building --gate \"<the gate's line>\" --summary \"<what was built>\", then muster pass {built} --from testing",
+                    sb.branch
+                ),
+                format!(
+                    "{tested} is in Testing, but its branch {} is in main since {tip_t}: muster pass {tested} --from testing",
+                    st.branch
+                ),
+            ]
+        );
+        // The fresh branch, now behind main, still has no code of its own.
+        assert!(!lines.iter().any(|l| l.starts_with(&format!("{fresh} "))));
+        // The worktree removed by hand after the merge: the pass command, not release --clean,
+        // which would send merged work back to Ready. Found from the repo check runs in.
+        g(
+            &f.repo,
+            &["worktree", "remove", sb.worktree.to_str().unwrap()],
+        );
+        let lines = stale(&state(&f.root).tasks, here);
+        assert_eq!(lines.len(), 2, "{lines:#?}");
+        assert!(
+            lines[0].starts_with(&format!("{built} is in Building, but its branch")),
+            "{lines:#?}"
+        );
+        // Without that repo there's nowhere to look: the worktree-gone line as before.
+        let lines = stale(&state(&f.root).tasks, &[]);
+        assert!(
+            lines[0].starts_with(&format!("{built}: its worktree")),
+            "{lines:#?}"
+        );
+        // A branch that isn't the task's own `task/` branch is never looked up.
+        let mut ts = state(&f.root).tasks;
+        for t in ts.iter_mut().filter(|t| t.id == tested) {
+            t.branch = "main".into();
+        }
+        let lines = stale(&ts, here);
+        assert!(
+            !lines
+                .iter()
+                .any(|l| l.starts_with(&format!("{tested} is in"))),
+            "{lines:#?}"
+        );
+        // Each one's command clears its line.
+        ops::pass_task(&f.root, &built, "wt-c", "2026-10-13 11:00", &built_pass()).unwrap();
+        let lines = stale(&state(&f.root).tasks, here);
+        assert!(
+            lines.iter().any(
+                |l| l.starts_with(&format!("{built} is in Testing, but its branch"))
+                    && l.ends_with(&format!(": muster pass {built} --from testing"))
+            ),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn a_task_merged_by_hand_and_moved_past_testing_gets_no_pass_line() {
+        let f = fx();
+        let here = std::slice::from_ref(&f.repo);
+        let mut kept = Vec::new();
+        for (title, stage) in [("Checked", "your-check"), ("Finished", "done")] {
+            let id = task(&f.root, title, &format!("{}/", title.to_lowercase()));
+            let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+            commit(
+                &s.worktree,
+                &format!("{}/x.txt", title.to_lowercase()),
+                "x\n",
+                "built",
+            );
+            g(&f.repo, &["merge", "-q", "--no-edit", &s.branch]);
+            ops::set_stage(&f.root, &id, stage, None, "owner", T0).unwrap();
+            kept.push((id, s));
+        }
+        let lines = stale(&state(&f.root).tasks, here);
+        for (id, s) in &kept {
+            // Its worktree kept: the stale-worktree line, never a pass that would move it back.
+            assert!(
+                !lines.iter().any(|l| l.starts_with(&format!("{id} is in"))),
+                "{id}: {lines:#?}"
+            );
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l.starts_with(&format!("stale worktree {}", s.worktree.display()))),
+                "{id}: {lines:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_branch_merged_by_hand_with_its_worktree_gone_is_recorded_not_merged() {
+        let f = fx();
+        let id = task(&f.root, "Merged by hand", "h/");
+        let s = built(&f, &id, "h/x.txt");
+        let tip = g(&s.worktree, &["rev-parse", "HEAD"]);
+        // Pushed to origin as a backup; main, merged by hand, isn't pushed.
+        g(&s.worktree, &["push", "-q", "origin", &s.branch]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &s.branch]);
+        g(
+            &f.repo,
+            &["worktree", "remove", s.worktree.to_str().unwrap()],
+        );
+        let main_before = g(&f.repo, &["rev-parse", "main"]);
+        let origin_before = g(&f.origin, &["rev-parse", "main"]);
+        let ran = f.base.join("gate-ran");
+        let gate = shell_gate(&f, "marks", &format!("touch '{}'", ran.display()));
+        let file = f.root.join(read(&f.root, &id).path);
+        let before = fs::read_to_string(&file).unwrap();
+        // No repo to look in: it says where to pass it from, not release (R7).
+        let mut said = Vec::new();
+        let e = merge(&f.root, &id, "qa", &noon, &gate, None, &mut |l| {
+            said.push(l)
+        });
+        assert_eq!(
+            e.unwrap_err(),
+            format!(
+                "{id}'s worktree {} is gone and this folder's repo has no {}: pass it from the project's repo, which records it if it's merged into main by hand",
+                s.worktree.display(),
+                s.branch
+            )
+        );
+        // Nor from a repo that hasn't the branch.
+        let elsewhere = f.base.join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        g(&elsewhere, &["init", "-q", "-b", "main"]);
+        configure(&elsewhere, &f.hooks);
+        g(
+            &elsewhere,
+            &["commit", "-q", "--allow-empty", "-m", "first"],
+        );
+        let e = merge(
+            &f.root,
+            &id,
+            "qa",
+            &noon,
+            &gate,
+            Some(&elsewhere),
+            &mut |_| {},
+        );
+        assert!(e.unwrap_err().contains("pass it from the project's repo"));
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
+        // A worktree gone with its branch not in main: still nothing to merge from.
+        let open = task(&f.root, "Not merged", "n/");
+        let so = built(&f, &open, "n/x.txt");
+        g(
+            &f.repo,
+            &["worktree", "remove", so.worktree.to_str().unwrap()],
+        );
+        let e = merge(
+            &f.root,
+            &open,
+            "qa",
+            &noon,
+            &gate,
+            Some(&f.repo),
+            &mut |_| {},
+        );
+        assert!(e
+            .unwrap_err()
+            .ends_with(&format!("muster release {open} --clean")));
+        assert!(has_branch(&f, &so.branch));
+        // The builder can't record its own; nothing's touched.
+        let e = merge(
+            &f.root,
+            &id,
+            "wt-a",
+            &noon,
+            &gate,
+            Some(&f.repo),
+            &mut |_| {},
+        );
+        assert!(e.unwrap_err().contains("a different session tests it"));
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
+        assert!(has_branch(&f, &s.branch));
+        // From the project's repo, a tester records the merge main already has.
+        let r = merge(&f.root, &id, "qa", &noon, &gate, Some(&f.repo), &mut |l| {
+            said.push(l)
+        });
+        let Ok(Merge::Merged {
+            commit,
+            report,
+            notes,
+            ..
+        }) = r
+        else {
+            panic!("{r:?}");
+        };
+        assert_eq!(commit, tip);
+        let short: String = tip.chars().take(7).collect();
+        // Origin's main hasn't the merge, so origin's branch is its only copy: kept, and said (R6).
+        let kept = format!(
+            "origin's {} is kept until main is pushed: origin's main doesn't have {short} yet",
+            s.branch
+        );
+        assert!(
+            report.starts_with(&format!(
+                "recorded {}, merged into main by hand as {short} (its worktree was gone: nothing rebased, gated or pushed; {kept}) · review clean at {short} (round 1) · Building ",
+                s.branch
+            )),
+            "{report}"
+        );
+        assert_eq!(notes, vec![kept]);
+        assert_eq!(
+            g(
+                &f.origin,
+                &["rev-parse", &format!("refs/heads/{}", s.branch)]
+            ),
+            tip
+        );
+        assert!(!ran.exists(), "no gate ran");
+        assert_eq!(g(&f.repo, &["rev-parse", "main"]), main_before);
+        assert_eq!(g(&f.origin, &["rev-parse", "main"]), origin_before);
+        assert!(!has_branch(&f, &s.branch));
+        assert!(
+            said.iter()
+                .any(|l| l == &format!("deleted the branch {}", s.branch)),
+            "{said:?}"
+        );
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.worktree.as_str(),
+                t.branch.as_str(),
+                t.commit.as_str()
+            ),
+            ("your-check", "", "", tip.as_str())
+        );
+        assert!(fs::read_to_string(f.root.join(&t.path))
+            .unwrap()
+            .contains(&report));
+        // Nothing left behind for it.
+        let lines = stale(&state(&f.root).tasks, std::slice::from_ref(&f.repo));
+        assert!(!lines.iter().any(|l| l.contains(&id)), "{lines:#?}");
+
+        // Main pushed with the merge, and the worktree's folder deleted outright (rm -rf): its
+        // entry is pruned so the branch can go, and origin's copy goes too, as main has it.
+        let pushed = task(&f.root, "Merged and pushed", "p/");
+        let sp = built(&f, &pushed, "p/x.txt");
+        let ptip = g(&sp.worktree, &["rev-parse", "HEAD"]);
+        g(&sp.worktree, &["push", "-q", "origin", &sp.branch]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &sp.branch]);
+        g(&f.repo, &["push", "-q", "origin", "main"]);
+        fs::remove_dir_all(&sp.worktree).unwrap();
+        let mut said = Vec::new();
+        let r = merge(
+            &f.root,
+            &pushed,
+            "qa",
+            &noon,
+            &gate,
+            Some(&f.repo),
+            &mut |l| said.push(l),
+        );
+        let Ok(Merge::Merged { report, notes, .. }) = r else {
+            panic!("{r:?}");
+        };
+        assert!(notes.is_empty(), "{notes:?}");
+        assert!(!report.contains("kept"), "{report}");
+        assert!(!has_branch(&f, &sp.branch), "pruned, then deleted");
+        assert!(
+            said.iter()
+                .any(|l| l == &format!("deleted origin's {}", sp.branch)),
+            "{said:?}"
+        );
+        let on_origin = git(
+            &f.origin,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{}", sp.branch),
+            ],
+        );
+        assert!(on_origin.is_err(), "{on_origin:?}");
+        assert_eq!(
+            g(&f.origin, &["rev-parse", "main"]),
+            g(&f.repo, &["rev-parse", "main"])
+        );
+        assert_eq!(read(&f.root, &pushed).commit, ptip);
+    }
+
+    #[test]
+    fn a_hand_merge_reviewed_only_after_its_worktree_is_gone_is_recorded() {
+        let f = fx();
+        let id = task(&f.root, "Reviewed late", "l/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "l/x.txt", "x\n", "built");
+        ops::pass_task(&f.root, &id, "wt-a", "2026-10-13 11:00", &built_pass()).unwrap();
+        let tip = g(&s.worktree, &["rev-parse", "HEAD"]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &s.branch]);
+        g(
+            &f.repo,
+            &["worktree", "remove", s.worktree.to_str().unwrap()],
+        );
+        // With the worktree gone, the review reads the branch in the project's repo (R2).
+        let e = crate::review::span(&f.root, &id).unwrap_err();
+        assert!(e.contains("run it from the project's repo"), "{e}");
+        let span = crate::review::span_in(&f.root, &id, Some(&f.repo)).unwrap();
+        assert_eq!(span.head, tip);
+        let json = format!(r#"{{"head":"{}","tier":"light"}}"#, span.head);
+        crate::review::record(&f.root, &id, &json, "qa", "2026-10-13 11:30", &span).unwrap();
+        let r = merge(
+            &f.root,
+            &id,
+            "qa",
+            &noon,
+            &green(&f),
+            Some(&f.repo),
+            &mut |_| {},
+        );
+        let Ok(Merge::Merged { report, .. }) = r else {
+            panic!("{r:?}");
+        };
+        let short: String = tip.chars().take(7).collect();
+        assert!(
+            report.contains(&format!("review clean at {short} (round 1)")),
+            "{report}"
+        );
+        assert_eq!(read(&f.root, &id).stage, "your-check");
+    }
+
+    #[test]
+    fn a_hand_merge_with_no_clean_review_is_refused_with_its_worktree_gone() {
+        let f = fx();
+        let id = task(&f.root, "Unreviewed", "u/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "u/x.txt", "x\n", "built");
+        ops::pass_task(&f.root, &id, "wt-a", "2026-10-13 11:00", &built_pass()).unwrap();
+        g(&f.repo, &["merge", "-q", "--no-edit", &s.branch]);
+        g(
+            &f.repo,
+            &["worktree", "remove", s.worktree.to_str().unwrap()],
+        );
+        let e = merge(
+            &f.root,
+            &id,
+            "qa",
+            &noon,
+            &green(&f),
+            Some(&f.repo),
+            &mut |_| {},
+        );
+        assert!(e.unwrap_err().contains("has no review yet"));
+        assert_eq!(read(&f.root, &id).stage, "testing");
+        assert!(has_branch(&f, &s.branch));
+        // The owner's override records it, and says so.
+        let r = merge(
+            &f.root,
+            &id,
+            "owner",
+            &noon,
+            &green(&f),
+            Some(&f.repo),
+            &mut |_| {},
+        );
+        let Ok(Merge::Merged { report, .. }) = r else {
+            panic!("{r:?}");
+        };
+        assert!(
+            report.contains("no review (the owner's override)"),
+            "{report}"
+        );
+        assert_eq!(read(&f.root, &id).stage, "your-check");
+    }
+
+    #[test]
+    fn a_reflogs_own_commits_are_its_commits_picks_and_rebases_that_picked() {
+        // Every shape this repo's own reflogs hold, newest first.
+        let log = "a1 commit: built\n\
+                   a2 commit (amend): built\n\
+                   a3 commit (merge): Merge branch 'main' into task/mu-1-x\n\
+                   a4 cherry-pick: fix\n\
+                   a5 am: patch\n\
+                   a6 rebase (finish): refs/heads/task/mu-1-x onto b6\n\
+                   b7 rebase -i (finish): refs/heads/task/mu-1-x onto b7\n\
+                   b8 merge main: Fast-forward\n\
+                   b9 merge main: Merge made by the 'ort' strategy.\n\
+                   c1 reset: moving to main\n\
+                   c2 update by push\n\
+                   c3 \n\
+                   c4\n\
+                   c5 branch: Created from main";
+        assert_eq!(
+            own_commits(log).collect::<Vec<_>>(),
+            ["a1", "a2", "a3", "a4", "a5", "a6"]
+        );
+        assert_eq!(own_commits("").count(), 0);
+    }
+
+    #[test]
+    fn only_a_branchs_own_commits_in_main_make_its_stage_lag() {
+        let f = fx();
+        let here = std::slice::from_ref(&f.repo);
+        let started = |title: &str, who: &str| {
+            let id = task(&f.root, title, &format!("{}/", title.to_lowercase()));
+            let s = start(&f.root, &id, who, T0, &f.repo, &Place::Default).unwrap();
+            (id, s)
+        };
+        let lag = |id: &str| {
+            stale(&state(&f.root).tasks, here)
+                .into_iter()
+                .any(|l| l.starts_with(&format!("{id} is in")))
+        };
+        let (ff, sf) = started("Caught up by a merge", "wt-a");
+        let (rb, sr) = started("Caught up by a rebase", "wt-b");
+        let (undone, su) = started("Built then undone", "wt-c");
+        commit(&su.worktree, "u/x.txt", "x\n", "thrown away");
+        let (picked, sp) = started("Rebased with its commit", "wt-d");
+        commit(&sp.worktree, "p/x.txt", "x\n", "picked work");
+        let (squashed, ss) = started("Squashed onto its base", "wt-e");
+        commit(&ss.worktree, "s/a.txt", "a\n", "one");
+        commit(&ss.worktree, "s/b.txt", "b\n", "two");
+        let base = g(&ss.worktree, &["merge-base", "HEAD", "main"]);
+        g(&ss.worktree, &["reset", "-q", "--soft", &base]);
+        g(&ss.worktree, &["commit", "-qm", "squashed"]);
+        // Main moves on.
+        commit(&f.repo, "other.txt", "o\n", "main moves");
+        // Nothing built, caught up by a fast-forward or a rebase that picks nothing: no code.
+        g(&sf.worktree, &["merge", "-q", "--ff-only", "main"]);
+        g(&sr.worktree, &["rebase", "-q", "main"]);
+        // Its commit thrown away and the branch reset to main.
+        g(&su.worktree, &["reset", "-q", "--hard", "main"]);
+        // Rebased with its commit, then merged; squashed onto its base, then merged.
+        g(&sp.worktree, &["rebase", "-q", "main"]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &sp.branch]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &ss.branch]);
+        for id in [&ff, &rb, &undone] {
+            assert!(!lag(id), "{id}: {:#?}", stale(&state(&f.root).tasks, here));
+        }
+        for id in [&picked, &squashed] {
+            assert!(lag(id), "{id}: {:#?}", stale(&state(&f.root).tasks, here));
+        }
+        // Merged into main and caught up to it afterwards: its code is still in main.
+        g(&sp.worktree, &["merge", "-q", "--ff-only", "main"]);
+        assert!(lag(&picked));
     }
 
     #[test]

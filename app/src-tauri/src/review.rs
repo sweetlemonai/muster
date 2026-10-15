@@ -920,15 +920,21 @@ impl Span {
 
 /// The span of started task `id` as its worktree has it now.
 pub fn span(root: &Path, id: &str) -> Result<Span, String> {
+    span_in(root, id, None)
+}
+
+/// `span`, with `cwd`'s repo to read the branch in when the worktree is gone (0110).
+pub fn span_in(root: &Path, id: &str, cwd: Option<&Path>) -> Result<Span, String> {
     let t = queue::read_task(root, id)?;
     if t.branch.is_empty() {
         return Err(not_started(id));
     }
-    let (base, head) = crate::parallel::branch_span(&t.worktree, &t.branch)
+    let (base, head, dir) = crate::parallel::branch_span(root, &t.worktree, &t.branch, cwd)
         .map_err(|e| format!("can't read {id}'s branch {}: {e}", t.branch))?;
-    let since = load(root, id)?.map(|r| r.head).filter(|h| {
-        !h.is_empty() && *h != base && crate::parallel::is_ancestor(&t.worktree, h, &head)
-    });
+    let dir = dir.to_string_lossy();
+    let since = load(root, id)?
+        .map(|r| r.head)
+        .filter(|h| !h.is_empty() && *h != base && crate::parallel::is_ancestor(&dir, h, &head));
     Ok(Span { base, head, since })
 }
 

@@ -213,7 +213,22 @@ its own agent id is another holder, 0090) and logged `(tested under
 > removed: it's left detached, its files as they are, and only the branch goes. **Left behind:** `muster check` lists a started
 > task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a
 > `task/<key>-…` branch (or a `task/<id>-…` one from before keys) whose task is past Testing,
-> each with the command that cleans it. Never
+> each with the command that cleans it. It also names a task whose stage lags its code (0110): in
+> Building or Testing, not paused, its `task/` branch's tip in the local main and holding a commit
+> the branch made itself (by its reflog: a commit, cherry-pick or rebase that picked something,
+> never a fast-forward or merge of main or a reset), merged by hand with no pass:
+> `mu-52 is in Building, but its branch task/mu-52-x is in main since 1a2b3c4: muster pass mu-52
+> --from building --gate "<the gate's line>" --summary "<what was built>", then muster pass mu-52
+> --from testing` (in Testing, only the second pass). That line replaces the worktree-gone one
+> when the worktree was removed after the merge, since `release --clean` would send merged work
+> back to Ready. With the worktree gone, the pass from Testing, run in the project's repo, records
+> the merge main already has: no rebase, gate or push, the review of record still clean at the
+> branch's tip (the owner aside), the branch deleted, its tip the task's `commit:`, and the task
+> in Your check with the usual merge report. Origin's copy of the branch goes only when origin's
+> main already has its tip (fetched and checked); otherwise it's kept, and the report says so
+> until main is pushed. `muster review` of such a task reads the branch in the project's repo
+> too, and a pass from a folder whose repo hasn't the branch says to run it from the project's
+> repo. None of these lines fails the check. Never
 > delete a worktree or a branch by hand while its task is in Building or Testing.
 
 > **Human tasks (Muster 0022, 2026-10-13).** `for: human` in the front matter makes a task the

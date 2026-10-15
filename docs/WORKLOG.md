@@ -4,6 +4,51 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — mu-110 round 3: origin's branch kept until main is pushed, review with the worktree gone
+**Fixed (Gholi_23, builder, under gholi_15):** R6: recording a hand merge deleted origin's task
+branch though nothing pushed main → `drop_origin_copy` checked only tip equality → it's dropped now
+only when origin's main holds the tip (`origin_trunk_holds`: ls-remote, fetch, is-ancestor), else
+kept with a note and the report saying so. R2: `muster review` of a task whose worktree was removed
+before any review failed → `branch_span` needed the worktree → it falls back to the queue's own repo
+or the cwd's (`repo_with_branch`, `review::span_in`). R7: a pass from a folder whose repo hasn't the
+branch answered `release --clean` → it says to pass from the project's repo.
+**Verified:** gate green; mutants killed: prune made a no-op (the new rm -rf'd-worktree case) and
+origin's branch always dropped (the pushed-branch case).
+
+## 2026-10-14 — muster check names a task merged by hand whose stage still says Building or Testing (mu-110)
+**Did (Gholi_15, builder):** `parallel::lagging`, called by `stale`, adds a warning line for a
+task in Building or Testing, not paused, whose own `task/` branch has commits and is in the local
+main, with the pass that catches it up. It replaces the worktree-gone line (whose `release --clean`
+would send merged work back to Ready). PROTOCOL.md, `muster help check`, AS_BUILT.md issue 3.
+**Decided:** "has commits of its own" is read from the branch's reflog (`own_commits`: a commit,
+cherry-pick, `am` or a rebase that picked something; one of them must be in the tip). A task
+started a moment ago has its branch at main's tip, which is in main too, and a fast-forward or a
+rebase onto a moved main makes no commit (review round 1, R1: checking only that the tip moved
+told such a task to pass). Alternatives: commit time against the start stamp (minute stamps,
+clock-dependent), or recording the base at start (a new field for one check). No reflog means no
+line, never a false one.
+**Verified:** `bin/gate` green; parallel and cli tests for merged in Building and in Testing, the
+worktree removed after the merge, an unmerged branch, a fresh start, a branch caught up by a
+fast-forward or a rebase with nothing built, commits reset away, a rebased and a squashed branch
+merged, a paused task, a non-`task/` branch, a clean queue, and `check`'s exit code 0 with the
+warning; the reflog parser over every entry shape in this repo's reflogs.
+**Fixed (review round 2, Gholi_21):** with the worktree removed after the merge, the line's
+`muster pass --from testing` hit "worktree is gone … release --clean" (R2) → `merge` needed a
+worktree for every step → when it's gone and the branch is in main with its own commit
+(`hand_merged`), `merge` records the merge from the repo the pass runs in (`record_hand_merge`:
+review still clean at the tip, branch deleted, task to Your check, no rebase, gate or push). The
+Building line's pass lacked `--summary`, so it was refused on a task with no summary (R3) → added
+in the line, help, PROTOCOL.md and the manual. R4: a test for the Building/Testing guard. R5:
+`stale`'s match re-indented (its long literals shortened so rustfmt formats it again).
+**Decided:** the app's Problems list stays without these lines: it's built on every queue read,
+and git calls per started task there need caching and a worker thread, more than this task. The
+lead's call (over about an hour: CLI only, backlog note).
+**Verified (round 2):** a cli test runs both printed commands, placeholders filled, on a task with
+no summary and its worktree removed: exit 0, Your check, no line left. Parallel tests: recorded
+with the worktree gone (no gate run, main and origin unchanged, branch deleted, report), refused
+with no repo, unmerged, by its builder, or with no clean review (the owner's override records it);
+no pass line past Testing; mutating the stage guard fails its test.
+**Open:** a squash merge or a branch deleted after the merge isn't detected (AS_BUILT.md).
 ## 2026-10-14 — Spike: Muster and Drover as one pipeline, runs sandboxed with full access (decision 0016)
 **Did:** the owner asked how to combine Muster and Drover now that Muster is the whole pipeline,
 with runs sandboxed and worktreed so they can have full access. Spike report
