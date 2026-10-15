@@ -12,6 +12,128 @@ use std::path::{Path, PathBuf};
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
 type Env<'a> = &'a dyn Fn(&str) -> Option<String>;
 
+/// A command's stdout (0170). Every line a command prints goes through `out!`/`outln!` to this
+/// one writer, never the std print macros, which panic when the reader has left
+/// (`muster show mu-1 | head -1`). A write that fails ends the output and nothing else: the
+/// command finishes its queue writes and exits with its own status. A reader that left
+/// (`BrokenPipe`) is quiet; any other failure (a full disk) is said once on stderr when the
+/// command has ended (`failure_line`) and turns a status of 0 into 1, so a script never takes
+/// cut-off output for the whole of it.
+struct Stdout {
+    ended: std::sync::atomic::AtomicBool,
+    /// The failure that ended the output, unless it was a reader that left.
+    error: std::sync::OnceLock<String>,
+    /// The command, when it may write to the queue (`reads_only` says it doesn't).
+    writer: std::sync::OnceLock<String>,
+}
+
+impl Stdout {
+    const fn new() -> Self {
+        Self {
+            ended: std::sync::atomic::AtomicBool::new(false),
+            error: std::sync::OnceLock::new(),
+            writer: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Writes `s` to `w`, unless an earlier write failed.
+    fn write(&self, w: &mut impl std::io::Write, s: &str) {
+        if !self.ended() {
+            let done = w.write_all(s.as_bytes());
+            self.settle(done);
+        }
+    }
+
+    /// Sends on what `w` still buffers (the last line, when it has no newline).
+    fn flush(&self, w: &mut impl std::io::Write) {
+        if !self.ended() {
+            let done = w.flush();
+            self.settle(done);
+        }
+    }
+
+    fn settle(&self, done: std::io::Result<()>) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let Err(e) = done else { return };
+        if self.ended.swap(true, Relaxed) || e.kind() == std::io::ErrorKind::BrokenPipe {
+            return;
+        }
+        let _ = self.error.set(e.to_string());
+    }
+
+    /// Marks the command as one that may write to the queue.
+    fn writes(&self, cmd: &str) {
+        let _ = self.writer.set(cmd.to_string());
+    }
+
+    fn ended(&self) -> bool {
+        self.ended.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn failed(&self) -> bool {
+        self.error.get().is_some()
+    }
+
+    /// The stderr line for output that failed, once the command ended with `code`. A command
+    /// that may write and succeeded says its change is saved, so nobody runs it again for the
+    /// lost output (a second note, a refused second pass); a read or a refusal says only that
+    /// the output failed.
+    fn failure_line(&self, code: i32) -> Option<String> {
+        let e = self.error.get()?;
+        Some(match self.writer.get() {
+            Some(cmd) if code == 0 => format!(
+                "muster: {cmd} ran and its change is saved, but its output couldn't be written ({e}): don't run it again"
+            ),
+            _ => format!("muster: can't write the output: {e}"),
+        })
+    }
+}
+
+static STDOUT: Stdout = Stdout::new();
+
+/// Does this command only read (0170)? Anything not known to only read counts as a write, so
+/// lost output never leads to the same write done twice.
+fn reads_only(a: &Args) -> bool {
+    let sub = a.pos.get(1).map(String::as_str);
+    let has = |keys: &[&str]| keys.iter().any(|k| a.flags.contains_key(*k));
+    match a.pos.first().map_or("help", String::as_str) {
+        "help" | "-h" | "--help" | "team" | "instructions" | "list" | "show" | "ready" => true,
+        "projects" => sub != Some("set"),
+        "history" | "lessons" => sub.is_none(),
+        "inbox" => a.keep,
+        "index" => a.check,
+        "check" => !a.fix_pauses || a.dry_run,
+        "shape" => a.peek,
+        "vision" => !has(&["record", "resolve"]),
+        "review" => !has(&["record", "fixed", "dispute", "settle"]),
+        _ => false,
+    }
+}
+
+/// One piece of a command's output, through `STDOUT`. Unit tests drop it: a direct write to
+/// stdout would land in the test runner's own output, past its capture.
+fn out_str(s: &str) {
+    if cfg!(test) {
+        STDOUT.write(&mut std::io::sink(), s);
+    } else {
+        STDOUT.write(&mut std::io::stdout().lock(), s);
+    }
+}
+
+/// `print!` for a command's output, through `out_str`.
+macro_rules! out {
+    ($($arg:tt)*) => {
+        out_str(&format!($($arg)*))
+    };
+}
+
+/// `println!` for a command's output, through `out_str`.
+macro_rules! outln {
+    ($($arg:tt)*) => {
+        out_str(&format!("{}\n", format_args!($($arg)*)))
+    };
+}
+
 #[derive(Debug, Clone)]
 struct Args {
     pos: Vec<String>,
@@ -1265,18 +1387,18 @@ fn run_history(a: &Args, root: &Path, me: &dyn Fn() -> String) -> Result<i32, St
         Some("commit") => {
             let done = crate::history::commit_outside(root)?;
             if done.is_empty() {
-                println!("nothing to commit: the history has every file");
+                outln!("nothing to commit: the history has every file");
             } else {
-                println!("committed {}", done.join(", "));
+                outln!("committed {}", done.join(", "));
             }
             return Ok(0);
         }
         Some("removed") => {
             let done = crate::history::removed(root, &a.pos[2..], a.all, &me())?;
             if done.is_empty() {
-                println!("nothing to record: no file is missing since the last commit");
+                outln!("nothing to record: no file is missing since the last commit");
             } else {
-                println!(
+                outln!(
                     "recorded as removed: {} (older commits keep them: muster restore <path> brings one back)",
                     done.join(", ")
                 );
@@ -1296,20 +1418,20 @@ fn run_history(a: &Args, root: &Path, me: &dyn Fn() -> String) -> Result<i32, St
         return Ok(0);
     }
     if !s.kept {
-        println!("this queue keeps no history of its own: only a local .muster queue (local = true) in a repo's main checkout has one");
+        outln!("this queue keeps no history of its own: only a local .muster queue (local = true) in a repo's main checkout has one");
         return Ok(0);
     }
     let problems = crate::history::problems("q", root);
     if !s.started && problems.is_empty() {
-        println!("history: not started yet: the queue's next write starts it");
+        outln!("history: not started yet: the queue's next write starts it");
     } else if problems.is_empty() {
-        println!("history: every file committed");
+        outln!("history: every file committed");
     }
     for p in &problems {
-        println!("{}", p.trim_start_matches("q: "));
+        outln!("{}", p.trim_start_matches("q: "));
     }
     for (at, what) in crate::history::log(root, 10)? {
-        println!("{at}  {what}");
+        outln!("{at}  {what}");
     }
     Ok(0)
 }
@@ -1354,7 +1476,7 @@ fn new_task(a: &Args, title: &str, body: String) -> ops::NewTask {
 }
 
 fn print_json<T: serde::Serialize>(v: &T) -> Result<(), String> {
-    println!(
+    outln!(
         "{}",
         serde_json::to_string_pretty(v).map_err(|e| e.to_string())?
     );
@@ -1602,11 +1724,11 @@ fn merge_cmd(
     }
     let (project, gate) = gate.unwrap_or_else(|| (projects::default_name(root), String::new()));
     let argv = gate_words(&project, &gate)?;
-    println!("{k}: merging into main (gate: {})", argv.join(" "));
-    let mut say = |line: String| println!("{line}");
+    outln!("{k}: merging into main (gate: {})", argv.join(" "));
+    let mut say = |line: String| outln!("{line}");
     match crate::parallel::merge(root, id, who, &local_stamp, &argv, cwd, &mut say)? {
         crate::parallel::Merge::Returned(why) => {
-            println!("{k}: back in Building: {why}");
+            outln!("{k}: back in Building: {why}");
             Ok(1)
         }
         crate::parallel::Merge::Merged {
@@ -1617,17 +1739,17 @@ fn merge_cmd(
             next,
         } => {
             for n in &notes {
-                println!("left behind: {n} (muster check lists it)");
+                outln!("left behind: {n} (muster check lists it)");
             }
-            println!("{}", stage_message(root, prefix, id, &path));
-            println!("{k}: {report}");
+            outln!("{}", stage_message(root, prefix, id, &path));
+            outln!("{k}: {report}");
             match next {
                 Some((n, title)) => {
                     let n = crate::key::key(prefix, &n);
-                    println!("next: {n} {title}: muster start {n}")
+                    outln!("next: {n} {title}: muster start {n}")
                 }
                 None => {
-                    println!("next: nothing else ready that's safe beside the tasks still running")
+                    outln!("next: nothing else ready that's safe beside the tasks still running")
                 }
             }
             Ok(0)
@@ -1708,11 +1830,11 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
 fn set_merge_driver(dir: &Path) {
     match crate::merge_log::configure(dir) {
         Ok(keys) if keys.is_empty() => {}
-        Ok(keys) => println!(
+        Ok(keys) => outln!(
             "set {} in the repo's git config, so work log entries merge whole (muster merge-log)",
             keys.join(" and ")
         ),
-        Err(e) => print!("\n{}", crate::merge_log::not_set(&e)),
+        Err(e) => out!("\n{}", crate::merge_log::not_set(&e)),
     }
 }
 
@@ -1788,7 +1910,7 @@ fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
         return Ok(0);
     }
     if set.is_empty() {
-        println!(
+        outln!(
             "nothing ready to start in {} ({})",
             projects::default_name(root),
             root.display()
@@ -1813,13 +1935,29 @@ fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
             ));
         }
     }
-    print!("{out}");
+    out!("{out}");
     Ok(0)
 }
 
 /// Runs a command; returns the process exit code (0 ok, 1 refused or failed, 2 usage).
 pub fn main(argv: &[String]) -> i32 {
-    main_with(argv, &|k: &str| std::env::var(k).ok())
+    let code = main_with(argv, &|k: &str| std::env::var(k).ok());
+    STDOUT.flush(&mut std::io::stdout().lock());
+    if let Some(line) = STDOUT.failure_line(code) {
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), "{line}");
+    }
+    out_status(code, STDOUT.failed())
+}
+
+/// The status a command exits with (0170): its own, except that output it couldn't write, for
+/// any reason but a reader that left, turns a success into 1.
+fn out_status(code: i32, failed: bool) -> i32 {
+    if code == 0 && failed {
+        1
+    } else {
+        code
+    }
 }
 
 /// `main`, with the caller's environment given.
@@ -1843,6 +1981,9 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
         return crate::merge_log::run(&argv[1..]);
     }
     let a = parse(argv)?;
+    if !reads_only(&a) {
+        STDOUT.writes(a.pos.first().map_or("help", String::as_str));
+    }
     // A teammate's agent id (0090): `--agent`, else `$MUSTER_AGENT`, checked once here and read
     // from then on as `MUSTER_AGENT`, so the stamp and the mailbox see the same one.
     let agent = agent_arg(&a, env)?;
@@ -1864,10 +2005,10 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             }
             match a.pos.get(1) {
                 Some(name) => match crate::help::command_text(name) {
-                    Some(t) => print!("{t}"),
+                    Some(t) => out!("{t}"),
                     None => return Err(format!("unknown command {name:?} (see `muster help`)")),
                 },
-                None => print!("{}", crate::help::text()),
+                None => out!("{}", crate::help::text()),
             }
             Ok(0)
         }
@@ -1883,7 +2024,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             if a.json {
                 print_json(&team)?;
             } else {
-                print!("{}", crate::roles::team_text(&team));
+                out!("{}", crate::roles::team_text(&team));
             }
             Ok(0)
         }
@@ -1900,7 +2041,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                         .join(", ")
                 )
             })?;
-            print!("{}", crate::roles::instructions(r));
+            out!("{}", crate::roles::instructions(r));
             Ok(0)
         }
         "projects" => {
@@ -1908,14 +2049,14 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 let file = config_file();
                 // A prefix lives with the queue (0033), not in projects.json.
                 if a.pos.get(3).map(String::as_str) == Some("prefix") {
-                    println!(
+                    outln!(
                         "{}",
                         set_project_prefix(&a, &projects::load(&file), &base())?
                     );
                     return Ok(0);
                 }
                 let said = projects::edit(&file, |c| set_project_command(&a, c, &base()))?;
-                println!("{said}");
+                outln!("{said}");
                 return Ok(0);
             }
             let list = projects::list(&base(), &projects::load(&config_file()));
@@ -1923,7 +2064,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 print_json(&list)?;
             } else {
                 for p in &list {
-                    println!("{}", project_line(p));
+                    outln!("{}", project_line(p));
                 }
             }
             Ok(0)
@@ -1951,7 +2092,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             let known = crate::key::known();
             // In a repo, its `.muster/` (0005); elsewhere, the old `<folder>/tasks`.
             let (q, prefix) = projects::new_queue(&dir, committed, wanted, &known, &tools_dir())?;
-            println!(
+            outln!(
                 "created {} (prefix {prefix}: its tasks are {prefix}-1, {prefix}-2…)",
                 q.display()
             );
@@ -1980,7 +2121,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 |root: &Path| stamped_who(&label(&a, env, root), env, cwd.as_deref(), Some(root));
             let (lines, code) = fix_pauses(&queues, a.dry_run, &who, &stamp);
             for l in &lines {
-                println!("{l}");
+                outln!("{l}");
             }
             Ok(code)
         }
@@ -2000,14 +2141,14 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 &crate::key::known(),
             )?;
             for line in &r.lines {
-                println!("{line}");
+                outln!("{line}");
             }
             // What projects.json says of the old queue (gate, run, name, hidden, Your check limit), said
             // of the new.
             let carried =
                 carry_projects(&config_file(), &base(), Path::new(old), &r.queue, a.dry_run)?;
             for line in &carried {
-                println!("{}{line}", if a.dry_run { "would: " } else { "" });
+                outln!("{}{line}", if a.dry_run { "would: " } else { "" });
             }
             Ok(0)
         }
@@ -2089,7 +2230,7 @@ fn run_on(
             if a.json {
                 print_json(&with_key(serde_json::json!(c), key(&c.id)))?;
             } else {
-                println!("{} {}", key(&c.id), c.path);
+                outln!("{} {}", key(&c.id), c.path);
             }
             Ok(0)
         }
@@ -2109,11 +2250,11 @@ fn run_on(
                 }
             } else {
                 let (head, tail) = list_parts(&notes, &tasks, stamp);
-                print!("{head}");
+                out!("{head}");
                 if let Some(l) = over {
                     eprintln!("{l}");
                 }
-                print!("{tail}");
+                out!("{tail}");
             }
             Ok(0)
         }
@@ -2128,11 +2269,11 @@ fn run_on(
                     .ok_or(format!("no task {id}"))?;
                 print_json(&task_json(t))?;
             } else {
-                print!("{}", queue::read_body(root, id)?);
+                out!("{}", queue::read_body(root, id)?);
                 // Who's on it and the latest check-in, which the file only has in pieces.
                 if let Ok(mut t) = queue::read_task(root, id) {
                     t.prefix = prefix.to_string();
-                    print!("{}", show_footer(&t));
+                    out!("{}", show_footer(&t));
                 }
             }
             Ok(0)
@@ -2148,7 +2289,7 @@ fn run_on(
                 &me(),
                 stamp,
             )?;
-            println!("{} → {p}", key(id));
+            outln!("{} → {p}", key(id));
             Ok(0)
         }
         "pass" => {
@@ -2169,13 +2310,13 @@ fn run_on(
                 now_unchanged: a.flags.get("now-unchanged").cloned().unwrap_or_default(),
             };
             let p = ops::pass_task(root, id, &me(), stamp, &opts)?;
-            println!("{}", stage_message(root, prefix, id, &p));
+            outln!("{}", stage_message(root, prefix, id, &p));
             // Into Testing on its own branch: the review of record comes first (0027).
             if queue::read_task(root, id)
                 .is_ok_and(|t| t.stage == "testing" && !t.branch.is_empty())
             {
                 let k = key(id);
-                println!("next: the review of record, by a session that didn't build it: muster review {k} prints its brief");
+                outln!("next: the review of record, by a session that didn't build it: muster review {k} prints its brief");
             }
             Ok(0)
         }
@@ -2185,9 +2326,9 @@ fn run_on(
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let to = a.flags.get("to").map(String::as_str);
             let r = ops::return_back(root, id, &why, to, &me(), stamp)?;
-            println!("{}", stage_message(root, prefix, id, &r.path));
+            outln!("{}", stage_message(root, prefix, id, &r.path));
             for l in returned_lines(&key(id), &r) {
-                println!("{l}");
+                outln!("{l}");
             }
             Ok(0)
         }
@@ -2211,13 +2352,13 @@ fn run_on(
                 detail.push_str(&more);
             }
             let p = ops::block_as(root, id, &kind, &detail, &me(), stamp)?;
-            println!("{}", stage_message(root, prefix, id, &p));
+            outln!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "unblock" => {
             let id = need(a, 1, "a task id")?;
             let p = ops::unblock_task(root, id, &me(), stamp)?;
-            println!("{}", stage_message(root, prefix, id, &p));
+            outln!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "pause" | "resume" => {
@@ -2227,19 +2368,19 @@ fn run_on(
             } else {
                 pause::resume(root, id, &me(), stamp)?
             };
-            println!("{}: {cmd}d ({})", key(id), p.path);
+            outln!("{}: {cmd}d ({})", key(id), p.path);
             if !p.session.is_empty() {
                 let ask = if cmd == "pause" {
                     "to stop"
                 } else {
                     "to carry on"
                 };
-                println!(
+                outln!(
                     "Asked session {} {ask}: it arrives after that session's next tool call.",
                     p.session
                 );
             } else if !p.unreached.is_empty() {
-                println!("Its session can't be told: {}.", p.unreached);
+                outln!("Its session can't be told: {}.", p.unreached);
             }
             Ok(0)
         }
@@ -2248,7 +2389,7 @@ fn run_on(
             let stage = need(a, 2, "a stage")?;
             let from = a.flags.get("from").map(String::as_str);
             let p = ops::set_stage(root, id, stage, from, &me(), stamp)?;
-            println!("{}", stage_message(root, prefix, id, &p));
+            outln!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "set" => {
@@ -2256,7 +2397,7 @@ fn run_on(
             let field = need(a, 2, "a field")?;
             let value = a.pos[3..].join(" ");
             ops::set_field(root, id, field, &value, &me(), stamp)?;
-            println!("{}: {field} set", key(id));
+            outln!("{}: {field} set", key(id));
             Ok(0)
         }
         "note" => {
@@ -2268,7 +2409,7 @@ fn run_on(
                 &me(),
                 stamp,
             )?;
-            println!("{}: noted", key(id));
+            outln!("{}: noted", key(id));
             Ok(0)
         }
         "tick" | "untick" => {
@@ -2276,7 +2417,7 @@ fn run_on(
             let which = need(a, 2, "which criterion (AC2 or 2)")?;
             let undo = cmd == "untick";
             ops::tick_criterion(root, id, which, undo, &me(), stamp)?;
-            println!(
+            outln!(
                 "{}: {} {which}",
                 key(id),
                 if undo { "unticked" } else { "ticked" }
@@ -2314,8 +2455,8 @@ fn run_on(
                 _ => {}
             }
             match saved? {
-                Some(p) => println!("{}: edited ({p})", key(id)),
-                None => println!("{}: no change", key(id)),
+                Some(p) => outln!("{}: edited ({p})", key(id)),
+                None => outln!("{}: no change", key(id)),
             }
             Ok(0)
         }
@@ -2327,12 +2468,12 @@ fn run_on(
                         return Err("link --remove takes the link's number or address, nothing more (see `muster help`)".into());
                     }
                     let gone = fields::remove_link(root, id, which, &me(), stamp)?;
-                    println!("{}: unlinked {}", key(id), gone.url);
+                    outln!("{}: unlinked {}", key(id), gone.url);
                 }
                 None => {
                     let url = need(a, 2, "an https link")?;
                     let l = fields::add_link(root, id, url, &a.pos[3..].join(" "), &me(), stamp)?;
-                    println!("{}: linked {}", key(id), l.url);
+                    outln!("{}: linked {}", key(id), l.url);
                 }
             }
             Ok(0)
@@ -2353,12 +2494,12 @@ fn run_on(
             };
             let c = fields::comment(root, id, &text, &me(), stamp)?;
             if c.did.is_empty() {
-                println!("{}: commented", key(id));
+                outln!("{}: commented", key(id));
             } else if c.unsaved.is_empty() {
-                println!("{}: {}; commented", key(id), c.did);
+                outln!("{}: {}; commented", key(id), c.did);
             } else {
                 // The action ran: sending the comment again would run it twice.
-                println!("{}: {}", key(id), c.did);
+                outln!("{}: {}", key(id), c.did);
                 eprintln!(
                     "{}: the comment couldn't be saved ({}); the action stands, so don't send it again",
                     key(id),
@@ -2384,7 +2525,7 @@ fn run_on(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let saved = ops::attach(root, id, &name, &bytes, &me, stamp)?;
-                println!("{}: attached {saved}", key(id));
+                outln!("{}: attached {saved}", key(id));
             }
             Ok(0)
         }
@@ -2405,8 +2546,8 @@ fn run_on(
                 ),
             };
             match asker {
-                Some(s) => println!("{}: answered {q}{how}; delivered to session {s}", key(id)),
-                None => println!(
+                Some(s) => outln!("{}: answered {q}{how}; delivered to session {s}", key(id)),
+                None => outln!(
                     "{}: answered {q}{how}; no asking session on record",
                     key(id)
                 ),
@@ -2417,14 +2558,16 @@ fn run_on(
             let id = need(a, 1, "a task id, or a backlog note's file name")?;
             if names_a_note(id) {
                 let t = backlog::takeover_note(root, id, &me(), stamp)?;
-                println!(
+                outln!(
                     "took {} over from {} ({}); you're shaping it now, heartbeat {stamp}",
-                    t.note, t.from, t.why
+                    t.note,
+                    t.from,
+                    t.why
                 );
                 return Ok(0);
             }
             let t = ops::takeover_task(root, id, &me(), stamp, queue::now_secs())?;
-            println!(
+            outln!(
                 "{}: took over the claim from {} ({}); heartbeat {stamp} ({})",
                 key(id),
                 t.from,
@@ -2436,7 +2579,7 @@ fn run_on(
         "claim" => {
             let id = need(a, 1, "a task id")?;
             let p = ops::claim_task(root, id, &me(), stamp)?;
-            println!("{}", claimed_message(root, prefix, id, &p));
+            outln!("{}", claimed_message(root, prefix, id, &p));
             Ok(0)
         }
         "next" => {
@@ -2444,11 +2587,11 @@ fn run_on(
             warn_your_check(root, prefix);
             match ops::next_task(root, &me, stamp)? {
                 Some(c) => {
-                    println!("{}", claimed_message(root, prefix, &c.id, &c.path));
+                    outln!("{}", claimed_message(root, prefix, &c.id, &c.path));
                     Ok(0)
                 }
                 None => {
-                    println!(
+                    outln!(
                         "nothing ready in {} ({}) that {me} may take",
                         projects::default_name(root),
                         root.display()
@@ -2473,7 +2616,7 @@ fn run_on(
                 cwd.ok_or("can't read the current folder: run start from the project's repo")?;
             warn_your_check(root, prefix);
             let s = crate::parallel::start(root, id, &me(), stamp, cwd, &place)?;
-            print!("{}", started_text(root, prefix, id, &s));
+            out!("{}", started_text(root, prefix, id, &s));
             set_merge_driver(cwd);
             Ok(0)
         }
@@ -2482,7 +2625,7 @@ fn run_on(
             let id = need(a, 1, "a task id, or a backlog note's file name")?;
             if names_a_note(id) {
                 let h = backlog::release_note(root, id, &me())?;
-                println!(
+                outln!(
                     "released {id}: {} isn't shaping it any more",
                     session::split(&h.by).0
                 );
@@ -2495,14 +2638,14 @@ fn run_on(
                 ));
             }
             for line in crate::parallel::release(root, id, &me(), stamp, a.force, cwd)? {
-                println!("{line}");
+                outln!("{line}");
             }
             Ok(0)
         }
         "heartbeat" => {
             let id = need(a, 1, "a task id")?;
             ops::heartbeat_task(root, id, &me(), stamp)?;
-            println!("{}: heartbeat {stamp}", key(id));
+            outln!("{}: heartbeat {stamp}", key(id));
             Ok(0)
         }
         "checkin" => {
@@ -2512,13 +2655,13 @@ fn run_on(
             let pct = a.flags.get("pct").map(String::as_str).unwrap_or("");
             ops::checkin_task_with(root, id, &text, pct, a.handoff, &me(), stamp)?;
             if a.handoff {
-                println!(
+                outln!(
                     "{}: checked in, handing off; heartbeat {stamp}. Your successor runs: muster claim {} --takeover",
                     key(id),
                     key(id)
                 );
             } else {
-                println!("{}: checked in; heartbeat {stamp}", key(id));
+                outln!("{}: checked in; heartbeat {stamp}", key(id));
             }
             Ok(0)
         }
@@ -2526,12 +2669,12 @@ fn run_on(
             let id = need(a, 1, "a task id")?;
             if a.pos.len() > 2 {
                 let p = ping::message(root, id, &a.pos[2..].join(" "), &me(), stamp)?;
-                println!("{}: message sent to session {}", key(id), p.session);
+                outln!("{}: message sent to session {}", key(id), p.session);
             } else {
                 let p = ping::ask_checkin(root, id, &me(), stamp)?;
-                println!("{}: asked session {} for a check-in", key(id), p.session);
+                outln!("{}: asked session {} for a check-in", key(id), p.session);
             }
-            println!("It arrives after that session's next tool call.");
+            outln!("It arrives after that session's next tool call.");
             Ok(0)
         }
         "reclaim" => {
@@ -2551,7 +2694,7 @@ fn run_on(
                 } else {
                     after.to_string()
                 };
-                print!("{}", reclaim_text(&r, &within, key));
+                out!("{}", reclaim_text(&r, &within, key));
             }
             for f in &r.failed {
                 eprintln!("muster: couldn't release {f}");
@@ -2575,19 +2718,19 @@ fn run_on(
                 &session(a, env),
                 stamp,
             )?;
-            println!(
+            outln!(
                 "asked Q{} on {}. The answer will be delivered to this session.",
                 asked.n,
                 key(id)
             );
             if !choices.options.is_empty() {
-                print!("{}", options_text(&choices));
+                out!("{}", options_text(&choices));
             }
             if !asked.earlier.is_empty() {
-                println!("\nQuestions on this task so far (check that yours isn't answered here):");
+                outln!("\nQuestions on this task so far (check that yours isn't answered here):");
                 for (answered, line) in &asked.earlier {
                     let tag = if *answered { "[answered]" } else { "[open]" };
-                    println!("  {tag} {line}");
+                    outln!("  {tag} {line}");
                 }
             }
             Ok(0)
@@ -2602,12 +2745,12 @@ fn run_on(
                 .and_then(|t| t.questions.into_iter().find(|q| q.n == Some(n)))
                 .and_then(|q| q.choices);
             match choices {
-                Some(c) => print!(
+                Some(c) => out!(
                     "escalated Q{n} on {}; add it to WAITING-FOR-OWNER.md with its options:\n{}",
                     key(id),
                     options_text(&c)
                 ),
-                None => println!(
+                None => outln!(
                     "escalated Q{n} on {}; add it to WAITING-FOR-OWNER.md",
                     key(id)
                 ),
@@ -2623,7 +2766,7 @@ fn run_on(
                 if a.json {
                     print_json(&b)?;
                 } else {
-                    print!("{}", crate::clarify::text(&b));
+                    out!("{}", crate::clarify::text(&b));
                 }
                 return Ok(0);
             }
@@ -2632,7 +2775,7 @@ fn run_on(
             if a.json {
                 print_json(&sent)?;
             } else if sent.is_empty() {
-                println!("nothing to send: no open question on a Shaping or Ready task that isn't blocked is waiting to go to the owner");
+                outln!("nothing to send: no open question on a Shaping or Ready task that isn't blocked is waiting to go to the owner");
             } else {
                 let each: Vec<String> = sent
                     .iter()
@@ -2642,7 +2785,7 @@ fn run_on(
                         format!("{} {}", t.key, qs.join(", "))
                     })
                     .collect();
-                println!(
+                outln!(
                     "sent {} to the owner as one batch ({}); they wait in Waiting for you. Add them to WAITING-FOR-OWNER.md.",
                     crate::clarify::counted(n, sent.len()),
                     each.join("; ")
@@ -2653,9 +2796,9 @@ fn run_on(
         "inbox" => {
             let mail = queue::take_mail(root, &session(a, env), a.keep)?;
             if mail.is_empty() {
-                println!("no answers waiting");
+                outln!("no answers waiting");
             } else {
-                println!("{}", mail.join("\n"));
+                outln!("{}", mail.join("\n"));
             }
             Ok(0)
         }
@@ -2663,7 +2806,7 @@ fn run_on(
             need(a, 1, "the note (one line)")?;
             let line = a.pos[1..].join(" ");
             let body = body_arg(a)?.unwrap_or_default();
-            println!("{}", backlog::add(root, &line, &body, &me(), stamp)?);
+            outln!("{}", backlog::add(root, &line, &body, &me(), stamp)?);
             Ok(0)
         }
         "shape" => {
@@ -2680,9 +2823,9 @@ fn run_on(
                 print_json(&shape_json(&b, claim.as_ref()))?;
             } else {
                 if let Some(c) = &claim {
-                    println!("{}", claim_line(c));
+                    outln!("{}", claim_line(c));
                 }
-                print!("{}", backlog::brief_text(&b));
+                out!("{}", backlog::brief_text(&b));
             }
             Ok(0)
         }
@@ -2697,7 +2840,7 @@ fn run_on(
             if a.json {
                 print_json(&with_key(serde_json::json!(f), key(&f.id)))?;
             } else {
-                println!("{}", filed_message(root, prefix, &f));
+                outln!("{}", filed_message(root, prefix, &f));
             }
             // On stderr, so stdout stays the one line (or the JSON) a script reads.
             if let Some(w) = lens_warning(&key(&f.id), &f.missing_lenses) {
@@ -2714,7 +2857,7 @@ fn run_on(
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let lease = machine_settings(env).lease_minutes;
             let p = backlog::drop_note(root, note, &why, &me(), stamp, lease)?;
-            println!("dropped {note} ({p})");
+            outln!("dropped {note} ({p})");
             Ok(0)
         }
         "restore" => {
@@ -2726,9 +2869,9 @@ fn run_on(
             }
             let back = crate::history::restore(root, &a.pos[1..], a.all, &me())?;
             if back.is_empty() {
-                println!("nothing to restore: the queue matches its last commit");
+                outln!("nothing to restore: the queue matches its last commit");
             } else {
-                println!(
+                outln!(
                     "restored {} file{} from the queue's history: {}",
                     back.len(),
                     if back.len() == 1 { "" } else { "s" },
@@ -2756,11 +2899,11 @@ fn run_on(
                 &|_| prefix.to_string(),
             );
             for p in &s.problems {
-                println!("{p}");
+                outln!("{p}");
             }
             // Not problems either: the vision check is the shaper's job (0029).
             for w in vision::unchecked(&s.tasks) {
-                println!("{w}");
+                outln!("{w}");
             }
             // Nor what parallel sessions left behind (0023): each line says how to clean it. The
             // repo looked in is the one `check` runs in, when it's this queue's project's.
@@ -2769,12 +2912,12 @@ fn run_on(
                 .map(|c| vec![c.to_path_buf()])
                 .unwrap_or_default();
             for w in crate::parallel::stale(&s.tasks, &here) {
-                println!("{w}");
+                outln!("{w}");
             }
             // Nor a now page over its cap, without covers:, sharing another's, or a symlink
             // (mu-102): each says what to do, and none of them stops a command.
             for w in crate::now::warnings(&crate::now::for_queue(root)) {
-                println!("{w}");
+                outln!("{w}");
             }
             // Not problems: what waits on the owner's look (0028). The exit code ignores them.
             for t in s.tasks.iter().filter(|t| t.stage == "your-check") {
@@ -2791,7 +2934,7 @@ fn run_on(
                     })
                     .collect();
                 if !open.is_empty() {
-                    println!(
+                    outln!(
                         "{}: waits on the owner to verify {}",
                         key(&t.id),
                         open.join(", ")
@@ -2801,7 +2944,7 @@ fn run_on(
             // And lessons from reviews waiting for the owner's yes (0027).
             let lessons = lessons::waiting(root);
             if lessons > 0 {
-                println!(
+                outln!(
                     "{lessons} lesson{} from reviews wait{} for the owner's yes (muster lessons)",
                     if lessons == 1 { "" } else { "s" },
                     if lessons == 1 { "s" } else { "" }
@@ -2809,21 +2952,21 @@ fn run_on(
             }
             let index_line = index_check_line(index::status(root));
             if let Some(l) = &index_line {
-                println!("{l}");
+                outln!("{l}");
             }
             // A local queue's history (0109): files missing since its last commit and writes it
             // couldn't commit fail the check; the rest are warnings.
             let history = crate::history::problems("q", root);
             for l in &history {
-                println!("{l}");
+                outln!("{l}");
             }
             // A prefix another project has too (0005: an old queue not retired yet after a
             // migrate), and where its keys go: a warning, the exit code ignores it.
             if let Some(l) = crate::key::shared_prefix(&crate::key::known(), root, prefix) {
-                println!("{l}");
+                outln!("{l}");
             }
             if let Some(w) = merge_driver_warning(root) {
-                print!("{w}");
+                out!("{w}");
             }
             // Warnings (a goal past its due date, a list due a refresh) are shown but don't fail
             // the check.
@@ -2849,41 +2992,41 @@ fn run_on(
                 let home = env("HOME").unwrap_or_default();
                 let (rebuilt, wrote) = index::rebuild_with_glance(root, &doc, &home)?;
                 if rebuilt {
-                    println!("rebuilt {}", path.display());
+                    outln!("rebuilt {}", path.display());
                 } else {
-                    println!("{} is up to date", path.display());
+                    outln!("{} is up to date", path.display());
                 }
                 if wrote {
-                    println!("wrote the queue's section of {}", doc.display());
+                    outln!("wrote the queue's section of {}", doc.display());
                 } else {
-                    println!("{}'s queue section is up to date", doc.display());
+                    outln!("{}'s queue section is up to date", doc.display());
                 }
                 return Ok(0);
             }
             if a.check {
                 return Ok(match index::status(root) {
                     index::Status::Current => {
-                        println!("{} is up to date", path.display());
+                        outln!("{} is up to date", path.display());
                         0
                     }
                     index::Status::Stale => {
-                        println!("{}", index::STALE);
+                        outln!("{}", index::STALE);
                         1
                     }
                     index::Status::Refresh => {
-                        println!("{}", index::REFRESH);
+                        outln!("{}", index::REFRESH);
                         1
                     }
                     index::Status::Missing => {
-                        println!("there's no INDEX.md yet (make it with `muster index`)");
+                        outln!("there's no INDEX.md yet (make it with `muster index`)");
                         1
                     }
                 });
             }
             if index::rebuild(root)? {
-                println!("rebuilt {}", path.display());
+                outln!("rebuilt {}", path.display());
             } else {
-                println!("{} is up to date", path.display());
+                outln!("{} is up to date", path.display());
             }
             Ok(0)
         }
@@ -2937,7 +3080,7 @@ fn run_review(
             if a.json {
                 print_json(&b)?;
             } else {
-                print!("{}", review::brief_text(&b));
+                out!("{}", review::brief_text(&b));
             }
             Ok(0)
         }
@@ -2955,7 +3098,7 @@ fn run_review(
             if a.json {
                 print_json(&r)?;
             } else {
-                print!("{}", review::recorded_text(&k, &r));
+                out!("{}", review::recorded_text(&k, &r));
             }
             Ok(if r.then_failed.is_empty() { 0 } else { 1 })
         }
@@ -2968,7 +3111,7 @@ fn run_review(
                 (review::Reply::Disputed, "disputed")
             };
             let open = review::answer(root, id, which, reply, &rest(2), &me(), stamp)?;
-            println!(
+            outln!(
                 "{k}: {} answered as {word}; {}. Pass it to Testing once every finding is answered and the gate is green.",
                 which.trim().to_uppercase(),
                 still_open(open)
@@ -2984,7 +3127,7 @@ fn run_review(
             )?;
             need(a, 3, "why")?;
             let open = review::settle(root, id, which, label, &rest(3), &me(), stamp)?;
-            println!(
+            outln!(
                 "{k}: {} settled as {label}; {}",
                 which.trim().to_uppercase(),
                 still_open(open)
@@ -3023,7 +3166,7 @@ fn run_lessons(a: &Args, root: &Path, me: &dyn Fn() -> String, stamp: &str) -> R
             if a.json {
                 print_json(&l)?;
             } else {
-                print!("{}", lessons::listing_text(&l));
+                out!("{}", lessons::listing_text(&l));
             }
             return Ok(0);
         }
@@ -3066,7 +3209,7 @@ fn run_lessons(a: &Args, root: &Path, me: &dyn Fn() -> String, stamp: &str) -> R
                 parts.push(format!("{word} {}", ids.join(", ")));
             }
         }
-        println!("lessons: {}", parts.join("; "));
+        outln!("lessons: {}", parts.join("; "));
     }
     Ok(0)
 }
@@ -3091,7 +3234,7 @@ fn run_vision(
         if a.json {
             print_json(&all)?;
         } else {
-            print!("{}", vision::all_text(&all));
+            out!("{}", vision::all_text(&all));
         }
         return Ok(0);
     }
@@ -3113,7 +3256,7 @@ fn run_vision(
             if a.json {
                 print_json(&r)?;
             } else {
-                print!("{}", vision::recorded_text(&r));
+                out!("{}", vision::recorded_text(&r));
             }
             Ok(0)
         }
@@ -3121,7 +3264,7 @@ fn run_vision(
             need(a, 2, "how it was resolved")?;
             let how = a.pos[2..].join(" ").replace("\\n", " ");
             let left = vision::resolve(root, id, which, &how, &me(), stamp)?;
-            println!(
+            outln!(
                 "{}: vision conflict {} resolved; {left} still open",
                 crate::key::key(prefix, id),
                 which.trim()
@@ -3139,7 +3282,7 @@ fn run_vision(
             if a.json {
                 print_json(&b)?;
             } else {
-                print!("{}", vision::brief_text(&b));
+                out!("{}", vision::brief_text(&b));
             }
             Ok(0)
         }
@@ -3160,6 +3303,178 @@ mod tests {
 
     fn sv(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// A stdout that takes `room` bytes, then fails every write and flush with `kind`.
+    struct Pipe {
+        got: Vec<u8>,
+        room: usize,
+        kind: std::io::ErrorKind,
+        tries: usize,
+    }
+
+    impl Pipe {
+        fn new(room: usize, kind: std::io::ErrorKind) -> Self {
+            Self {
+                got: Vec::new(),
+                room,
+                kind,
+                tries: 0,
+            }
+        }
+    }
+
+    impl std::io::Write for Pipe {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.tries += 1;
+            let n = b.len().min(self.room - self.got.len());
+            if n == 0 {
+                return Err(self.kind.into());
+            }
+            self.got.extend_from_slice(&b[..n]);
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.tries += 1;
+            if self.got.len() == self.room {
+                Err(self.kind.into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn stdout_passes_text_through_unchanged() {
+        let out = Stdout::new();
+        let mut w = Pipe::new(1024, std::io::ErrorKind::BrokenPipe);
+        out.write(&mut w, "صف کارها: mu-1\n");
+        out.write(&mut w, "next");
+        out.flush(&mut w);
+        assert_eq!(String::from_utf8(w.got).unwrap(), "صف کارها: mu-1\nnext");
+        assert!(!out.ended() && !out.failed());
+        assert_eq!(out.failure_line(0), None);
+    }
+
+    #[test]
+    fn stdout_ends_quietly_when_the_reader_leaves() {
+        let out = Stdout::new();
+        out.writes("note");
+        let mut w = Pipe::new(6, std::io::ErrorKind::BrokenPipe);
+        out.write(&mut w, "first\n");
+        out.write(&mut w, "second\n");
+        let tries = w.tries;
+        out.write(&mut w, "third\n");
+        out.flush(&mut w);
+        assert_eq!(w.got, b"first\n");
+        assert_eq!(w.tries, tries, "no write after the pipe broke");
+        assert!(out.ended() && !out.failed());
+        assert_eq!(out.failure_line(0), None, "nothing on stderr");
+        assert_eq!(out_status(0, out.failed()), 0);
+    }
+
+    /// The command as `run_with` marks it: a write unless `reads_only` says otherwise.
+    fn ran(argv: &[&str]) -> Stdout {
+        let a = parse(&argv.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap();
+        let out = Stdout::new();
+        if !reads_only(&a) {
+            out.writes(argv[0]);
+        }
+        out
+    }
+
+    #[test]
+    fn a_write_whose_output_fails_says_its_change_is_saved_and_not_to_run_it_again() {
+        let out = ran(&["note", "mu-7", "x"]);
+        let mut w = Pipe::new(3, std::io::ErrorKind::StorageFull);
+        out.write(&mut w, "mu-7: note added\n");
+        out.write(&mut w, "second\n");
+        out.flush(&mut w);
+        assert!(out.ended() && out.failed());
+        let line = out.failure_line(0).unwrap();
+        assert!(
+            line.starts_with(
+                "muster: note ran and its change is saved, but its output couldn't be written ("
+            ) && line.ends_with("): don't run it again"),
+            "{line}"
+        );
+        assert_eq!(line.lines().count(), 1, "{line}");
+        assert_eq!(out_status(0, out.failed()), 1);
+        // A refusal changed nothing: it says only the output failed and keeps its status.
+        assert!(out
+            .failure_line(2)
+            .unwrap()
+            .starts_with("muster: can't write the output: "));
+        assert_eq!(
+            out_status(2, out.failed()),
+            2,
+            "a refusal keeps its own status"
+        );
+    }
+
+    #[test]
+    fn a_read_whose_output_fails_says_only_that() {
+        let out = ran(&["show", "mu-7"]);
+        let mut w = Pipe::new(3, std::io::ErrorKind::StorageFull);
+        out.write(&mut w, "mu-7 · Building\n");
+        out.flush(&mut w);
+        let line = out.failure_line(0).unwrap();
+        assert!(
+            line.starts_with("muster: can't write the output: "),
+            "{line}"
+        );
+        assert!(!line.contains("don't run it again"), "{line}");
+        assert_eq!(out_status(0, out.failed()), 1);
+    }
+
+    #[test]
+    fn reads_only_knows_the_reads_and_takes_the_rest_for_writes() {
+        let reads = |argv: &[&str]| {
+            reads_only(&parse(&argv.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap())
+        };
+        for r in [
+            &["show", "mu-7"][..],
+            &["list", "--json"],
+            &["help"],
+            &["inbox", "--keep"],
+            &["review", "mu-7"],
+            &["vision", "mu-7"],
+            &["projects"],
+            &["index", "--check"],
+            &["check"],
+        ] {
+            assert!(reads(r), "{r:?}");
+        }
+        for w in [
+            &["note", "mu-7", "x"][..],
+            &["add", "x"],
+            &["new", "x"],
+            &["ask", "mu-7", "why"],
+            &["comment", "mu-7", "x"],
+            &["pass", "mu-7"],
+            &["inbox"],
+            &["review", "mu-7", "--fixed", "R1", "how"],
+            &["projects", "set", "x", "gate", "y"],
+            &["index"],
+            &["check", "--fix-pauses"],
+            &["some-new-command"],
+        ] {
+            assert!(!reads(w), "{w:?}");
+        }
+    }
+
+    #[test]
+    fn stdout_reports_a_failure_found_by_the_last_flush() {
+        let out = Stdout::new();
+        let mut w = Pipe::new(4, std::io::ErrorKind::StorageFull);
+        out.write(&mut w, "last");
+        out.flush(&mut w);
+        assert_eq!(w.got, b"last");
+        assert!(out.failed());
+        let err = out.failure_line(0).unwrap();
+        assert!(err.starts_with("muster: can't write the output: "), "{err}");
+        assert_eq!(err.lines().count(), 1, "{err}");
     }
 
     #[test]

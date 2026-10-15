@@ -1773,6 +1773,21 @@ muster note 0007 "Checked on the Mac"     muster attach 0007 shot.png
 muster answer 0007 Q2 "Use 5173"          muster check      muster projects      muster init ~/playground/x
 ```
 
+**Output on a closed pipe** (task 0170): every line a command prints goes through one writer in
+`cli.rs` (`out!`/`outln!`, never the std print macros, which panic on a write error;
+`tests/broken_pipe.rs` keeps them out). When the reader closes the pipe early
+(`muster show mu-1 | head -1`), the write's broken pipe ends the output quietly: no panic, nothing
+on stderr, and the command still finishes its queue writes and exits with its own status (0, not
+git's 141: restoring SIGPIPE would kill muster mid-write under the queue's lock). Any other write
+failure (a full disk) is said once on stderr when the command has ended and turns a status of 0
+into 1, so a script never takes cut-off output for all of it. The line depends on the command. A
+command that may write to the queue (note, add, new, ask, comment, pass, and anything `reads_only`
+in `cli.rs` doesn't know as a read) that succeeded says
+`muster: note ran and its change is saved, but its output couldn't be written (…): don't run it again`,
+as `comment` does when its action stood, so nobody repeats a write for the lost output. A read
+(show, list, help, inbox --keep, …) or a refusal says `muster: can't write the output: …`. The
+app (no arguments) doesn't use the writer.
+
 **Claims** (task 0002): `muster claim <id>` or `muster next` takes a Ready task for you, one
 per holder (`--as`), and says which queue it claimed in. A claim made in a queue that came from
 `MUSTER_ROOT` but isn't the current folder's own queue is refused unless `--queue` says so. The

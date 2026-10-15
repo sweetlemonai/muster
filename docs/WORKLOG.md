@@ -4,6 +4,30 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — The CLI ends quietly when its reader closes the pipe (mu-170)
+**Did (akbar_26, builder):** one stdout writer in `cli.rs` (`Stdout`, `out!`/`outln!`); all 125
+print sites go through it. A broken pipe ends the output quietly: no panic, nothing on stderr, the
+command finishes its queue writes and exits with its own status. Another write failure is said
+once on stderr when the command ends and turns 0 into 1. New `tests/broken_pipe.rs`; AS_BUILT's
+command-line section.
+**Fixed:** `muster show mu-1 | head -1` panicked ("failed printing to stdout: Broken pipe"), exit
+101 → Rust ignores SIGPIPE, so a write to a closed pipe is EPIPE and the print macros panic on it
+→ the writer drops output after EPIPE instead. Review R1 (Akbar_29): a write whose output failed
+on a full disk said only "can't write the output" with exit 1, so an agent would redo the note →
+the line didn't say the change stood → a command that may write and succeeded now says
+"muster: note ran and its change is saved, but its output couldn't be written (…): don't run it
+again", as `comment` does; reads and refusals keep the old line (`reads_only`, unknown = write).
+**Decided:** exit 0 on a closed pipe, not 141 (Shapour's call in the task): restoring SIGPIPE
+would kill muster mid-write under the queue's lock. The manual's Commands page is made from
+`help.rs` and lists no exit statuses, so it's unchanged; no now page covers `cli.rs`.
+**Verified:** `cargo test --test broken_pipe` (6: show on a 270 KB task and list of 1000 tasks
+read one line, help and note on a closed pipe, a refusal keeps 1 and its line, no bare print in
+`cli.rs`) and 6 unit tests of the writer (a write's and a read's failure line, `reads_only`). On a
+copy of Muster's queue, release builds: before, `show mu-1 | head -1` and `list --json | head -1`
+exit 101 with the panic; after, `show`, `list`, `list --json`, `help`, `vision`, `shape`, `review`
+all `0 0`, stderr empty. `list --json > /dev/null` (885 KB): 141–216 ms before, 140–261 ms after,
+the spread is the machine's noise.
+
 ## 2026-10-15 — mu-131 round 4 settled (back to Building); notes shaped (mu-187, mu-188)
 **Decided:** mu-131's round 4 (past the 3-round cap) found R13 (restart never writes gates:), R14 (hand-merge
 skips merge_check), R15 (ca1c720 doesn't build alone); settled with kia-131's pick for the owner: returned to
