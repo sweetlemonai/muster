@@ -577,6 +577,14 @@ class WorkLogMergeDriver(Hermetic):
         at = next(i for i, l in enumerate(lines) if "merge driver" in l)
         return lines[at:]
 
+    def check_warning(self) -> str:
+        """How check's merge-driver warning starts (mu-166): the queue's prefix, as its config
+        stores it, then "warning: ", the form every other check warning has."""
+        cfg = (self.repo / ".muster" / "config.toml").read_text(encoding="utf-8")
+        m = re.search(r'^prefix = "([a-z]+)"$', cfg, re.M)
+        self.assertIsNotNone(m, cfg)
+        return f"{m.group(1)}: warning: the work log's merge driver isn't in the repo's git config"
+
     def test_start_and_init_say_plainly_when_the_driver_cant_be_set(self):
         # A config git can't lock, as in a sandboxed session (a read-only .git/config isn't
         # enough: git replaces the file through its lock). init and start still succeed.
@@ -592,10 +600,17 @@ class WorkLogMergeDriver(Hermetic):
                               ["git", "config", "--local", "merge.muster-log.driver"]], out)
             self.assertNotIn(self.tmp.name, "\n".join(block))
         self.assertFalse(any(k.startswith("merge.muster-log.") for k in self.local_config()))
-        # check says so too, with the same two lines; the lines, run as printed, set it.
+        # check says so too, as a "<prefix>: warning:" line (mu-166) with the same lines two
+        # spaces further in under it; the git lines, run as printed, set it.
         r = subprocess.run([self.exe, "check"], cwd=self.repo, capture_output=True, text=True, env=self.env)
         block = self.driver_block(r.stdout)
-        self.assertIn("isn't in the repo's git config", block[0], r.stdout)
+        self.assertTrue(block[0].startswith(self.check_warning()), r.stdout)
+        self.assertTrue(all(l.startswith("  ") for l in block[1:]), r.stdout)
+        self.assertEqual([l.split()[:4] for l in block[3:]],
+                         [["git", "config", "--local", "merge.muster-log.name"],
+                          ["git", "config", "--local", "merge.muster-log.driver"]], r.stdout)
+        self.assertTrue(all(l.startswith("    git ") for l in block[3:]), r.stdout)
+        self.assertNotIn(self.tmp.name, "\n".join(block))
         lock.unlink()
         for line in block[3:]:
             subprocess.run(["sh", "-c", line], cwd=self.repo, check=True, env=self.env)
@@ -615,10 +630,12 @@ class WorkLogMergeDriver(Hermetic):
         before = check().returncode
         self.git(self.repo, "config", "--local", "--unset", "merge.muster-log.name")
         r = check()
-        self.assertIn("the work log's merge driver isn't in the repo's git config", r.stdout)
+        self.assertIn("\n" + self.check_warning(), "\n" + r.stdout, r.stdout)
         self.assertEqual(r.returncode, before, "a warning: the exit code ignores it")
         self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
-        self.assertIn("the work log's merge driver isn't in the repo's git config", check().stdout)
+        r = check()
+        self.assertIn("\n" + self.check_warning(), "\n" + r.stdout, r.stdout)
+        self.assertEqual(r.returncode, before, "neither key set: still only a warning")
         # A repo whose .gitattributes doesn't use it isn't told to set it.
         (self.repo / ".gitattributes").write_text("# docs/WORKLOG.md merge=muster-log\n", encoding="utf-8")
         self.assertNotIn("merge driver", check().stdout)

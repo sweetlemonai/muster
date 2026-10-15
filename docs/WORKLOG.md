@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — check's merge-driver warning reads `<prefix>: warning: …` (mu-166)
+**Fixed:** `muster check`'s merge-driver warning started bare, so `queue::is_warning` and readers
+of check's output didn't take it for a warning → `merge_driver_warning` didn't get the prefix →
+it takes it, and `driver_warning` prints `<prefix>: warning: the work log's merge driver isn't…`
+with `fix_lines` two spaces further in under it. `fix_lines`, start/init's `not_set` and check's
+exit code are unchanged.
+**Verified:** Rust test red without `driver_warning`, and red on the mutant that drops `warning: `;
+`WorkLogMergeDriver` (bin/test_commands.py) asserts the prefixed line, the indent, and that the
+indented git lines run through sh set the driver. `bin/gate` green.
+
 ## 2026-10-15 — mu-197: the sidebar's "N working" counts tasks everywhere; All says "29 working in 9 projects"
 **Fixed (Gholi_40, builder):** All said "9 working" while its headings said "17 working" → All's
 `sumActivity` counted projects, headings and rows counted tasks, all through the one

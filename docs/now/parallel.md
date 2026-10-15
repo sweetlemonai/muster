@@ -32,6 +32,7 @@ covers: app/src-tauri/src/parallel.rs, app/src-tauri/src/merge_log.rs, .gitattri
 - `docs/WORKLOG.md` merges through `muster merge-log`: both sides' new entries, at any number of points (on top, or under any entry), kept whole, newest first where both added at one place. (decision 0009)
 - `muster start` and `muster init` set the driver in git config only where it's missing. (decision 0009)
 - The merge passes the driver itself with `git -c`. (decision 0009)
+- Without it, `muster check` warns `<prefix>: warning: …` with the two git lines under it; exit code unchanged. (mu-166)
 - `muster release <id> --clean` gives a task up: Ready again, worktree and branch removed. (mu-23)
 - Never delete a worktree or branch by hand while its task is in Building or Testing. (mu-23)
 - No PR per task for now; nothing is posted to GitHub. (decision 0005)

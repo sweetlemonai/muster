@@ -1973,17 +1973,26 @@ fn set_merge_driver(dir: &Path) {
 
 /// `muster check`'s warning (0094) when the queue's repo has git merge with the work log's driver
 /// (`.gitattributes`) and git's config doesn't have it yet, with the two lines that set it.
-fn merge_driver_warning(root: &Path) -> Option<String> {
+fn merge_driver_warning(root: &Path, prefix: &str) -> Option<String> {
     let repo = root
         .parent()
         .filter(|_| root.file_name().is_some_and(|n| n == crate::layout::DIR))?;
     if !crate::merge_log::wanted(repo) || crate::merge_log::missing(repo).ok()?.is_empty() {
         return None;
     }
-    Some(format!(
-        "the work log's merge driver isn't in the repo's git config, though .gitattributes uses merge=muster-log.\n{}",
-        crate::merge_log::fix_lines()
-    ))
+    Some(driver_warning(prefix))
+}
+
+/// `merge_driver_warning`'s text: a `<prefix>: warning:` line, the form `queue::is_warning` reads
+/// like check's other warnings (mu-166), then `fix_lines` two spaces further in, under it.
+fn driver_warning(prefix: &str) -> String {
+    let mut out = format!(
+        "{prefix}: warning: the work log's merge driver isn't in the repo's git config, though .gitattributes uses merge=muster-log.\n"
+    );
+    for l in crate::merge_log::fix_lines().lines() {
+        out.push_str(&format!("  {l}\n"));
+    }
+    out
 }
 
 /// One line per task for `muster ready`: key, priority, title, and what it touches.
@@ -3132,7 +3141,7 @@ fn run_on(
             if let Some(l) = crate::key::shared_prefix(&crate::key::known(), root, prefix) {
                 outln!("{l}");
             }
-            if let Some(w) = merge_driver_warning(root) {
+            if let Some(w) = merge_driver_warning(root, prefix) {
                 out!("{w}");
             }
             // Warnings (a goal past its due date, a list due a refresh) are shown but don't fail
@@ -6281,6 +6290,33 @@ mod tests {
             .unwrap()
             .contains(" has 2 [NEEDS CLARIFICATION] markers in its write-up: [a]; [b]. "));
         assert_eq!(marker_warning("dr-31", &[]), None);
+    }
+
+    /// mu-166: check's merge-driver warning is a `<prefix>: warning:` line like its others, so
+    /// `queue::is_warning` (and whoever reads check's output) takes it for one, and what it means
+    /// and the two git lines follow it two spaces further in.
+    #[test]
+    fn the_merge_driver_warning_is_a_prefix_warning_with_its_fix_lines_under_it() {
+        let w = driver_warning("mu");
+        let lines: Vec<&str> = w.lines().collect();
+        assert_eq!(
+            lines[0],
+            "mu: warning: the work log's merge driver isn't in the repo's git config, though .gitattributes uses merge=muster-log."
+        );
+        assert!(queue::is_warning(lines[0]), "{w}");
+        let fix: Vec<String> = crate::merge_log::fix_lines()
+            .lines()
+            .map(|l| format!("  {l}"))
+            .collect();
+        assert_eq!(lines[1..], fix, "{w}");
+        assert!(w.ends_with('\n'), "{w:?}");
+        assert!(lines[1..].iter().all(|l| !queue::is_warning(l)), "{w}");
+        let set = format!("    git config --local merge.{}.", crate::merge_log::DRIVER);
+        assert_eq!(
+            lines.iter().filter(|l| l.starts_with(&set)).count(),
+            2,
+            "{w}"
+        );
     }
 
     #[test]
