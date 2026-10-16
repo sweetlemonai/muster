@@ -1,6 +1,6 @@
 # Muster: as built
 
-As of 2026-10-14, main at `72f34df`. What exists, how it fits together, and what's left: the
+As of 2026-10-15, main at `48ae3d1`; work paused by the owner at 13:18. What exists, how it fits together, and what's left: the
 newest state, not history. History is in `docs/WORKLOG.md`, `docs/DOGFOOD.md` and each task's
 log. Section 6 is generated from the queue; everything else is written by hand and checked against
 the code.
@@ -377,26 +377,26 @@ is in section 6.
 |---|---|---|
 | Queue files, stages, claims, leases, questions, file contract v1 | Built, tested | mu-2, mu-14 |
 | `.muster/` in the repo: layout, local mode, one queue for every worktree, `muster init`, `muster migrate` | Built, tested. Muster's own queue moved 2026-10-13; the other 19 projects' haven't | mu-5 |
-| A local queue's history: a commit per write, `muster restore`, `muster history`, `check`'s lines, Settings › Projects' History line, the layer's guard against `git clean -x` | Built, tested; on its branch, not on main. The guard is in the personal layer | mu-109 |
+| A local queue's history: a commit per write, `muster restore`, `muster history`, `check`'s lines, Settings › Projects' History line, the layer's guard against `git clean -x` | Built, tested. The guard is in the personal layer | mu-109 |
 | Committed mode with live state in `.git/muster/` | Not built (committed mode today has one copy, like local) | 0005's next step (a backlog note) |
 | Task keys (`mu-12`) | Built, tested | mu-33 |
 | INDEX.md, and the queue at a glance in this document | Built, tested | mu-18, mu-80 |
 | `tasks.json` (`manifest.py`) | Built, tested; rebuilt only when `manifest.py` runs, so Muster's is as old as its migration | mu-2 |
 | Backlog and shaping, the vision check | Built, tested | mu-15, mu-29 |
-| What's true now: `docs/now/` pages, the building pass's page rule, the pages in the vision and shaping briefs, `check`'s warnings; Muster's seven pages | Built, tested; on its branch, not on main | mu-102 |
-| Shaping lenses: the brief's list, a project's skips with reasons, `file`'s warning, `check`'s problems, VISION's needed lenses | Built, tested; on its branch, not on main | mu-76 |
+| What's true now: `docs/now/` pages, the building pass's page rule, the pages in the vision and shaping briefs, `check`'s warnings; Muster's seven pages | Built, tested; 19 pages, each under 4 KB (split by mu-208, mu-213, mu-215) | mu-102 |
+| Shaping lenses: the brief's list, a project's skips with reasons, `file`'s warning, `check`'s problems, VISION's needed lenses | Built, tested | mu-76 |
 | Goals, features and tasks; depends met once merged | Built, tested | mu-16, mu-42 |
 | Blocked says what it waits for (five kinds) | Built, tested | mu-24, mu-60 |
 | Pause and Resume, the Paused lane, old pauses converted | Built, tested | mu-45, mu-59 |
 | Parallel sessions: `ready --parallel`, `start`, the merge, `release --clean` | Built, tested | mu-23 |
 | The tester isn't the builder; send-back comes first | Built, tested | mu-47, mu-66 |
 | Review of record and lessons | Built, tested; the owner's first real round hasn't happened | mu-27 |
-| Work log merge driver | Built, tested | mu-67, mu-71, mu-209 |
+| Work log merge driver: entries merge entry-wise at any number of points, and a result that would lose a line of an untouched entry is refused (markers, exit 1) | Built, tested; the release binary was rebuilt with the guard on 2026-10-15 | mu-67, mu-71, mu-190, mu-196, mu-209, mu-218 |
 | Pick-one questions | Built, tested | mu-49 |
 | Ping a session (check-in, message) | Built, tested; the auto-nudge isn't built | mu-39 |
 | Release a claim no session can be reached on; a holder's act stamps it; send-backs keep the session | Built, tested | mu-184 |
 | A claim or Testing hold follows its session to another account on the holder's next act | Built, tested | mu-185 |
-| Claim takeover after a handoff or 30 quiet minutes, mail following the claim; a teammate is its own holder (agent id) with its own mailbox | Built, tested; on its branch, not on main. No hook passes the agent id: `--agent` or `MUSTER_AGENT` | mu-90 |
+| Claim takeover after a handoff or 30 quiet minutes, mail following the claim; a teammate is its own holder (agent id) with its own mailbox | Built, tested. No hook passes the agent id: `--agent` or `MUSTER_AGENT` | mu-90 |
 | Claude Code's session states | Built, tested (a research-preview format) | mu-48 |
 | Who worked on a task and what it cost | Built, tested; a session counts in full on every task it names | mu-25 |
 | The app: board, Table, Timeline, Graph, task pane, Waiting for you, Recently finished | Built, tested | mu-1, mu-13, mu-19, mu-21, mu-31, mu-51 |
@@ -404,20 +404,39 @@ is in section 6.
 | Sidebar: activity, labels and categories, drag to reorder, colours, folds, one state builder | Built, tested | mu-37, mu-44, mu-57, mu-70, mu-73 |
 | Settings, display modes, themes and accents, Drover's token names and atoms; one CSS class per component | Built, tested | mu-36, mu-38, mu-12, mu-53, mu-81 |
 | Your check: next step, effort groups, Accept all, the limit per project | Built, tested | mu-43, mu-50 |
-| Your check's verdict: Send back to builder (first in line, an owner finding, the builder's session told) and the owner's comment @actions (@accept, @sendback, @block, @ask) | Built, tested; on its branch, not on main | mu-101 |
+| Your check's verdict: Send back to builder (first in line, an owner finding, the builder's session told) and the owner's comment @actions (@accept, @sendback, @block, @ask) | Built, tested | mu-101 |
 | Dock badge | Built, tested | mu-6 |
 | Mac notifications | Built, tested, merged 2026-10-13 (`5d1329b`) | mu-52 |
-| The owner's icons: app icon light and dark, the sidebar's logo, the menu bar icon | Built, tested; on its branch, not on main | mu-85 |
+| The owner's icons: app icon light and dark, the sidebar's logo, the menu bar icon | Built, tested; the menu bar shows the waiting count (mu-89) | mu-85, mu-89 |
 | The AI helper | Built; checked end to end once, by hand | mu-8 |
 | The manual and the Help tab | Built, tested; no screenshots | mu-35 |
 | `/muster` and `/mu` | Built, tested, linked into the personal layer | mu-3 |
 | Other projects: `muster init` in a repo, the layer's rule and hook | Built: Muster's side tested, the layer's committed 2026-10-14; one live session in a new project is left (mu-4 AC2) | mu-4 |
 | Hermetic tests (no test reads this Mac's projects) | Built | mu-62 |
 | A run command per project, beside its gate | Built, tested, merged 2026-10-14 (`666a760`) | mu-77 |
-| Run from the app: a project's run command, its output, Stop | Built, tested on its branch; the release-app check (AC4) is the owner's | mu-79 |
+| Run from the app: a project's run command, its output, Stop | Built, tested | mu-79 |
 | Your check says what you're accepting: the builder's summary, what Accept does, each criterion's proof | Built, tested, merged 2026-10-14 (`72f34df`) | mu-78 |
-| Automatic handoff at about 60% context | In the personal layer, in Testing | mu-74 |
-| Orchestration (Muster decides, Drover runs the agents) | Not built | mu-9 |
+| Automatic handoff at about 60% context; handoffs carry the claim (`checkin --handoff`, `claim --takeover`) | Built, in the personal layer | mu-74, mu-75, mu-161 |
+| Gates replace Your check: code review (G2), criteria record (G3, `muster verify` and the ac-verifier agent), one checked record per gate at the branch's tip; the merge refuses without them | Built, tested; visual QA gates (reference, walkthrough) not built | mu-129, mu-131, mu-132 |
+| The merge fast-forwards to the commit the gate checked; a hand-merged task's pass re-checks its records under the lock | Built, tested | mu-187, mu-189 |
+| Shaping is a claim; every held card wears a holder ribbon that says the session's state | Built, tested | mu-97, mu-171 |
+| Clarify pass in Shaping: markers hold Ready, `muster clarify` sends one batch of questions | Built, tested | mu-103 |
+| Sessions view: cc-mg and cc-hg sessions by state, a recap per session with its tasks, history, handoff chain, time and tokens | Built, tested | mu-98, mu-182, mu-210 |
+| The run ledger: one local record per agent run (OpenTelemetry GenAI names), `muster ledger` and its backfill | Built, tested | mu-114 |
+| Estimates measured on the queue in the shaping brief; the Work section by stage with tokens without cache reads, a token ribbon on held cards | Built, tested | mu-168, mu-172 |
+| Calibration and `muster forecast` (actual ÷ estimate as p50/p80, what of Ready fits each window), decision 0018 | Approved, not merged (paused) | mu-115 |
+| Timeline: legends, Sort chips (Active now first, Earliest start), the unused waiting segment | Built, tested; mu-188 approved-pending (paused) | mu-173, mu-204, mu-188 |
+| Feature grid: a second Board layout, features down the side, stages across | Built, tested | mu-143 |
+| The board says which columns are past its edge; the toolbar wraps without clipping; the account meter keeps its width | Built, tested | mu-198, mu-202, mu-216 |
+| Release a claim no session can reach; claims follow their session across accounts | Built, tested | mu-184, mu-185 |
+| Persian (فارسی): the i18n layer, Vazirmatn subset, every screen's words, Jalali dates and Persian digits where people read, Latin where they copy, search that folds Persian | Built, tested; the manual, refusals and a full sweep are planned (mu-153, mu-154, mu-155) | mu-146, mu-147, mu-148, mu-150, mu-151, mu-217 |
+| Right to left: logical CSS with a guard, mirrored glyphs, LTR islands, splitters and arrows by reading direction | Built, tested | mu-149 |
+| The command line in Persian: `--lang`, `MUSTER_LANG` (never `LANG`, never for agents), JSON unchanged | Built, tested | mu-152 |
+| The command line never prints terminal control sequences from queue text | Approved, not merged (paused) | mu-221 |
+| The CLI's output: one stdout writer, quiet on a closed pipe, every human print through one escape | Built, tested | mu-170 |
+| Test isolation: every test folder private, speed tests take the fastest of 15 runs | Built, tested | mu-191, mu-220 |
+| Hover card for tasks; hide the sidebar to a rail; a task opens beside its board; the column row keeps room for its chips | Hover card and rail in review or approved; the other two back in Building (paused) | mu-174, mu-167, mu-203, mu-214 |
+| Orchestration (Muster decides, runs agents behind a runner interface; Drover hosts sessions) | Not built: decisions 0015 and 0016 and the research are done; the dispatcher's tasks are Ready | mu-9, mu-108, mu-116 to mu-127, mu-175 to mu-179 |
 | The planning room; ideas in Muster | Not built | mu-41, mu-56 |
 | A GitHub reviewer app | Not built | mu-55 |
 
@@ -442,6 +461,9 @@ In `docs/decisions/`, newest last.
 | [0013](decisions/0013-orchestration-terms-and-accounts.md) | Orchestration's terms: Muster runs each user's own `claude` and `codex` and never touches a login token, never balances across accounts (a limit means cooldown until `resets_at`), pins each account to projects by hand, reads usage instead of learning it from limit hits, caps and paces every run, keeps telemetry off; replaces the brief's load balancing |
 | [0014](decisions/0014-gates-replace-your-check.md) | Gates replace your check: a task that passes every gate it needs is accepted without the owner |
 | [0015](decisions/0015-muster-runs-agents-behind-a-runner-interface.md) | Muster runs agents behind one runner interface (`start`, `status`, `stop`, `usage`, `limit`, `capabilities`; states `working`, `input_required`, `completed`, `failed`, `cancelled`): its own `claude -p` runner now, with 0002's scrub and no token, Drover's later; the Codex adapter turns analytics off; amends 0007 and 0005 |
+| [0016](decisions/0016-runs-headless-in-a-sandbox-drover-hosts-sessions.md) | Runs are headless and sandboxed with full access inside; Drover is where the owner watches and takes them over; amends 0015 and 0007 |
+| [0017](decisions/0017-sessions-view-reads-name-and-cwd-for-the-window-only.md) | The Sessions view reads a session's name and cwd for the owner's window only, never stored or logged |
+| 0018 (with mu-115, not on main yet) | Calibration: actual ÷ estimate per role, type and size, read at the build's claim; the forecast's known errors in both directions |
 
 ## 6. The queue at a glance
 
@@ -452,57 +474,109 @@ replaces everything there, and nothing outside them. For the live list, `muster 
 
 <!-- muster:queue-at-a-glance start -->
 
-As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1 Building, 4 Testing, 8 Your check, 61 Done. 12 backlog notes.
+As of 2026-10-15 13:18 (the newest change in a task's log). 221 tasks: 2 Shaping, 48 Ready, 3 In progress, 2 Building, 6 Testing, 2 Your check, 158 Done. 18 backlog notes.
 
-### Ready (9)
+### Shaping (2)
 
 | Key | Title | On it |
 | --- | --- | --- |
-| mu-9 | Orchestration: send teams of agents to work on tasks, and run how they talk |  |
+| mu-117 | The runner interface and Muster's Claude Code runner: start, status, stop, usage, limit and capabilities over claude -p, every end state mapped |  |
+| mu-179 | Accounts without a login of their own are taken out of rotation and shown, not failed runs (cc-hg has none today) |  |
+
+### Ready (48)
+
+| Key | Title | On it |
+| --- | --- | --- |
 | mu-41 | Planning room: features planned by a team of roles (product, research, UI, tech, skeptic) in rounds with the owner, before any task is built |  |
 | mu-54 | Learning both ways: one record of outcomes across idea, task, code, review, gate and deploy, lessons forward, misses backward |  |
 | mu-55 | A GitHub reviewer like CodeRabbit: the engine posts as its own GitHub App, run from this Mac |  |
 | mu-56 · Feature | Ideas in Muster: GenIdea's interview, decision ledger, probe and seal ported into Muster's idea step |  |
-| mu-69 | Notifications: a session already waiting at launch isn't posted later when its Claude account's first read failed |  |
-| mu-75 | Muster's handoff rule follows the automatic handoff: decision 0004 and PROTOCOL.md hand off at \~60% context by themselves, and the successor takes the old session's answers |  |
-| mu-76 | Shaping checks the cross-cutting lenses by default: accessibility, i18n/RTL, themes, payments, architecture, security, privacy, performance, unless the project opts out |  |
-| mu-79 | Run from the app: one click starts a project's run command in its main checkout, shows its progress and output in place, and stops it (and everything it started) on Stop or when Muster quits |  |
+| mu-92 | The one-class-one-component test catches any shared class with more than one rule, :hover and compound selectors included |  |
+| mu-96 | Move the 19 old \<project\>/tasks queues into their repos' .muster/, one at a time, each agreed with the session working it (Drover first); retire the old folders and swap their sandbox write paths |  |
+| mu-100 | Committed queues keep their live state in the repo's git folder: claims, stages, mail and the lock in .git/muster/, the write-up edited only on the claimant's branch, stamped at the merge |  |
+| mu-104 | For later: muster mcp, a stdio MCP server for agents outside Claude Code, and muster import from Spec Kit, OpenSpec and Beads into backlog notes |  |
+| mu-105 | Proposals inbox: PRDs and proposals (md, pdf) dropped in .muster/proposals/ or the app; a shaper claims one, splits it into backlog notes, and it ends in processed/ linked to its tasks |  |
+| mu-116 | muster dispatch --dry-run and the decision log: what the dispatcher would start, on which account, and why every other task waits |  |
+| mu-118 | Dispatcher On: Kaveh-1 builds the top Ready task with no owner step, with rules for a crash, a limit hit, a stuck run, retries and respawns |  |
+| mu-119 | Kia tests dispatched tasks with lens reviewers as subagents, and each finding says who raised it (Kia → Sohrab) |  |
+| mu-120 | Team view: every role and slot, who's on what, since when, its state, tokens and time, with Stop, Pause, Ping and Reclaim |  |
+| mu-121 | Several runs at once inside the terms: slots per account, builders per repo, fairness across projects, the owner's reserve and weekly pacing |  |
+| mu-122 | A second account by hand: the owner pins projects to an account, and a full account never moves work to another (decision 0013) |  |
+| mu-123 | Leila for escalations: after 2 review rounds, 2 failed gates or a technical question, a short lead run answers, splits, returns or asks the owner |  |
+| mu-124 | Dispatched shaping: Shapour shapes and splits backlog notes without the owner, and Pouya researches items marked needs: research first |  |
+| mu-125 | Usage view: the run ledger by account, role, project and day, estimate versus actual per task, and the calibration ratios |  |
+| mu-126 | Codex runner for reviewer roles: codex exec behind the runner interface, its analytics off, a second model reviewing |  |
+| mu-127 | Muster's side of the Drover contract: a run record Drover reads, and runs opened live in Drover and handed back |  |
+| mu-128 | The board shows the QA loop: each Building, Testing and Your check card has its round, open findings, reviewer, QA proofs, send-backs and loop time; the pane has a timeline |  |
+| mu-133 | Walkthrough QA on web, owner-driven: Kia's script, a visible browser with the step overlay, pass, fail and comment with element pick or box, every run saved (proposal stage 1) |  |
+| mu-134 | Walkthrough Auto and Mixed modes, guided clicks recorded as steps, and video of flows (proposal stage 2) |  |
+| mu-135 | Baselines and the screen map: approved screenshots per screen state, the map grows from walkthroughs, and the UI Definition of Done (proposal stage 3) |  |
+| mu-136 | Reference QA on web: touched screens diffed against baselines with masks, judged against mockups, rule-checked, with reference · actual · diff composites (proposal stage 4) |  |
+| mu-137 | Accepted by gates: a merged task whose gates are green and screens match goes to Done without you; Your check shows N screens changed with approve-as-baseline; Reopen records the escape |  |
+| mu-138 | Sweep Your check: run the new gates on every task waiting for you, accept what passes, file bugs for what fails, and leave you one walkthrough for the rest |  |
+| mu-139 | Kia runs the gates in dispatched Testing: review, criteria, then reference QA and the walkthrough script for UI tasks; a red gate goes back to the builder |  |
+| mu-140 | Learning: twice-passed checks become automatic, repeated comments become proposed rules, finished walkthroughs become Playwright tests in the gate (proposal stage 5) |  |
+| mu-141 | iOS, then Mac: the walkthrough steps panel beside the simulator or window, captures and baselines per platform, and send to Muster with regions (proposal stage 6) |  |
+| mu-142 | Overview: the home screen leads with the one task that needs you, in your words, with the checks against what you asked and their evidence (the owner's mockup) |  |
+| mu-144 | The task, opened: a Summary tab that tells the story in your words (what you asked, what changed, checks with proof, screens, what nobody checked) beside Your decision (the owner's mockup) |  |
+| mu-153 | Refusals and errors in Persian: the Rust core's messages become typed and render in the app's or the CLI's language |  |
+| mu-154 | The manual in Persian in the app's Help, and a terminal font guide (Vazir Code for Terminal, iTerm2, VS Code) |  |
+| mu-155 | Persian sweep: every screen in فارسی in every theme, the untranslated-string guard without exceptions, a fa smoke test |  |
+| mu-165 | The app's Problems view shows muster check's left-behind lines, read off the poll every 30 s and cached |  |
+| mu-169 | Search always on screen, saved views, filters and Sort fold behind Filters, and Recently finished hides the same way: View menu items, ⌥⌘F and ⌃⌘R, remembered per mode |  |
+| mu-175 | Every run in its own Seatbelt sandbox, with full access inside it and never without it |  |
+| mu-176 | Runs reach only the hosts they need: a local allowlist proxy inside each run's sandbox |  |
+| mu-177 | Sandboxed runs don't push: the dispatcher merges and pushes after Testing passes |  |
+| mu-178 | Open a running task live and hand it back: the run pauses, resumes in a terminal in the same sandbox, and the dispatcher carries on after |  |
+| mu-180 | Plan Muster's move into Drover: which screens, the core and the runner go where, in what order, and how the Muster app retires (decisions 0001, 0016) |  |
+| mu-181 | muster check-line tells another tool whether a log line it would write reads as tool-written history (stage, check-in, ping, pause, takeover), from the core's own rules, so Drover stops porting them |  |
+| mu-199 | Waiting for you: a jump line with every group's count at the top, items by project under All, and one primary button per item ('Open' when nothing is asked) |  |
+| mu-200 | Sidebar project rows say what each number counts: '13 in progress · ⏸ 1 paused · 198 tasks' where there's room, else compact digits with a one-line key under Projects |  |
+| mu-205 | The menu bar and notifications lead to what waits: Show Muster opens Waiting for you, the menu lists the first three items by key, and a notification's click opens its task |  |
+| mu-206 | The task pane's first open: measure it on the release frontend (0.7-0.9 s headless, one task 6-9 s), and fix the measured cause if it's over 200 ms p50, with before/after numbers |  |
+| mu-207 | Keys for the views and the cards: ⌘1–⌘9 and ⌘, open each view (⌘2 Waiting for you), j/k/h/l and Enter walk the board, Waiting for you and the Table, whatever macOS's Keyboard navigation setting |  |
 
-### Building (1)
+### In progress (3)
 
 | Key | Title | On it |
 | --- | --- | --- |
-| mu-80 | One as-built document for Muster: architecture, every part's state, the decisions, and the queue at a glance, kept current | asghar |
+| mu-9 · Feature | Orchestration: send teams of agents to work on tasks, and run how they talk |  |
+| mu-129 · Feature | Gates: code review, criteria and visual QA (reference and walkthrough, the owner's proposal) prove the work, so a task that passes is accepted without you |  |
+| mu-145 · Goal | Muster in Persian: the app, menus, help and CLI in فارسی, right to left, in Vazirmatn, with Persian digits and Jalali dates |  |
 
-### Testing (4)
-
-| Key | Title | On it |
-| --- | --- | --- |
-| mu-74 | Sessions hand off by themselves at \~60% context: finish the step, wait for their own work to land, write the handoff, start the successor, with no human step (personal layer) | Massihx |
-| mu-77 | Each project has a run command beside its gate: muster projects set \<name\> run "\<command\>", shown in Settings › Projects | asghar |
-| mu-82 | Sidebar categories look right: a clear heading, a fold that really folds to one line, labelled counts, projects indented under their heading | asghar |
-| mu-83 | Board with mostly empty columns: one open column stretches cards to the full width, and the folded strips don't line up | asghar |
-
-### Your check (8)
+### Building (2)
 
 | Key | Title | On it |
 | --- | --- | --- |
-| mu-4 | Muster in other projects: \`.muster/\` in each repo, set up in one step | owner |
-| mu-52 | Mac notifications: one macOS notification when something new waits for you (tauri-plugin-notification) | owner |
-| mu-53 | Muster wears Drover's token names and the atoms that fit (Button, Pill, StatusPill, Badge, Segmented), keeping its own look | owner |
-| mu-59 | Paused tasks go to their own place: a Paused lane beside Backlog, out of the working columns, back where they were on Resume | owner |
-| mu-60 | Blocked says plainly what it waits for: your answer, your action, a permission, other tasks or something outside, each looking different | owner |
-| mu-70 | Category headings fold: the persianUtils projects under one DashAfzar heading that collapses to its name and counts | owner |
-| mu-78 | Your check says what you're accepting: the builder's one-line summary, what Accept does, and each criterion's proof with its screenshots, on the card and in the pane | owner |
-| mu-81 | Settings › Appearance's theme picker is crushed: mu-57's project colour swatches reuse the global .swatches/.swatch classes | owner |
+| mu-203 | A task opens beside its board, not over it: with no room beside the board Recently finished folds to its chip and the ADHD filter bar to its Filters chip, and no label breaks inside a word | akbar\_61 |
+| mu-214 | The column row keeps room for its chips when its own cue says what needs you: at the task pane's narrow row the cue goes to two lines instead of squeezing the chips to 8px | asghar\_60 |
 
-### Done (61)
+### Testing (6)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-115 | Calibration and forecast: actual ÷ estimate per role, type and size as p50 and p80, and how much of Ready fits this window and this week | gholi\_55 |
+| mu-167 | Hide the sidebar to a rail that keeps each project's needs-you count: a View menu item, ⌃⌘S and a button, remembered per mode (the shared toggle) | asghar\_61 |
+| mu-174 | Hover card for tasks: pointing at a task on the Timeline, Table, Graph, in text or in Waiting for you shows its real board card beside the cursor; keyboard focus shows it, Escape hides it | akbar\_56 |
+| mu-188 | Drop the timeline's unused waiting segment (no bar draws one since 2026-10-13): its type, class, CSS rule, layout split and legend mark | gholi\_66 |
+| mu-192 | migrate --dry-run counts as a read, so a dry run whose output fails no longer says its change is saved (mu-170 R2) | asghar\_62 |
+| mu-221 | The CLI never prints terminal control sequences from queue text | gholi\_64 |
+
+### Your check (2)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-204 | Timeline leads with what's running: an 'Active now first' order (Building and Testing, newest change first) as the default, beside today's earliest-start order, remembered | owner |
+| mu-218 | muster merge-log refuses a result that would lose a line of an entry neither side touched: conflict markers and exit 1, never a silent loss | owner |
+
+### Done (158)
 
 | Key | Title | On it |
 | --- | --- | --- |
 | mu-1 | Muster desktop app: see what's happening across the queues, live |  |
 | mu-2 | Move the rest of the rules into the tool: claim, next, block, done, found, triage |  |
 | mu-3 | \`/muster\` and \`/mu\` slash commands, one router like \`/pr\` |  |
+| mu-4 | Muster in other projects: \`.muster/\` in each repo, set up in one step |  |
 | mu-5 | Tasks live in the repo's \`.muster/\`, files never move, claims live in the shared git folder |  |
 | mu-6 | Muster app, next round: the owner's first look, Drover's look, and telling you when you're needed |  |
 | mu-7 | Create and manage tasks in the app and from the command line, with one set of rules |  |
@@ -548,8 +622,12 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 | mu-49 | Pick-one questions: agents ask with options, the owner answers with one click in the app or --pick in the CLI |  |
 | mu-50 | A limit on Your check per project: the board warns when too much waits for you, and never blocks |  |
 | mu-51 | Recently finished: what got merged and accepted in a project, newest first, '4 min ago' |  |
+| mu-52 | Mac notifications: one macOS notification when something new waits for you (tauri-plugin-notification) |  |
+| mu-53 | Muster wears Drover's token names and the atoms that fit (Button, Pill, StatusPill, Badge, Segmented), keeping its own look |  |
 | mu-57 | Projects in the sidebar: drag to reorder, group by category, a colour each, all edited right there |  |
 | mu-58 | Both side panes resizable: the projects sidebar on the left and the task pane on the right, widths remembered |  |
+| mu-59 | Paused tasks go to their own place: a Paused lane beside Backlog, out of the working columns, back where they were on Resume |  |
+| mu-60 | Blocked says plainly what it waits for: your answer, your action, a permission, other tasks or something outside, each looking different |  |
 | mu-61 | Layout fixes from the visual QA: Settings › Projects table, pane status column, graph chips, table header, Focus strip, button gaps |  |
 | mu-62 | Hermetic tests: no test reads the real projects.json or \~/playground; one injection point for the projects Muster knows |  |
 | mu-63 | Runner tests don't depend on machine speed: no 5 s timeouts that fail under parallel builds |  |
@@ -558,26 +636,124 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 | mu-66 | A review can always send a task back to its builder, even while the builder holds its next task; the sent-back one comes first |  |
 | mu-67 | Work log entries merge by themselves: a muster merge driver for docs/WORKLOG.md keeps every entry whole, newest on top |  |
 | mu-68 | muster help pause and the Pause button still say a paused task stays where it is; it moves to the Paused lane |  |
+| mu-69 | Notifications: a session already waiting at launch isn't posted later when its Claude account's first read failed |  |
+| mu-70 | Category headings fold: the persianUtils projects under one DashAfzar heading that collapses to its name and counts |  |
 | mu-71 | Work log merge driver follow-ups: ours is replaced whole or not at all, and its tests can fail (mu-67 R7-R10) |  |
 | mu-72 | Two tests that can't be trusted: the lessons test fails on a temp path holding L1, and init's prefix check can't catch a HOME leak (mu-62 R3) |  |
 | mu-73 | Sidebar state follow-ups: the poll and the DashAfzar fixture share one state builder, and folds follow only the projects the sidebar draws (mu-70 R12, R13) |  |
+| mu-74 | Sessions hand off by themselves at \~60% context: finish the step, wait for their own work to land, write the handoff, start the successor, with no human step (personal layer) |  |
+| mu-75 | Muster's handoff rule follows the automatic handoff: decision 0004 and PROTOCOL.md hand off at \~60% context by themselves, and the successor takes the old session's answers |  |
+| mu-76 | Shaping checks the cross-cutting lenses by default: accessibility, i18n/RTL, themes, payments, architecture, security, privacy, performance, unless the project opts out |  |
+| mu-77 | Each project has a run command beside its gate: muster projects set \<name\> run "\<command\>", shown in Settings › Projects |  |
+| mu-78 | Your check says what you're accepting: the builder's one-line summary, what Accept does, and each criterion's proof with its screenshots, on the card and in the pane |  |
+| mu-79 | Run from the app: one click starts a project's run command in its main checkout, shows its progress and output in place, and stops it (and everything it started) on Stop or when Muster quits |  |
+| mu-80 | One as-built document for Muster: architecture, every part's state, the decisions, and the queue at a glance, kept current |  |
+| mu-81 | Settings › Appearance's theme picker is crushed: mu-57's project colour swatches reuse the global .swatches/.swatch classes |  |
+| mu-82 | Sidebar categories look right: a clear heading, a fold that really folds to one line, labelled counts, projects indented under their heading |  |
+| mu-83 | Board with mostly empty columns: one open column stretches cards to the full width, and the folded strips don't line up |  |
+| mu-84 | Closed and empty board columns become one row of chips above the board (owner's choice A), and hiding a column puts it there too |  |
+| mu-85 | Muster wears the owner's new icons: app icon (light and dark), the in-app logo, and a menu bar icon that shows idle or waiting |  |
+| mu-86 | The board's +N more cue walks every chip in board order at a 400px board, not back to the same chip |  |
+| mu-87 | The sidebar's project rows hold at 150px, and the needs-you badge reads at 4.5:1 in light themes |  |
+| mu-88 | Sidebar order and folds: projects.json keeps its bytes when nothing changed, and the window's fold and move paths get their missing tests |  |
+| mu-89 | icon.icns holds every size, and the menu bar shows the waiting count beside the head |  |
+| mu-90 | Who holds a task: a handed-off builder's successor takes over its claim and mail, and teammates get their own stamp (session + agent) |  |
+| mu-91 | The task pane's Files opens screenshots in place, not in a lightbox |  |
+| mu-93 | Automatic handoff fixes (personal layer): the account's settings for the window size, no hang on special git files, resume paths with '.md ', and successor names that never clash |  |
+| mu-94 | CLI fixes: edit keeps a task's Questions wherever they are, start and init say plainly when the merge driver isn't set, glance docs swap $HOME for \~ only at a path boundary |  |
+| mu-95 | Run's login PATH survives a logout file, and the merge and run guards fail when they should: the parallel lock test under load, a split end mark, setsid without a terminal |  |
+| mu-97 | Shaping is a claim: a backlog note being shaped shows who, and every held card (Shaping, Building, Testing, and held notes) wears a ribbon with its holder |  |
+| mu-98 | Sessions view: cc-mg and cc-hg sessions in Needs input, Working, Completed, all projects and per project; a click opens a recap with tasks, handoff chain, time, tokens, progress |  |
+| mu-99 | Muster never reads the company account: one allowlist of Claude accounts (cc-mg, cc-hg) for claude agents, transcripts and the helper; an unlabelled stamp reads nothing |  |
+| mu-101 | Your check has a verdict: Send back to builder puts the owner's reason first in line as a finding to fix or dispute, and @accept, @sendback, @block, @ask in an owner's comment do the same |  |
+| mu-102 | What's true now: a short page per area in docs/now/, kept true by the builder in the task's branch and read by the vision check |  |
+| mu-103 | Clarify pass in Shaping: unknowns marked \[NEEDS CLARIFICATION\] hold Ready until decided or asked, and muster clarify sends a run's questions to the owner as one batch |  |
+| mu-106 | Spike: the owner's flows through the app — what they come to see and do, where it's slow or hidden, and the changes it calls for |  |
+| mu-107 | Decision 0013: orchestration's terms and accounts: each account pinned to projects by hand, no balancing across accounts, usage read not guessed, each user brings their own login |  |
+| mu-108 | Decision 0015: Muster runs agents behind a runner interface now, Drover's runner later, and the Codex adapter turns analytics off |  |
+| mu-109 | Local queues keep a history: every write is committed to the queue's own git, muster restore brings files back, and git clean -x is refused in a main checkout |  |
+| mu-110 | muster check warns when a task's branch is already in main but its stage still says Building or Testing, with the pass command |  |
+| mu-111 | Spike: how Claude Code and Codex report each account's 5-hour and weekly use on this Mac (rate\_limit\_event, the status line, a rejected run) |  |
+| mu-112 | Role profiles and slot names: Shapour, Kaveh-2, Kia, Pouya and the rest in one profiles file, on cards and in logs, with muster team and Settings › Agents › Roles |  |
+| mu-113 | Accounts and their usage: each account's 5-hour and weekly use read from Claude Code, shown in the header and in muster accounts; the company account can't be added |  |
+| mu-114 | Run ledger: one local record per agent run (tokens by kind, time, turns, outcome) with OpenTelemetry GenAI field names, backfilled from transcripts |  |
+| mu-130 | Research: how agents drive and capture web/Tauri, Electron, iOS and Mac apps on macOS, and run a walkthrough the owner steps through |  |
+| mu-131 | Gate records: one checked record per gate at the branch's tip, qa: on tasks, which gates a task needs, and the merge refuses without them |  |
+| mu-132 | Criteria gate: ac-verifier in the personal layer gives each criterion met, partial, unmet or unproven, muster verify ticks from it, and new tasks can't add owner-only checks |  |
+| mu-143 | Feature grid: a second Board layout, features down the side and stages across, with who works each stage, beside today's board (the owner's mockup) |  |
+| mu-146 | Persian foundation: Drover's i18n layer ported, a Language setting (English · فارسی), the fa glossary, the shell in Persian, and a guard against untranslated strings |  |
+| mu-147 | Board, views, backlog, sessions, notifications and menus in Persian |  |
+| mu-148 | Task pane, forms, comments, review and the Help pane in Persian, with mixed Persian and English text reading right |  |
+| mu-149 | RTL layout in فارسی: logical CSS, mirrored icons and arrows, board order, splitters, Timeline and Graph, in every theme |  |
+| mu-150 | Vazirmatn bundled for Persian text in the app: a subset WOFF2, Latin stays SF, no new dependency |  |
+| mu-151 | Persian digits and Jalali dates where people read them, Latin where they copy, and search that folds Persian |  |
+| mu-152 | The muster CLI in Persian: --lang and MUSTER\_LANG (never LANG, never for agents), translated help and output, bidi-safe terminal lines |  |
+| mu-156 | A takeover's mail always reaches the successor: the move carries on past a bad file and can be re-run, and the answer hook never retires a request racing it |  |
+| mu-157 | Migrate's probe takes a scratch folder of its own (pid + counter), so parallel migrate tests never collide |  |
+| mu-158 | The card's 'needs a tester' tells a teammate from its lead, as the core does: sameHolder compares the agent |  |
+| mu-159 | One needs-you wording app-wide: folded strips, bands and the Paused lane say "1 needs you" like the sidebar, from one helper |  |
+| mu-160 | projects.json byte-identical test fills every map, run and your\_check too (mu-88 R1) |  |
+| mu-161 | Handoffs carry the claim (personal layer): the handing-off builder checks in with --handoff and its successor's first step is claim --takeover |  |
+| mu-162 | A Work row for a session Muster doesn't read shows no View button |  |
+| mu-163 | Run's login-shell stand-ins chain their delay with \&\&, so a sleep that doesn't run fails the test (mu-95 R3) |  |
+| mu-164 | A \#\# Questions inside a code fence is never the tool's Questions section, for edit, ask and answer (mu-94 nit) |  |
+| mu-166 | muster check's merge-driver warning reads '\<prefix\>: warning: …' like every other warning (mu-94 nit) |  |
+| mu-168 | The shaping brief shows measured actuals: actual ÷ estimate at p50 and p80 and median hours by type and size, and which estimate is agent time and which the owner's |  |
+| mu-170 | The CLI ends quietly when its reader closes the pipe: no 'failed printing to stdout' panic, the command finishes and exits 0 |  |
+| mu-171 | Working is a ribbon, not a tag: the holder ribbon says working, waiting for input or session ended in words, and the card's session line goes |  |
+| mu-172 | Token ribbon on held cards: tokens used against the estimate, counted without cache reads, with a live mark while a session spends them |  |
+| mu-173 | Timeline legend: a swatch row under the scale controls, always in view, naming each colour and mark the window shows; the Graph view gets the same row |  |
+| mu-182 | Session states are read from every allowed account and matched by session id, so a builder moved from cc-mg to cc-hg still shows as running |  |
+| mu-183 | Migrate's probe clears a stale scratch folder before it starts, so a pid reused after a killed run never gets a false 'would both be' refusal (mu-157 R1) |  |
+| mu-184 | Release a claim no session can be reached on: a Release button in the task pane beside the disabled Ping, a successor's acts re-stamp a bare-label claim, and a send-back keeps the builder's session |  |
+| mu-185 | A holder's act re-stamps its claim when its session moved to another account (cc-mg to cc-hg, same session id), and takeover by that session re-stamps instead of refusing |  |
+| mu-186 | The card's 'needs a tester' and 'built by' count the takeover chain, as the core's tester\_rule does: the window gets builders, lib.ts builders() uses it |  |
+| mu-187 | The merge fast-forwards main to the commit the gate checked, not to the branch's name, so a commit made after the gate can't land unchecked |  |
+| mu-189 | A hand-merged task's pass re-checks its review and gate records under the queue lock before it records the merge, as the normal merge does (mu-131 R17) |  |
+| mu-190 | muster merge-log keeps both sides' new entries when both insert them at the same point below the top, not only on top (decision 0009 amended) |  |
+| mu-191 | Test queues get a private parent folder, so a Muster checkout in the shared TMPDIR no longer turns 17 review tests (or any other) red through project\_places' sibling scan |  |
+| mu-193 | Builders don't stall on the guard's prompt: their briefs say how to undo a bad rebase (rebase --abort, never reset --hard), and the lead restarts a session waiting over 10 minutes |  |
+| mu-194 | fa: the filter bar's Type row says the older types (task, feature, idea) in Persian too, through one kindLabel helper |  |
+| mu-195 | fa: Settings › Agents › Roles shows each role's title in Persian, not its English id; the id moves to the opened profile as the --role hint |  |
+| mu-196 | muster merge-log merges new entries at any number of points, not only one: a side with round entries on top and its first entry deeper no longer stops a rebase (decision 0009 amended again) |  |
+| mu-197 | Sidebar 'N working' counts tasks everywhere, from one helper: All says '29 working in 9 projects' instead of counting projects with the word headings and rows use for tasks |  |
+| mu-198 | The board says which columns are past its edge: a cue in the row above it names them with their needs-you count (Your check first), and a click brings them in view |  |
+| mu-201 | Recently finished shows a task once under All, with both stamps ('merged 59 min ago · accepted 58 min ago'), and its count counts tasks |  |
+| mu-202 | The toolbar never clips: at 1100 px with the owner's 320 px sidebar it wraps Help, Settings, the mode chip and live to a second line instead of cutting them off |  |
+| mu-208 | Split docs/now/claims.md into Claims and Sessions, handoffs and mail (handoffs.md), each under 3 KB, every rule and citation kept |  |
+| mu-209 | muster merge-log merges entry-wise: an older entry changed or removed on one side no longer stops a rebase, and a gate test catches conflict markers left in docs (decision 0009 amended a third time) |  |
+| mu-210 | The transcript reader reads only what a live transcript appended since the last read, so a 30 s token refresh no longer re-reads a 30-60 MB file |  |
+| mu-211 | Two migrate tests compare the canonical path migrate names, so the suite stays green when TMPDIR ends in // or /./ |  |
+| mu-212 | Sidebar headings keep 'N need you' inside the sidebar at 150px in فارسی: the counts' second line spans the heading's width, and the words wrap only if even that is too narrow |  |
+| mu-213 | Split docs/now/sidebar.md into sidebar and settings, and docs/now/queue.md into queue and stages, each under 3 KB, every rule and citation kept and mu-212's trimmed lines restored |  |
+| mu-215 | Split docs/now/board.md into board and pane, and docs/now/shaping.md into shaping and vision-check, each under 3 KB, every rule and citation kept |  |
+| mu-216 | The account meter keeps its width as readings change: each account's status reserves its widest words, so a reset or a stale window never re-wraps the toolbar |  |
+| mu-217 | Search and New task's Parent read a key typed in Persian digits: sq-۱۹ finds sq-19, and ۳۰ names parent 0030; stored keys and commands stay Latin |  |
+| mu-219 | switches\_go\_through\_one\_place reads code, not comments: a commented-out app\_menu::set, retext or set\_current in switch\_lang turns it red (mu-147 R6) |  |
+| mu-220 | Sessions.test's 60-session speed test holds under machine load |  |
 
-### Backlog notes (12)
+### Backlog notes (18)
 
 | Note | File |
 | --- | --- |
-| Clarify pass in Shaping: shaping agents mark unknowns and send them to the owner in one batch | 2026-10-13-0158-clarify-pass-in-shaping-shaping-agents-mark.md |
-| Later, for selling: an MCP server for agents outside Claude Code, and import from Spec Kit tasks.md, OpenSpec changes and Beads | 2026-10-13-0158-later-for-selling-an-mcp-server-for-agents.md |
-| What's true now: when a task is Done, its decisions update a short page per area that the vision check reads | 2026-10-13-0158-what-s-true-now-when-a-task-is-done-its.md |
-| 0005 next step: committed .muster/ mode with live state (stage, claim, lease, questions, mail, lock) in .git/muster/, the task write-up edited only on the claimant's branch | 2026-10-13-0522-0005-next-step-committed-muster-mode-with-live.md |
-| muster start/init must say plainly when it can't write the work-log merge driver to .git/config (a sandboxed session gets 'operation not permitted'); today it may stay silent (Asghar, mu-71) | 2026-10-14-0418-muster-start-init-must-say-plainly-when-it-can-t.md |
-| The task pane's Files opens screenshots in a lightbox (Sidebar.tsx:251), which docs/DESIGN.md:39/:127 rule out: show them in place (found shaping mu-78) | 2026-10-14-0422-the-task-pane-s-files-opens-screenshots-in-a.md |
-| muster edit drops a task's \#\# Questions section when it sits before \#\# Vision (seen on mu-79): edit must keep Questions, wherever it is | 2026-10-14-0425-muster-edit-drops-a-task-s-questions-section.md |
-| mu-73 nits: test headings\_now's p.ok half (added project whose folder is gone keeps a fold), and that projects::read\_state passes settings through to State.settings | 2026-10-14-0513-mu-73-nits-test-headings-now-s-p-ok-half-added.md |
-| Board: show or hide each column (owner), remembered per Mac; a hidden column stays a thin labelled strip with its counts, never gone (docs/DESIGN.md), like Focus's folds | 2026-10-14-0514-board-show-or-hide-each-column-owner-remembered.md |
-| From rejected lessons L2-L4: test Settings ↑/↓'s pending move (0059 R5), the fold rollback and settle effect (0070 R4/R5), and undo the optimistic unfold on refusal (0057 R5) | 2026-10-14-0600-from-rejected-lessons-l2-l4-test-settings-s.md |
-| mu-81 nit: cssClasses.test's shared-class guard only fails on clashing values; fail on any class with \>1 top-level rule used by \>1 component, and cover :hover/compound selectors | 2026-10-14-0608-mu-81-nit-cssclasses-test-s-shared-class-guard.md |
-| Needs-you badge (.count.warn) reads \~2.2:1 in light themes, below 4.5:1: use --on-status, with a themes test (from mu-82) | 2026-10-14-0630-needs-you-badge-count-warn-reads-2-2-1-in-light.md |
+| Sessions.test.tsx's 60-sessions-in-50-ms test fails bin/gate under load (66.7 ms with 9 sessions, 2026-10-15) and blocks unrelated merges; make it load-proof | 2026-10-15-0957-sessions-test-tsx-s-60-sessions-in-50-ms-test.md |
+| CLI human output prints C0/ESC terminal escape sequences (CSI/OSC, \\r) from task titles and bodies raw: out\_str escapes only bidi controls (found in mu-152's security review) | 2026-10-15-1013-cli-human-output-prints-c0-esc-terminal-escape.md |
+| fa: 'Accept all (9)' wraps onto two lines (seen in mu-149's shots, 2026-10-15) | 2026-10-15-1035-fa-accept-all-9-wraps-onto-two-lines-seen-in-mu.md |
+| The filter strip wraps letter by letter beside an open task pane (seen in mu-149's shots, 2026-10-15) | 2026-10-15-1035-the-filter-strip-wraps-letter-by-letter-beside.md |
+| history.rs test the\_history\_is\_packed\_once... flakes: a commit/tree landing in objects/17 by time makes gc pack after a, leaving b loose (failed bin/gate 2026-10-15 on mu-162) | 2026-10-15-1050-history-rs-test-the-history-is-packed-once.md |
+| fa: tags render as 'core\#', the \# on the wrong side (seen in mu-149 shots, 2026-10-15) | 2026-10-15-1056-fa-tags-render-as-core-the-on-the-wrong-side.md |
+| fa: the 'after ha-10' chip breaks the key at its hyphen (seen in mu-149 shots, 2026-10-15) | 2026-10-15-1056-fa-the-after-ha-10-chip-breaks-the-key-at-its.md |
+| Speed tests' bounds are product budgets that only catch big slowdowns (graph needs 600x, filters 60x, viewData 20x to fail, mu-220): add tighter regression bounds, \~8x the clean time, beside them | 2026-10-15-1059-speed-tests-bounds-are-product-budgets-that-only.md |
+| fa Help search matches the hidden {\#id} anchors on Shortcuts headings and shows them in the snippet: plain() in manual.ts should strip them (mu-148 R8) | 2026-10-15-1115-fa-help-search-matches-the-hidden-id-anchors-on.md |
+| logical-CSS guard: rotateY/rotate3d/rotate: y 180deg and templated scale flips pass; colour guard misses LTR-only colour, \[lang=fa\], opacity/text-fill/blend in RTL rules (mu-149 R6, R7 nits) | 2026-10-15-1127-logical-css-guard-rotatey-rotate3d-rotate-y.md |
+| At 150% in an 800x420 window, + New task overlaps the Board and Table pills and the toolbar fills the window, so no Timeline row shows (seen in mu-174's headless checks) | 2026-10-15-1141-at-150-in-an-800x420-window-new-task-overlaps.md |
+| A U+2029 paragraph separator in a task title still ends a notification's FSI isolate (outside the 12 controls; mu-152 review) | 2026-10-15-1142-a-u-2029-paragraph-separator-in-a-task-title.md |
+| Timeline legend stays too short after the task pane opens (44 px; a full relayout gives 188 at 1100): on main, proof in attachments/0204 qa204.mjs baseline (mu-204) | 2026-10-15-1148-timeline-legend-stays-too-short-after-the-task.md |
+| Timeline Day at 1100x760: the controls wrap to two lines (114 px over); fits on one only by dropping the Sort label and using one-word chips (Active/Start). Owner's call (mu-204 R1) | 2026-10-15-1219-timeline-day-at-1100x760-the-controls-wrap-to.md |
+| Column row, fa, 220px row box (pane open at 1100, sidebar 320): the cue's needs-you words leave the chips 51px, under one chip; needs a design answer (mu-214) | 2026-10-15-1224-column-row-fa-220px-row-box-pane-open-at-1100.md |
+| Pane open at 1100: a poll changing needs-you counts rewraps the filter bar and moves the column row and board top \~23px; on main too (mu-214 AC3 runs) | 2026-10-15-1224-pane-open-at-1100-a-poll-changing-needs-you.md |
+| manifest.py --check prints raw front-matter values (stage, due, level) in problem lines: task-file ESC/OSC 52 reaches the terminal (mu-221 review) | 2026-10-15-1254-manifest-py-check-prints-raw-front-matter-values.md |
+| mu-174 R6: no check proves a poll's newer task object places the hover card again (removing task from the layout effect's deps stays green) | 2026-10-15-1315-mu-174-r6-no-check-proves-a-poll-s-newer-task.md |
 
 <!-- muster:queue-at-a-glance end -->
 
@@ -648,28 +824,56 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 - **A teammate of the builder's lead isn't a separate tester yet** (decision 0008): QA runs in a
   session of its own until stamps carry the agent id.
 
-### What's left, in order
+- **Agent work costs a lot of tokens** (measured 2026-10-15 over Oct 9–15, both accounts): about
+  64% of the spend is subagents, and Muster's own pipeline is about 41% of the whole. The drivers:
+  deep-tier reviews that fan out to 4–6 lens agents plus verifiers (0.5–1.1M tokens a round), 2–4
+  review rounds a task, builders' own pre-reviews, up to 9 sessions at once and handoffs that
+  re-read everything. Work is paused while the owner picks the cuts (below).
+- **Two tests flake under load:** the history pack test (`history.rs`, a commit landing in
+  `objects/17` by its time; backlog 2026-10-15-1050). The speed tests no longer do (mu-220).
+- **The criteria gate's agent (`ac-verifier`) isn't linked in the main checkout,** only in task
+  worktrees: reviewers are started in the task's worktree.
+- **Persian is partial:** refusals and errors from the core are English (mu-153), the manual is
+  English (mu-154), and no full sweep has run (mu-155). Not seen on a real screen: typing Persian,
+  VoiceOver on the joined lines, WKWebView zoom maths, Terminal.app and iTerm2 rendering.
+- **`--json` carries DEL and C1 raw** (mu-221's AC2: serde escapes only C0); human output escapes
+  them.
 
-1. **The owner's checks:** the tasks in Your check (section 6), the review of record's first real
-   round (mu-27 AC1), and one live session in a new project (mu-4 AC2).
-2. **Finish what's in flight** (section 6 says where each stands): the owner-reported regressions
-   first (mu-82, sidebar categories; mu-83, a board of mostly empty columns), then mu-77 (a run
-   command per project) and mu-74's handoff in the layer.
-3. **The rest of Ready,** high priority first: mu-79 (run from the app, after mu-77),
-   mu-76 (shaping checks the cross-cutting lenses), mu-75 (the handoff rule in decision 0004 and
-   PROTOCOL.md, after mu-74), then mu-69 (a notification bug, after mu-52).
-4. **Committed `.muster/` with live state in `.git/muster/`** (0005's next step), and migrating the
-   other projects' queues with `muster migrate`.
-5. **Orchestration** (mu-9): Muster decides who does what, Drover starts and steers the agents
-   (decisions 0006, 0007; Drover 0018). Then the planning room (mu-41), ideas in Muster (mu-56),
-   one record of outcomes (mu-54) and a GitHub reviewer app (mu-55).
-6. **Review of record, the parts outside Muster** (each the owner's call): the engine's ledgers and
-   `/pr learn` get Muster's labels (they key rows on a PR number, so a task needs a place in their
-   schema); `sweetlemonai/muster` in the engine's `repos` and a token budget for its light tier;
-   posting to GitHub as sweetlemonai, with a login check before every post, comes back when PRs do.
-   The review's and lessons' files move into the live state with 0005's store.
-7. **Into Drover:** Drover's task creator (Drover 0005) and waiting list (Drover 0015) are the
-   first pieces; the app's screens move into Drover when it's ready (decision 0001).
+### What's planned, in order
+
+The queue holds 48 Ready tasks and 18 backlog notes (section 6). The order the lead works them in:
+
+1. **The owner's picks on token cost** (proposed 2026-10-15, not decided): light review by default
+   and deep only for security, data-loss and merge-driver tasks, at most 2 lens agents; no builder
+   pre-review when a review of record follows; at most 2 review rounds before the lead decides or
+   splits; 3–4 sessions at a time; a smaller lead context.
+2. **Finish what's in flight** (paused 2026-10-15 13:18): merge the approved mu-221 (terminal
+   controls), mu-115 (calibration) and mu-174 (hover card); review mu-167 (sidebar rail), mu-188
+   and mu-192; finish mu-203 (the pane beside the board) and mu-214 (column row chips).
+3. **The dispatcher,** so a lead session no longer runs the loop by hand: mu-116 (`muster dispatch
+   --dry-run` and the decision log), mu-117 (the runner interface and the Claude Code runner,
+   Shaping), mu-118 (Dispatcher On), then mu-175 to mu-179 (a Seatbelt sandbox per run, a host
+   allowlist, no push from runs, open a run live, accounts without a login), mu-119 to mu-127
+   (dispatched testing and shaping, the team view, slots per account, escalations, the usage view,
+   a Codex reviewer, the Drover contract).
+4. **Gates that take the owner out of Your check:** mu-128 (the QA loop on the board), mu-133 to
+   mu-141 (walkthrough and reference QA, baselines, accepted by gates, the sweep, learning,
+   iOS and Mac).
+5. **Persian, finished:** mu-153 (typed refusals), mu-154 (the manual), mu-155 (the sweep), under
+   mu-145.
+6. **The owner's asks on the app:** mu-169 (search always on screen, filters fold), mu-199
+   (Waiting for you's jump line), mu-200 (sidebar counts that say what they count), mu-205 (menu
+   bar and notifications lead to what waits), mu-206 (the task pane's first open, measured), mu-207
+   (keys for views and cards), mu-142 (Overview) and mu-144 (the task's Summary tab).
+7. **Queues and data:** mu-100 (committed queues keep live state in `.git/muster/`), mu-96 (move
+   the 19 old queues), mu-165 (Problems view), mu-181 (`muster check-line`), mu-92.
+8. **Later:** mu-105 (proposals inbox), mu-41 (planning room), mu-56 (ideas in Muster), mu-54
+   (learning both ways), mu-55 (a GitHub reviewer app), mu-104 (an MCP server and imports), mu-9
+   (orchestration's remaining design), mu-180 (the move into Drover).
+
+The backlog notes from 2026-10-15 are small fixes found in reviews: Persian layout at the narrowest
+widths, guard gaps (rotations, colours, `manifest.py --check`'s raw output), a U+2029 in titles,
+the Timeline legend after the pane opens, and the history test flake.
 
 ## Parts in detail
 

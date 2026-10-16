@@ -3,6 +3,14 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — AS_BUILT brought up to date, with what's planned
+**Did:** `docs/AS_BUILT.md`: the header (main `48ae3d1`, paused), section 4's state of every part
+since 2026-10-14 (gates, sessions, run ledger, Persian, right to left, the merge-log guard and the
+rest), decisions 0016 to 0018, section 6 regenerated (`muster index --as-built`), new known limits
+(token cost, the history test flake, Persian gaps) and "What's planned, in order" in place of the
+old "What's left".
+**Verified:** `cargo test --test now_pages` hermetic, 5 passed.
+
 ## 2026-10-15 — Lead (QA_10): 11 merges since 09:00, and the calls behind them
 **Did:** merged mu-215, mu-216, mu-217, mu-162, mu-148, mu-220, mu-201, mu-149, mu-152, mu-204
 and mu-218, each with G1, G2 and G3 green (mu-149 under the owner's override, below). Rebuilt the
