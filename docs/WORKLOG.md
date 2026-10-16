@@ -3,6 +3,16 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-16 — A product overview to share, and the owner's stop
+**Did:** `docs/product/muster-overview.html`, one self-contained page for a non-technical reader
+(the problem, the stages, screens from synthetic test data, trust, privacy, Persian, numbers, the
+roadmap, challenges and questions for a co-owner). Merged mu-221, mu-192, mu-188 and mu-167 (the
+last three with no review, by the owner's order; their criteria records were made by re-running
+each criterion's own check). Stopped every session and test runner at the owner's request.
+**Open:** mu-115, mu-174, mu-214 and mu-203 are in Testing with green criteria records and wait
+only for their merge (`muster pass <id> --from testing --as owner`).
+**Verified:** the page rendered in headless WebKit, light and dark.
+
 ## 2026-10-15 — mu-188: the Timeline's unused waiting segment is gone
 **Did:** removed the path no bar used since the owner's 2026-10-13 rule (a bar starts when work
 started): `"waiting"` from `Segment` and `TimelineMark`, `Span.work`, `segmentTitle`'s Waiting
